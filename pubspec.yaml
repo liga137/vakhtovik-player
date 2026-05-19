@@ -1,0 +1,25 @@
+name: vakhtovik_player
+description: Плеер Вахтовика — кроссплатформенный клиент
+publish_to: 'none'
+version: 0.2.0
+
+environment:
+  sdk: ^3.0.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  # Мощный движок для Windows, Android и iOS/macOS (читает HLS везде)
+  media_kit: ^1.1.10
+  media_kit_video: ^1.2.4
+  # Библиотеки для ПК, Андроида (тапка) и Айоси (говнофона)
+  media_kit_libs_video: ^1.0.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
