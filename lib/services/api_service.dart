@@ -5,8 +5,7 @@ import '../models/transcode_result.dart';
 
 /// Сервис для работы с API «Плеер Вахтовика»
 class ApiService {
-  // Используем HTTPS и бесплатный домен nip.io, чтобы обойти паранойю браузеров/iOS
-  static const String _baseUrl = 'https://2.26.17.70.nip.io:8008';
+  static const String _baseUrl = 'https://195.226.92.151.nip.io:8008';
 
   /// Получить список пресетов качества
   static Future<List<Preset>> getPresets() async {

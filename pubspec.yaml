@@ -15,7 +15,7 @@ dependencies:
   media_kit_video: ^1.2.4
   # Библиотеки для ПК, Андроида (тапка) и Айоси (говнофона)
   media_kit_libs_video: ^1.0.4
-
+  webview_flutter: ^4.5.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
