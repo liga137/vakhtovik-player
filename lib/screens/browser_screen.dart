@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import '../services/api_service.dart';
@@ -232,6 +233,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       icon: const Icon(Icons.person, color: Colors.orange),
                       onPressed: () {},
                     ),
+                    // Кнопка «Слить куки» — только на Filmix
+                    if (urlController.text.contains('filmix'))
+                      IconButton(
+                        icon: const Icon(Icons.cookie, color: Colors.amber),
+                        tooltip: 'Слить куки Filmix',
+                        onPressed: () {
+                          webViewController?.evaluateJavascript(source: FilmixAuth.getCookieExtractorJS());
+                          Clipboard.setData(const ClipboardData(text: 'Жди prompt'));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Появился prompt — скопируй куки (Ctrl+C)'), duration: Duration(seconds: 4))
+                          );
+                        },
+                      ),
                     if (_onYouTube)
                       IconButton(
                         icon: const Icon(Icons.music_video, color: Colors.red),
@@ -262,8 +276,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   onLoadStop: (controller, url) {
                     if (url != null) {
                       urlController.text = url.toString();
-                      // Авто-логин на Filmix и обход заглушек
+                      // Заливаем куки Filmix (если прописаны) и инжектим скрипты
                       if (url.host.contains('filmix')) {
+                        FilmixAuth.injectCookies(controller, url);
                         controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
                       }
                       // Детектим YouTube
