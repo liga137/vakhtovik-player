@@ -4,7 +4,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 class FilmixAuth {
   // ========== КУКИ ЕДИНОГО АККАУНТА ==========
   // Олег логинится вручную → копирует строку из alert → вставляет сюда
-  static const String filmixCookies = "PLACEHOLDER_COOKIES";
+  static const String filmixCookies = "x-a-key=sinatra; minotaurs=7dqlyhWZNBSZDJ1o1a7%2Fp1s%2BtrHicEV2iA51Fb1h8dc%3D; _ga=GA1.1.1747278366.1779404389; _ga_GYLWSWSZ3C=GS2.1.s1779404389\$o1\$g1\$t1779404510\$j60\$l0\$h0";
 
   /// Заливает куки в WebView
   static Future<void> injectCookies(InAppWebViewController controller, Uri url) async {
