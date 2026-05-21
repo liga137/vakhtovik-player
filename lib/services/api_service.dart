@@ -23,9 +23,10 @@ class ApiService {
   static Future<TranscodeResult> transcode({
     required String url,
     String quality = '360p',
+    String referer = '',
   }) async {
     final uri = Uri.parse('$_baseUrl/transcode').replace(
-      queryParameters: {'url': url, 'quality': quality},
+      queryParameters: {'url': url, 'quality': quality, 'referer': referer},
     );
     final response = await http.post(uri);
     if (response.statusCode == 200) {

@@ -20,6 +20,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   
   bool _showInterceptor = false;
   String _interceptedUrl = "";
+  String _currentReferer = "";
   List<Preset> _presets = [];
   String _selectedQuality = "240p";
   bool _isLoading = false;
@@ -62,7 +63,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     });
 
     try {
-      final result = await ApiService.transcode(url: _interceptedUrl, quality: _selectedQuality);
+      final result = await ApiService.transcode(url: _interceptedUrl, quality: _selectedQuality, referer: _currentReferer);
       final hlsUrl = ApiService.hlsUrl(result.playlistUrl);
 
       setState(() {
@@ -154,10 +155,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   },
                   shouldOverrideUrlLoading: (controller, navigationAction) async {
                     var uri = navigationAction.request.url!;
-                    // Перехват MP4
-                    if (uri.toString().endsWith('.mp4')) {
+                    // Универсальный перехват ЛЮБОГО видео (mp4, m3u8) на ЛЮБОМ сайте
+                    if (uri.toString().endsWith('.mp4') || uri.toString().endsWith('.m3u8') || uri.toString().contains('video')) {
                       setState(() {
                         _interceptedUrl = uri.toString();
+                        _currentReferer = urlController.text;
                         _showInterceptor = true;
                       });
                       return NavigationActionPolicy.CANCEL;
