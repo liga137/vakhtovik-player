@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:media_kit/media_kit.dart';
@@ -145,6 +146,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 child: InAppWebView(
                   key: webViewKey,
                   initialUrlRequest: URLRequest(url: WebUri("https://seasonvar.ru/")),
+                  initialSettings: InAppWebViewSettings(
+                    useShouldOverrideUrlLoading: true,
+                    useShouldInterceptRequest: true,
+                    mediaPlaybackRequiresUserGesture: false,
+                  ),
                   onWebViewCreated: (controller) {
                     webViewController = controller;
                   },
@@ -154,19 +160,39 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     }
                   },
                   shouldOverrideUrlLoading: (controller, navigationAction) async {
-                    var uri = navigationAction.request.url!;
-                    // Универсальный перехват ЛЮБОГО видео (mp4, m3u8) на ЛЮБОМ сайте
-                    if (uri.toString().endsWith('.mp4') || uri.toString().endsWith('.m3u8') || uri.toString().contains('video')) {
-                      setState(() {
-                        _interceptedUrl = uri.toString();
-                        _currentReferer = urlController.text;
-                        _showInterceptor = true;
-                      });
-                      return NavigationActionPolicy.CANCEL;
-                    }
                     return NavigationActionPolicy.ALLOW;
                   },
+                  shouldInterceptRequest: (controller, request) async {
+                    var uri = request.url.toString();
+                    var method = request.method ?? "GET";
+                    
+                    // Перехват сырых медиа-запросов (даже из чужих плееров и iframe)
+                    if (method.toUpperCase() == "GET" && 
+                       (uri.contains('.mp4') || uri.contains('.m3u8') || uri.contains('playlist.m3u8'))) {
+                      
+                      // Чтобы шторка не прыгала по 100 раз на каждый чанк
+                      if (!_showInterceptor && !_showPlayer) {
+                        // Используем Future.microtask чтобы безопасно вызвать setState из фонового потока WebView
+                        Future.microtask(() {
+                          setState(() {
+                            _interceptedUrl = uri;
+                            _currentReferer = urlController.text;
+                            _showInterceptor = true;
+                          });
+                        });
+                      }
+                      
+                      // Возвращаем "пустой" ответ, чтобы чужой плеер не начал жрать трафик
+                      return WebResourceResponse(
+                        contentType: "text/plain",
+                        data: Uint8List.fromList([]),
+                        statusCode: 200
+                      );
+                    }
+                    return null;
+                  },
                 ),
+              ),
               ),
             ],
           ),
