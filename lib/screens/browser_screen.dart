@@ -200,6 +200,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
           _isLoading = false;
           _showPlayer = true;
         });
+        // Глушим WebView — чтобы фоном не орала реклама/оригинал
+        _muteWebView();
       }
     } catch (e) {
       setState(() {
@@ -209,6 +211,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
         SnackBar(content: Text('Ошибка: $e'), duration: const Duration(seconds: 4))
       );
     }
+  }
+
+  void _muteWebView() {
+    webViewController?.evaluateJavascript(source: """
+      (function(){
+        var vids = document.querySelectorAll('video, audio');
+        for (var i = 0; i < vids.length; i++) {
+          vids[i].muted = true;
+          vids[i].pause();
+        }
+      })();
+    """);
   }
 
   void _stopPlayer() {
@@ -221,16 +235,25 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() {
       _showPlayer = false;
     });
+    // Возвращаем звук WebView
+    webViewController?.evaluateJavascript(source: """
+      (function(){
+        var vids = document.querySelectorAll('video, audio');
+        for (var i = 0; i < vids.length; i++) {
+          vids[i].muted = false;
+        }
+      })();
+    """);
   }
 
-  // Сжатие YouTube: отправляет URL страницы (не googlevideo.com) на транскодер
+  // Сжатие YouTube: показывает шторку выбора качества (как обычный перехват)
   void _compressYouTube() {
     final ytUrl = urlController.text;
     if (!ytUrl.contains('youtube.com/watch')) return;
     
     _interceptedUrl = ytUrl;
     _currentReferer = ytUrl;
-    _startMagic();
+    setState(() => _showInterceptor = true);
   }
 
   @override
