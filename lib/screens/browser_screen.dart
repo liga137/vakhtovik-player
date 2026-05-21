@@ -4,6 +4,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import '../services/api_service.dart';
+import '../services/filmix_auth.dart';
 import '../models/preset.dart';
 
 class BrowserScreen extends StatefulWidget {
@@ -229,6 +230,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   onLoadStop: (controller, url) {
                     if (url != null) {
                       urlController.text = url.toString();
+                      // Авто-логин на Filmix и обход заглушек
+                      if (url.host.contains('filmix')) {
+                        controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
+                      }
                     }
                   },
                   shouldOverrideUrlLoading: (controller, navigationAction) async {
