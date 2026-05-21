@@ -315,12 +315,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           );
                         },
                       ),
-                    if (_onYouTube)
-                      IconButton(
-                        icon: const Icon(Icons.music_video, color: Colors.red),
-                        tooltip: 'Сжать YouTube',
-                        onPressed: _isLoading ? null : _compressYouTube,
-                      ),
                   ],
                 ),
               ),
@@ -436,6 +430,40 @@ class _BrowserScreenState extends State<BrowserScreen> {
               ),
             ],
           ),
+
+          // YouTube FAB: большая плавающая кнопка поверх WebView
+          if (_onYouTube && !_showInterceptor && !_showPlayer)
+            Positioned(
+              bottom: 80,
+              right: 16,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Кнопка сжать
+                  FloatingActionButton.extended(
+                    heroTag: 'youtube',
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    icon: const Icon(Icons.compress),
+                    label: const Text('Сжать видео', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: _compressYouTube,
+                  ),
+                  const SizedBox(height: 8),
+                  // Подсказка
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'YouTube не перехватывается авто — нажми сюда',
+                      style: TextStyle(color: Colors.white54, fontSize: 10),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           // Interceptor Overlay
           if (_showInterceptor)
