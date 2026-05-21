@@ -10,10 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.0
-  # Мощный движок для Windows, Android и iOS/macOS (читает HLS везде)
+  flutter_inappwebview: ^6.0.0
   media_kit: ^1.1.10
   media_kit_video: ^1.2.4
-  # Библиотеки для ПК, Андроида (тапка) и Айоси (говнофона)
   media_kit_libs_video: ^1.0.4
   webview_flutter: ^4.5.0
 dev_dependencies:
