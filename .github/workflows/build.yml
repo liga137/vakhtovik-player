@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Flutter Apps
 
 on:
   push:
@@ -20,9 +20,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install NDK 27 (required for media_kit C++ engine)
-        run: sdkmanager "ndk;27.0.12077973" --sdk_root=$ANDROID_SDK_ROOT
-
       - name: Setup Flutter 3.24.3
         uses: subosito/flutter-action@v2
         with:
@@ -35,12 +32,41 @@ jobs:
 
       - name: Build release APK
         run: flutter build apk --release
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Vakhtovik-Player-Android
           path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter 3.24.3
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.3'
+          channel: 'stable'
+          cache: true
+
+      - name: Enable Windows Desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Windows
+        run: flutter build windows --release
+
+      - name: Compress Windows Build
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath Vakhtovik-Player-Windows.zip
+
+      - name: Upload Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vakhtovik-Player-Windows
+          path: Vakhtovik-Player-Windows.zip
           retention-days: 14
