@@ -168,7 +168,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     
                     // Перехват сырых медиа-запросов (даже из чужих плееров и iframe)
                     if (method.toUpperCase() == "GET" && 
-                       (uri.contains('.mp4') || uri.contains('.m3u8') || uri.contains('playlist.m3u8'))) {
+                       (uri.contains('.mp4') || uri.contains('.m3u8') || uri.contains('playlist.m3u8') || 
+                        uri.contains('.mkv') || uri.contains('.webm') || uri.contains('.3gp') || 
+                        uri.contains('.avi') || uri.contains('.flv') || uri.contains('video'))) {
                       
                       // Чтобы шторка не прыгала по 100 раз на каждый чанк
                       if (!_showInterceptor && !_showPlayer) {
