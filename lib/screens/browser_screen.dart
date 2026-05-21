@@ -30,6 +30,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   VideoPlayerController? _videoController;
   ChewieController? _chewieController;
   bool _showPlayer = false;
+  bool _waitingForNextEpisode = false; // флаг: ждём перехвата новой серии
+  bool _onYouTube = false; // флаг: мы на странице YouTube
 
   @override
   void initState() {
@@ -58,35 +60,49 @@ class _BrowserScreenState extends State<BrowserScreen> {
     super.dispose();
   }
 
-  // Скрипт для авто-переключения серии (кликает по кнопкам "Следующая серия" на известных сайтах)
+  // Скрипт для авто-переключения серии — НЕ закрывает плеер, ждёт новый перехват
   void _playNextEpisode() {
-    if (webViewController != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Включаю следующую серию...'), duration: Duration(seconds: 2))
-      );
-      webViewController!.evaluateJavascript(source: """
-        (function() {
-          // Seasonvar
-          var svNext = document.querySelector('.pgs-player-next');
-          if (svNext) { svNext.click(); return true; }
-          // Filmix (примерные классы)
-          var fxNext = document.querySelector('.icon-next') || document.querySelector('.next-btn');
-          if (fxNext) { fxNext.click(); return true; }
-          // Любой элемент с текстом "следующая"
-          var elements = document.getElementsByTagName('*');
-          for (var i = 0; i < elements.length; i++) {
-            var text = elements[i].innerText || elements[i].textContent;
-            if (text && text.toLowerCase().includes('следующая') && elements[i].onclick) {
-              elements[i].click();
-              return true;
-            }
+    if (webViewController == null) return;
+    
+    // Ставим флаг: следующие перехваченные URL обрабатываем автоматически
+    _waitingForNextEpisode = true;
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Переключаю серию...'), duration: Duration(seconds: 1))
+    );
+    
+    // Инжектим клик по кнопке «Следующая серия»
+    webViewController!.evaluateJavascript(source: """
+      (function() {
+        // Seasonvar: разные варианты кнопок
+        var sel = document.querySelector('.pgs-player-next, .pgs-next-btn, .next-episode, .next_episode, a[title*="След"], a[title*="след"], .next-link');
+        if (sel) { sel.click(); return 'seasonvar-click'; }
+        // Filmix
+        var fx = document.querySelector('.icon-next, .next-btn, .next-video, a[id*="next"], .vnext');
+        if (fx) { fx.click(); return 'filmix-click'; }
+        // Универсальный поиск по тексту
+        var all = document.querySelectorAll('a, button, span, div');
+        for (var i = 0; i < all.length; i++) {
+          var t = (all[i].textContent || '').toLowerCase();
+          if ((t.includes('следующая') || t.includes('след.') || t.includes('next')) && all[i].offsetParent !== null) {
+            all[i].click();
+            return 'text-click';
           }
-          return false;
-        })();
-      """);
-      // Закрываем текущий плеер, ждем перехвата новой ссылки
-      _stopPlayer();
-    }
+        }
+        return 'not-found';
+      })();
+    """);
+    
+    // Таймаут: если за 15 секунд новая серия не перехватилась — закрываем плеер
+    Future.delayed(const Duration(seconds: 15), () {
+      if (_waitingForNextEpisode && mounted) {
+        _waitingForNextEpisode = false;
+        _stopPlayer();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось переключить серию'), duration: Duration(seconds: 2))
+        );
+      }
+    });
   }
 
   void _startMagic() async {
@@ -160,6 +176,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
     });
   }
 
+  // Сжатие YouTube: отправляет URL страницы (не googlevideo.com) на транскодер
+  void _compressYouTube() {
+    final ytUrl = urlController.text;
+    if (!ytUrl.contains('youtube.com/watch')) return;
+    
+    _interceptedUrl = ytUrl;
+    _currentReferer = ytUrl;
+    _startMagic();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -206,6 +232,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       icon: const Icon(Icons.person, color: Colors.orange),
                       onPressed: () {},
                     ),
+                    if (_onYouTube)
+                      IconButton(
+                        icon: const Icon(Icons.music_video, color: Colors.red),
+                        tooltip: 'Сжать YouTube',
+                        onPressed: _isLoading ? null : _compressYouTube,
+                      ),
                   ],
                 ),
               ),
@@ -233,6 +265,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       // Авто-логин на Filmix и обход заглушек
                       if (url.host.contains('filmix')) {
                         controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
+                      }
+                      // Детектим YouTube
+                      final isYT = url.host.contains('youtube.com') && url.path.contains('/watch');
+                      if (isYT != _onYouTube) {
+                        setState(() => _onYouTube = isYT);
                       }
                     }
                   },
@@ -272,7 +309,25 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     // Перехват сырых медиа-запросов (даже из чужих плееров и iframe)
                     if (method.toUpperCase() == "GET" && isMedia) {
                       
-                      // Чтобы шторка не прыгала по 100 раз на каждый чанк
+                      // Режим авто-переключения серий: не показываем шторку, сразу сжимаем
+                      if (_waitingForNextEpisode) {
+                        _waitingForNextEpisode = false;
+                        Future.microtask(() {
+                          if (mounted) {
+                            _interceptedUrl = request.url.toString();
+                            _currentReferer = urlController.text;
+                            // Не показываем шторку — сразу запускаем сжатие
+                            _startMagic();
+                          }
+                        });
+                        return WebResourceResponse(
+                          contentType: "text/plain",
+                          data: Uint8List.fromList([]),
+                          statusCode: 200
+                        );
+                      }
+                      
+                      // Обычный режим: показываем шторку выбора качества
                       if (!_showInterceptor && !_showPlayer) {
                         // Используем Future.microtask чтобы безопасно вызвать setState из фонового потока WebView
                         Future.microtask(() {
