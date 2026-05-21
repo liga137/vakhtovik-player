@@ -218,6 +218,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     useShouldOverrideUrlLoading: true,
                     useShouldInterceptRequest: true,
                     mediaPlaybackRequiresUserGesture: false,
+                    domStorageEnabled: true, // Включаем кэш и локальное хранилище для ускорения загрузки
+                    databaseEnabled: true,
+                    javaScriptEnabled: true,
+                    transparentBackground: true,
                   ),
                   onWebViewCreated: (controller) {
                     webViewController = controller;
@@ -231,21 +235,38 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     return NavigationActionPolicy.ALLOW;
                   },
                   shouldInterceptRequest: (controller, request) async {
-                    var uri = request.url.toString();
+                    var uri = request.url.toString().toLowerCase();
                     var method = request.method ?? "GET";
                     
-                    // Перехват сырых медиа-запросов (даже из чужих плееров и iframe)
-                    if (method.toUpperCase() == "GET" && 
-                       (uri.contains('.mp4') || uri.contains('.m3u8') || uri.contains('playlist.m3u8') || 
+                    // 1. Исключаем мусор, скрипты, картинки и статику
+                    if (uri.contains('.js') || uri.contains('.css') || uri.contains('.jpg') || 
+                        uri.contains('.png') || uri.contains('.gif') || uri.contains('.webp') || 
+                        uri.contains('.woff') || uri.contains('.ttf') || uri.contains('.svg')) {
+                      return null; // пропускаем как есть
+                    }
+
+                    // 2. Ищем признаки медиа, исключая фоновые превьюшки и рекламу
+                    bool isMedia = false;
+                    if (uri.contains('.mp4') || uri.contains('.m3u8') || uri.contains('playlist.m3u8') || 
                         uri.contains('.mkv') || uri.contains('.webm') || uri.contains('.3gp') || 
-                        uri.contains('.avi') || uri.contains('.flv') || uri.contains('video'))) {
+                        uri.contains('.avi') || uri.contains('.flv')) {
+                      
+                      // Защита от ложных срабатываний (на превьюшки и баннеры)
+                      if (!uri.contains('trailer') && !uri.contains('preview') && 
+                          !uri.contains('banner') && !uri.contains('ad.mp4') && !uri.contains('promo')) {
+                        isMedia = true;
+                      }
+                    }
+
+                    // Перехват сырых медиа-запросов (даже из чужих плееров и iframe)
+                    if (method.toUpperCase() == "GET" && isMedia) {
                       
                       // Чтобы шторка не прыгала по 100 раз на каждый чанк
                       if (!_showInterceptor && !_showPlayer) {
                         // Используем Future.microtask чтобы безопасно вызвать setState из фонового потока WebView
                         Future.microtask(() {
                           setState(() {
-                            _interceptedUrl = uri;
+                            _interceptedUrl = request.url.toString();
                             _currentReferer = urlController.text;
                             _showInterceptor = true;
                           });
