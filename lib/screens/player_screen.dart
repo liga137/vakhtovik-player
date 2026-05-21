@@ -33,13 +33,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.hlsUrl));
     await _controller.initialize();
     
+    await Future.delayed(const Duration(milliseconds: 500));
+    final ar = _controller.value.aspectRatio > 0 ? _controller.value.aspectRatio : 16 / 9;
+
     _chewieController = ChewieController(
       videoPlayerController: _controller,
       autoPlay: true,
       looping: false,
-      aspectRatio: _controller.value.aspectRatio,
+      aspectRatio: ar,
       allowFullScreen: true,
       allowMuting: true,
+      showControls: true,
+      showControlsOnInitialize: true,
     );
 
     if (mounted) {

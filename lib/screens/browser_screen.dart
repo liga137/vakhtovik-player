@@ -75,19 +75,40 @@ class _BrowserScreenState extends State<BrowserScreen> {
     // Инжектим клик по кнопке «Следующая серия»
     webViewController!.evaluateJavascript(source: """
       (function() {
-        // Seasonvar: разные варианты кнопок
-        var sel = document.querySelector('.pgs-player-next, .pgs-next-btn, .next-episode, .next_episode, a[title*="След"], a[title*="след"], .next-link');
+        // Seasonvar: все известные селекторы кнопки «следующая»
+        var sel = document.querySelector(
+          '.pgs-player-next, .pgs-next-btn, .pgs_next, .pgs-player-controls .next, ' +
+          '.player-next, .next-episode, .next_episode, a[title*="След"], a[title*="след"], ' +
+          '.next-link, .nextbutton, #next, .pnext, .plnext, .vjs-next-button, ' +
+          '[data-action="next"], [data-role="next"], .plyr__controls__item--next'
+        );
         if (sel) { sel.click(); return 'seasonvar-click'; }
+        
+        // Сезонвар v2: кнопка может быть внутри iframe плеера
+        try {
+          var iframes = document.querySelectorAll('iframe');
+          for (var i = 0; i < iframes.length; i++) {
+            try {
+              var doc = iframes[i].contentDocument || iframes[i].contentWindow.document;
+              if (!doc) continue;
+              var btn = doc.querySelector('.pgs-player-next, .next, [title*="след"], [title*="След"]');
+              if (btn) { btn.click(); return 'iframe-click'; }
+            } catch(e) { continue; }
+          }
+        } catch(e) {}
+        
         // Filmix
         var fx = document.querySelector('.icon-next, .next-btn, .next-video, a[id*="next"], .vnext');
         if (fx) { fx.click(); return 'filmix-click'; }
-        // Универсальный поиск по тексту
+        
+        // Универсальный поиск по тексту (только видимые элементы)
         var all = document.querySelectorAll('a, button, span, div');
         for (var i = 0; i < all.length; i++) {
+          if (all[i].offsetParent === null) continue;
           var t = (all[i].textContent || '').toLowerCase();
-          if ((t.includes('следующая') || t.includes('след.') || t.includes('next')) && all[i].offsetParent !== null) {
+          if ((t.includes('следующая') || t.includes('след.') || t.includes('next')) && t.length < 30) {
             all[i].click();
-            return 'text-click';
+            return 'text-click:' + t.substring(0,20);
           }
         }
         return 'not-found';
@@ -122,34 +143,57 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _videoController = VideoPlayerController.networkUrl(Uri.parse(hlsUrl));
       await _videoController!.initialize();
 
+      // Ждём первый кадр чтобы получить реальный aspectRatio
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      final ar = _videoController!.value.aspectRatio > 0 
+          ? _videoController!.value.aspectRatio 
+          : 16 / 9; // fallback 16:9 если HLS не дал размер
+
+      final dur = _videoController!.value.duration;
+
       _chewieController = ChewieController(
         videoPlayerController: _videoController!,
         autoPlay: true,
         looping: false,
-        aspectRatio: _videoController!.value.aspectRatio,
+        aspectRatio: ar,
         allowFullScreen: true,
         allowMuting: true,
+        showControls: true,
+        showControlsOnInitialize: true,
+        // НЕ используем кастомные контролы — даём Chewie самому выбрать (MaterialDesktopControls на Windows)
         errorBuilder: (context, errorMessage) {
           return Center(
-            child: Text(
-              errorMessage,
-              style: const TextStyle(color: Colors.white),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(errorMessage, style: const TextStyle(color: Colors.white, fontSize: 16), textAlign: TextAlign.center),
             ),
           );
         },
-        customControls: const MaterialControls(),
       );
 
-      // Слушаем окончание видео для автопереключения
+      // Слушаем окончание видео
       _videoController!.addListener(() {
-        if (_videoController!.value.isInitialized && 
-            _videoController!.value.position >= _videoController!.value.duration &&
-            _videoController!.value.duration > Duration.zero) {
-          // Видео закончилось
+        if (!_videoController!.value.isInitialized) return;
+        final pos = _videoController!.value.position;
+        final dur = _videoController!.value.duration;
+        
+        // Способ 1: точное знание длительности
+        if (dur > Duration.zero && pos >= dur - const Duration(milliseconds: 500)) {
+          _playNextEpisode();
+          return;
+        }
+        // Способ 2: HLS без duration — ловим состояние completed
+        if (_videoController!.value.isPlaying && 
+            _videoController!.value.position == _videoController!.value.duration &&
+            dur == Duration.zero) {
+          // Видео могло закончиться (HLS поток иссяк)
           _playNextEpisode();
         }
       });
 
+      // Дополнительно: слушаем событие завершения от Chewie
+      
       if (mounted) {
         setState(() {
           _showInterceptor = false;
@@ -161,7 +205,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
       setState(() {
         _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: $e'), duration: const Duration(seconds: 4))
+      );
     }
   }
 
