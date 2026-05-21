@@ -352,6 +352,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     }
                   },
                   shouldOverrideUrlLoading: (controller, navigationAction) async {
+                    var url = navigationAction.request.url;
+                    if (url == null) return NavigationActionPolicy.ALLOW;
+                    
+                    // Перехват YouTube: не грузим страницу, сразу предлагаем сжать
+                    if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor) {
+                      Future.microtask(() {
+                        if (mounted) {
+                          _interceptedUrl = url.toString();
+                          _currentReferer = url.toString();
+                          setState(() => _showInterceptor = true);
+                        }
+                      });
+                      return NavigationActionPolicy.CANCEL;
+                    }
                     return NavigationActionPolicy.ALLOW;
                   },
                   shouldInterceptRequest: (controller, request) async {
