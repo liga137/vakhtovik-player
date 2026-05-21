@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
 import '../services/api_service.dart';
 
 /// Экран плеера: мультиплатформенный HLS стриминг
@@ -19,6 +20,7 @@ class PlayerScreen extends StatefulWidget {
 
 class _PlayerScreenState extends State<PlayerScreen> {
   late VideoPlayerController _controller;
+  ChewieController? _chewieController;
   bool _isInitialized = false;
 
   @override
@@ -30,9 +32,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _initPlayer() async {
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.hlsUrl));
     await _controller.initialize();
+    
+    _chewieController = ChewieController(
+      videoPlayerController: _controller,
+      autoPlay: true,
+      looping: false,
+      aspectRatio: _controller.value.aspectRatio,
+      allowFullScreen: true,
+      allowMuting: true,
+    );
+
     if (mounted) {
       setState(() => _isInitialized = true);
-      _controller.play();
     }
   }
 
@@ -41,6 +52,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // 1. Убиваем сессию на сервере (Garbage Collector)
     ApiService.stopSession(widget.sessionId).catchError((_) {});
     // 2. Освобождаем память плеера
+    _chewieController?.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -65,11 +77,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ],
       ),
       body: Center(
-        child: _isInitialized
-            ? AspectRatio(
-                aspectRatio: _controller.value.aspectRatio,
-                child: VideoPlayer(_controller),
-              )
+        child: _isInitialized && _chewieController != null
+            ? Chewie(controller: _chewieController!)
             : const CircularProgressIndicator(color: Colors.orange),
       ),
     );

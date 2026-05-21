@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
 import '../services/api_service.dart';
 import '../models/preset.dart';
 
@@ -26,6 +27,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _isLoading = false;
 
   VideoPlayerController? _videoController;
+  ChewieController? _chewieController;
   bool _showPlayer = false;
 
   @override
@@ -51,7 +53,39 @@ class _BrowserScreenState extends State<BrowserScreen> {
   @override
   void dispose() {
     _videoController?.dispose();
+    _chewieController?.dispose();
     super.dispose();
+  }
+
+  // Скрипт для авто-переключения серии (кликает по кнопкам "Следующая серия" на известных сайтах)
+  void _playNextEpisode() {
+    if (webViewController != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Включаю следующую серию...'), duration: Duration(seconds: 2))
+      );
+      webViewController!.evaluateJavascript(source: """
+        (function() {
+          // Seasonvar
+          var svNext = document.querySelector('.pgs-player-next');
+          if (svNext) { svNext.click(); return true; }
+          // Filmix (примерные классы)
+          var fxNext = document.querySelector('.icon-next') || document.querySelector('.next-btn');
+          if (fxNext) { fxNext.click(); return true; }
+          // Любой элемент с текстом "следующая"
+          var elements = document.getElementsByTagName('*');
+          for (var i = 0; i < elements.length; i++) {
+            var text = elements[i].innerText || elements[i].textContent;
+            if (text && text.toLowerCase().includes('следующая') && elements[i].onclick) {
+              elements[i].click();
+              return true;
+            }
+          }
+          return false;
+        })();
+      """);
+      // Закрываем текущий плеер, ждем перехвата новой ссылки
+      _stopPlayer();
+    }
   }
 
   void _startMagic() async {
@@ -65,8 +99,38 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
       // Инициализируем новый контроллер
       _videoController?.dispose();
+      _chewieController?.dispose();
+      
       _videoController = VideoPlayerController.networkUrl(Uri.parse(hlsUrl));
       await _videoController!.initialize();
+
+      _chewieController = ChewieController(
+        videoPlayerController: _videoController!,
+        autoPlay: true,
+        looping: false,
+        aspectRatio: _videoController!.value.aspectRatio,
+        allowFullScreen: true,
+        allowMuting: true,
+        errorBuilder: (context, errorMessage) {
+          return Center(
+            child: Text(
+              errorMessage,
+              style: const TextStyle(color: Colors.white),
+            ),
+          );
+        },
+        customControls: const MaterialControls(),
+      );
+
+      // Слушаем окончание видео для автопереключения
+      _videoController!.addListener(() {
+        if (_videoController!.value.isInitialized && 
+            _videoController!.value.position >= _videoController!.value.duration &&
+            _videoController!.value.duration > Duration.zero) {
+          // Видео закончилось
+          _playNextEpisode();
+        }
+      });
 
       if (mounted) {
         setState(() {
@@ -74,7 +138,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
           _isLoading = false;
           _showPlayer = true;
         });
-        _videoController!.play();
       }
     } catch (e) {
       setState(() {
@@ -85,8 +148,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _stopPlayer() {
+    _chewieController?.pause();
     _videoController?.pause();
+    _chewieController?.dispose();
     _videoController?.dispose();
+    _chewieController = null;
     _videoController = null;
     setState(() {
       _showPlayer = false;
@@ -291,15 +357,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           ),
                           Text('Стриминг: $_selectedQuality', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
                           const Spacer(),
+                          TextButton.icon(
+                            onPressed: _playNextEpisode,
+                            icon: const Icon(Icons.skip_next, color: Colors.orange),
+                            label: const Text('След. серия', style: TextStyle(color: Colors.orange)),
+                          ),
                         ],
                       ),
                     ),
                     Expanded(
-                      child: _videoController != null && _videoController!.value.isInitialized
-                          ? AspectRatio(
-                              aspectRatio: _videoController!.value.aspectRatio,
-                              child: VideoPlayer(_videoController!),
-                            )
+                      child: _chewieController != null && _videoController != null && _videoController!.value.isInitialized
+                          ? Chewie(controller: _chewieController!)
                           : const Center(child: CircularProgressIndicator(color: Colors.orange)),
                     ),
                   ],
