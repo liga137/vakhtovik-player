@@ -258,6 +258,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       }
                     }
 
+                    // Исключаем системные чанки YouTube (googlevideo.com), так как yt-dlp 
+                    // на сервере нужна ссылка на саму страницу, а не на отдельный кусочек видео.
+                    if (uri.contains('googlevideo.com')) {
+                      isMedia = false;
+                    }
+
                     // Перехват сырых медиа-запросов (даже из чужих плееров и iframe)
                     if (method.toUpperCase() == "GET" && isMedia) {
                       
