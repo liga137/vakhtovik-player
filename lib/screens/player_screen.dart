@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:media_kit/media_kit.dart';
-import 'package:media_kit_video/media_kit_video.dart';
+import 'package:video_player/video_player.dart';
 import '../services/api_service.dart';
 
 /// Экран плеера: мультиплатформенный HLS стриминг
@@ -19,22 +18,22 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  late final Player player;
-  late final VideoController controller;
+  late VideoPlayerController _controller;
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    // Инициализация мощного движка
-    player = Player(
-      configuration: const PlayerConfiguration(
-        bufferSize: 32 * 1024 * 1024, // 32 MB буфер для HLS
-      ),
-    );
-    controller = VideoController(player);
+    _initPlayer();
+  }
 
-    // Запуск стрима
-    player.open(Media(widget.hlsUrl));
+  Future<void> _initPlayer() async {
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.hlsUrl));
+    await _controller.initialize();
+    if (mounted) {
+      setState(() => _isInitialized = true);
+      _controller.play();
+    }
   }
 
   @override
@@ -42,7 +41,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // 1. Убиваем сессию на сервере (Garbage Collector)
     ApiService.stopSession(widget.sessionId).catchError((_) {});
     // 2. Освобождаем память плеера
-    player.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -66,10 +65,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ],
       ),
       body: Center(
-        child: Video(
-          controller: controller,
-          controls: AdaptiveVideoControls, // Авто-UI для ПК и сенсора
-        ),
+        child: _isInitialized
+            ? AspectRatio(
+                aspectRatio: _controller.value.aspectRatio,
+                child: VideoPlayer(_controller),
+              )
+            : const CircularProgressIndicator(color: Colors.orange),
       ),
     );
   }

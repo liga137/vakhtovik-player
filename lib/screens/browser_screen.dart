@@ -1,8 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:media_kit/media_kit.dart';
-import 'package:media_kit_video/media_kit_video.dart';
+import 'package:video_player/video_player.dart';
 import '../services/api_service.dart';
 import '../models/preset.dart';
 
@@ -26,15 +25,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
   String _selectedQuality = "240p";
   bool _isLoading = false;
 
-  late final Player player;
-  late final VideoController videoController;
+  VideoPlayerController? _videoController;
   bool _showPlayer = false;
 
   @override
   void initState() {
     super.initState();
-    player = Player();
-    videoController = VideoController(player);
     _loadPresets();
   }
 
@@ -54,7 +50,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   @override
   void dispose() {
-    player.dispose();
+    _videoController?.dispose();
     super.dispose();
   }
 
@@ -67,13 +63,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final result = await ApiService.transcode(url: _interceptedUrl, quality: _selectedQuality, referer: _currentReferer);
       final hlsUrl = ApiService.hlsUrl(result.playlistUrl);
 
-      setState(() {
-        _showInterceptor = false;
-        _isLoading = false;
-        _showPlayer = true;
-      });
+      // Инициализируем новый контроллер
+      _videoController?.dispose();
+      _videoController = VideoPlayerController.networkUrl(Uri.parse(hlsUrl));
+      await _videoController!.initialize();
 
-      player.open(Media(hlsUrl));
+      if (mounted) {
+        setState(() {
+          _showInterceptor = false;
+          _isLoading = false;
+          _showPlayer = true;
+        });
+        _videoController!.play();
+      }
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -83,12 +85,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _stopPlayer() {
-    player.stop();
+    _videoController?.pause();
+    _videoController?.dispose();
+    _videoController = null;
     setState(() {
       _showPlayer = false;
     });
-    // Let's assume we have the session ID saved somewhere or API endpoint to stop
-    // ApiService.stopSession(...)
   }
 
   @override
@@ -293,9 +295,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       ),
                     ),
                     Expanded(
-                      child: Center(
-                        child: Video(controller: videoController),
-                      ),
+                      child: _videoController != null && _videoController!.value.isInitialized
+                          ? AspectRatio(
+                              aspectRatio: _videoController!.value.aspectRatio,
+                              child: VideoPlayer(_videoController!),
+                            )
+                          : const Center(child: CircularProgressIndicator(color: Colors.orange)),
                     ),
                   ],
                 ),
