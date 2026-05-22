@@ -6,6 +6,37 @@ on:
   workflow_dispatch:
 
 jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter 3.24.3
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.3'
+          channel: 'stable'
+          cache: true
+
+      - name: Enable Windows Desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Windows Release
+        run: flutter build windows --release
+
+      - name: Compress Windows Build
+        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath Vakhtovik-Player-Windows.zip
+
+      - name: Upload Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vakhtovik-Player-Windows
+          path: Vakhtovik-Player-Windows.zip
+          retention-days: 30
+
   build-android:
     runs-on: ubuntu-latest
     steps:
@@ -38,35 +69,4 @@ jobs:
         with:
           name: Vakhtovik-Player-Android
           path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 14
-
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Flutter 3.24.3
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.3'
-          channel: 'stable'
-          cache: true
-
-      - name: Enable Windows Desktop
-        run: flutter config --enable-windows-desktop
-
-      - name: Install Flutter dependencies
-        run: flutter pub get
-
-      - name: Build Windows
-        run: flutter build windows --release
-
-      - name: Compress Windows Build
-        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath Vakhtovik-Player-Windows.zip
-
-      - name: Upload Windows
-        uses: actions/upload-artifact@v4
-        with:
-          name: Vakhtovik-Player-Windows
-          path: Vakhtovik-Player-Windows.zip
-          retention-days: 14
+          retention-days: 30
