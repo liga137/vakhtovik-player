@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import '../services/api_service.dart';
 import '../services/filmix_auth.dart';
+import '../services/youtube_hover.dart';
 import '../models/preset.dart';
 
 class BrowserScreen extends StatefulWidget {
@@ -34,6 +35,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _showPlayer = false;
   bool _waitingForNextEpisode = false; // флаг: ждём перехвата новой серии
   bool _onYouTube = false; // флаг: мы на странице YouTube
+  bool _compressMode = false; // Режим «Сжатое» — кнопки на всех видео YouTube
   Duration _lastPosition = Duration.zero; // для детекта конца HLS без duration
 
   @override
@@ -273,6 +275,45 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (isYT != _onYouTube) {
       setState(() => _onYouTube = isYT);
     }
+    // На всех страницах youtube.com показываем переключатель режима
+    if (url.host.contains('youtube.com') && !_onYouTube) {
+      setState(() => _onYouTube = true);
+    } else if (!url.host.contains('youtube.com') && _onYouTube) {
+      setState(() => _onYouTube = false);
+    }
+  }
+
+  void _toggleYouTubeCompressMode() {
+    if (webViewController == null) return;
+    final mode = _compressMode;
+    webViewController!.evaluateJavascript(source: """
+      (function() {
+        if ($mode) {
+          // Добавляем кнопки «▶ Сжать» ко всем ссылкам на видео
+          var links = document.querySelectorAll('a[href*="/watch"]');
+          for (var i = 0; i < links.length; i++) {
+            if (links[i].querySelector('.vakh-compress-btn')) continue;
+            var btn = document.createElement('span');
+            btn.className = 'vakh-compress-btn';
+            btn.innerHTML = '&#9654; Сжать';
+            btn.style.cssText = 'display:inline-block;background:#e53935;color:#fff;padding:3px 10px;border-radius:4px;font:bold 11px sans-serif;cursor:pointer;margin:0 0 0 6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.4);';
+            btn.addEventListener('click', function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              window.location.href = links[i].href;
+            });
+            // Вставляем после названия видео
+            var title = links[i].querySelector('#video-title, .ytd-rich-grid-media, yt-formatted-string');
+            if (title) title.parentElement.appendChild(btn);
+            else links[i].appendChild(btn);
+          }
+        } else {
+          // Убираем все кнопки
+          var btns = document.querySelectorAll('.vakh-compress-btn');
+          for (var j = 0; j < btns.length; j++) btns[j].remove();
+        }
+      })();
+    """);
   }
 
   @override
@@ -328,6 +369,26 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       icon: const Icon(Icons.person, color: Colors.orange),
                       onPressed: () {},
                     ),
+                    // Режим YouTube: «Оригинал» / «Сжатое»
+                    if (_onYouTube)
+                      GestureDetector(
+                        onTap: () {
+                          setState(() => _compressMode = !_compressMode);
+                          _toggleYouTubeCompressMode();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _compressMode ? Colors.orange : const Color(0xFF333333),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: _compressMode ? Colors.orange : Colors.grey, width: 1.5),
+                          ),
+                          child: Text(
+                            _compressMode ? '🔥 Сжатое' : '🔄 Оригинал',
+                            style: TextStyle(color: _compressMode ? Colors.black : Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
                     // Кнопка «Слить куки» — только на Filmix
                     if (urlController.text.contains('filmix'))
                       IconButton(
@@ -369,14 +430,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   onLoadStop: (controller, url) {
                     if (url != null) {
                       urlController.text = url.toString();
-                      // Filmix: инжектим скрипт (балансер + автослив кук если залогинен)
-                      if (url.host.contains('filmix')) {
-                        // Куки НЕ инжектим — WebView сам хранит сессию после ручного входа.
-                        // Если не залогинен — балансер Kodik подставит плеер.
-                        controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
-                      }
-                      // YouTube fallback — если страница загрузилась, глушим и предлагаем сжать
-                      if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
+                       // Filmix: инжектим скрипт (балансер + автослив кук если залогинен)
+                       if (url.host.contains('filmix')) {
+                         // Куки НЕ инжектим — WebView сам хранит сессию после ручного входа.
+                         // Если не залогинен — балансер Kodik подставит плеер.
+                         controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
+                       }
+                       // YouTube: инжектим ховер-кнопку на всех страницах
+                       if (url.host.contains('youtube.com')) {
+                         controller.evaluateJavascript(source: YouTubeHover.getInjectionJS());
+                       }
+                       // YouTube fallback — если страница /watch загрузилась, глушим и предлагаем сжать
+                       if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
                         setState(() {
                           _interceptedUrl = url.toString();
                           _currentReferer = url.toString();
