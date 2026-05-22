@@ -287,6 +287,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
           vids[i].muted = true;
           vids[i].pause();
         }
+        // На Windows WebView2 показывает ссылку внизу при hover даже под Flutter overlay.
+        // Отключаем pointer events у страницы, пока открыт наш плеер.
+        document.documentElement.style.pointerEvents = 'none';
+        if (document.body) document.body.style.pointerEvents = 'none';
       })();
     """);
   }
@@ -310,6 +314,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
         for (var i = 0; i < vids.length; i++) {
           vids[i].muted = false;
         }
+        document.documentElement.style.pointerEvents = '';
+        if (document.body) document.body.style.pointerEvents = '';
       })();
     """);
   }
