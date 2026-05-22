@@ -6,25 +6,20 @@ class FilmixAuth {
   // Олег логинится вручную → копирует строку из alert → вставляет сюда
   static const String filmixCookies = "x-a-key=sinatra; minotaurs=7dqlyhWZNBSZDJ1o1a7%2Fp1s%2BtrHicEV2iA51Fb1h8dc%3D; _ga=GA1.1.1747278366.1779404389; _ga_GYLWSWSZ3C=GS2.1.s1779404389\$o1\$g1\$t1779404510\$j60\$l0\$h0";
 
-  /// Заливает куки в WebView
+  /// Инжектит куки через JS (надёжнее чем CookieManager, работает на всех платформах)
   static Future<void> injectCookies(InAppWebViewController controller, Uri url) async {
     if (filmixCookies == "PLACEHOLDER_COOKIES") return;
-    final cookieManager = CookieManager.instance();
-    final cookies = filmixCookies.split(';');
-    for (final cookie in cookies) {
-      final trimmed = cookie.trim();
-      if (trimmed.isEmpty) continue;
-      final parts = trimmed.split('=');
-      if (parts.length >= 2) {
-        await cookieManager.setCookie(
-          url: WebUri(url.toString()),
-          name: parts[0].trim(),
-          value: parts.sublist(1).join('=').trim(),
-          domain: url.host,
-          path: '/',
-        );
-      }
-    }
+    // Экранируем кавычки для безопасной вставки в JS
+    final safeCookies = filmixCookies.replaceAll("'", "\\'");
+    await controller.evaluateJavascript(source: """
+      (function(){
+        var cookies = '$safeCookies'.split(';');
+        for (var i = 0; i < cookies.length; i++) {
+          var c = cookies[i].trim();
+          if (c) document.cookie = c + '; path=/; domain=.filmix.biz; max-age=31536000';
+        }
+      })();
+    """);
   }
 
   /// JS для инъекции на Filmix

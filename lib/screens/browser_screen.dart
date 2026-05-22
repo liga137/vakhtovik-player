@@ -33,6 +33,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _showPlayer = false;
   bool _waitingForNextEpisode = false; // флаг: ждём перехвата новой серии
   bool _onYouTube = false; // флаг: мы на странице YouTube
+  Duration _lastPosition = Duration.zero; // для детекта конца HLS без duration
 
   @override
   void initState() {
@@ -179,16 +180,23 @@ class _BrowserScreenState extends State<BrowserScreen> {
         final dur = _videoController!.value.duration;
         
         // Способ 1: точное знание длительности
-        if (dur > Duration.zero && pos >= dur - const Duration(milliseconds: 500)) {
+        if (dur > Duration.zero && pos >= dur - const Duration(seconds: 1) && pos > Duration.zero) {
           _playNextEpisode();
           return;
         }
-        // Способ 2: HLS без duration — ловим состояние completed
-        if (_videoController!.value.isPlaying && 
-            _videoController!.value.position == _videoController!.value.duration &&
-            dur == Duration.zero) {
-          // Видео могло закончиться (HLS поток иссяк)
-          _playNextEpisode();
+        // Способ 2: HLS без duration — ждём что видео играло хотя бы 10 сек и позиция застыла
+        if (dur == Duration.zero && _videoController!.value.isPlaying) {
+          _lastPosition = pos;
+          // Проверим через секунду — если позиция не изменилась, считаем что конец
+          Future.delayed(const Duration(seconds: 2), () {
+            if (_videoController != null && 
+                _videoController!.value.isInitialized &&
+                _videoController!.value.duration == Duration.zero &&
+                _videoController!.value.position == _lastPosition &&
+                _lastPosition > const Duration(seconds: 5)) {
+              _playNextEpisode();
+            }
+          });
         }
       });
 
@@ -271,6 +279,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 child: Row(
                   children: [
                     IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      tooltip: 'Назад',
+                      onPressed: () {
+                        webViewController?.goBack();
+                      },
+                    ),
+                    IconButton(
                       icon: const Icon(Icons.home, color: Colors.white),
                       onPressed: () {
                         webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri("https://seasonvar.ru/")));
@@ -339,10 +354,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   onLoadStop: (controller, url) {
                     if (url != null) {
                       urlController.text = url.toString();
-                      // Заливаем куки Filmix (если прописаны) и инжектим скрипты
+                      // Заливаем куки Filmix и инжектим скрипты
                       if (url.host.contains('filmix')) {
                         FilmixAuth.injectCookies(controller, url);
                         controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
+                      }
+                      // YouTube: если страница всё же загрузилась — сразу предлагаем сжать
+                      if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
+                        setState(() {
+                          _interceptedUrl = url.toString();
+                          _currentReferer = url.toString();
+                          _showInterceptor = true;
+                        });
+                        // Глушим YouTube плеер чтобы не орал фоном
+                        controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
                       }
                       // Детектим YouTube
                       final isYT = url.host.contains('youtube.com') && url.path.contains('/watch');
