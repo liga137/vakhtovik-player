@@ -16,7 +16,7 @@ class FilmixAuth {
         var cookies = '$safeCookies'.split(';');
         for (var i = 0; i < cookies.length; i++) {
           var c = cookies[i].trim();
-          if (c) document.cookie = c + '; path=/; domain=.filmix.biz; max-age=31536000';
+          if (c) document.cookie = c + '; path=/; max-age=31536000';
         }
       })();
     """);
