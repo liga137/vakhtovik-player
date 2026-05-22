@@ -92,24 +92,31 @@ class _BrowserScreenState extends State<BrowserScreen> {
     // Инжектим клик по кнопке «Следующая серия»
     webViewController!.evaluateJavascript(source: """
       (function() {
-        // ===== SEASONVAR: плейлист #htmlPlayer_playlist =====
-        var playlist = document.querySelector('#htmlPlayer_playlist');
-        if (playlist) {
-          var items = playlist.querySelectorAll('li, div, a, span');
-          for (var i = 0; i < items.length; i++) {
-            var cls = items[i].className || '';
-            // Ищем активный/текущий эпизод
-            if (cls.includes('active') || cls.includes('current') || cls.includes('playing') || cls.includes('sel')) {
-              if (i + 1 < items.length) {
-                items[i + 1].click();
-                return 'seasonvar-playlist-next';
-              }
+        // ===== SEASONVAR v2: ищем dot (жёлтая точка = текущая серия) =====
+        // Seasonvar рисует список серий как <a> с точкой-маркером внутри
+        var allLinks = document.querySelectorAll('#htmlPlayer_playlist a, .playlists-videos a, .serial-series-item a');
+        for (var i = 0; i < allLinks.length; i++) {
+          // Текущая серия содержит точку (dot) или имеет особый стиль
+          var hasDot = allLinks[i].querySelector('span[style*="background"], .dot, .active-dot') !== null;
+          var isActive = (allLinks[i].className || '').includes('active') ||
+                         (allLinks[i].parentElement && (allLinks[i].parentElement.className || '').includes('active'));
+          if (hasDot || isActive) {
+            if (i + 1 < allLinks.length) {
+              allLinks[i + 1].click();
+              return 'seasonvar-dot-next';
             }
           }
-          // Если не нашли активный — просто кликаем первый (сброс)
-          if (items.length > 0) {
-            items[0].click();
-            return 'seasonvar-playlist-first';
+        }
+
+        // ===== SEASONVAR fallback: ищем по li с маркером =====
+        var playlist = document.querySelector('#htmlPlayer_playlist');
+        if (playlist) {
+          var items = playlist.querySelectorAll('li, a');
+          for (var i = 0; i < items.length; i++) {
+            var cls = items[i].className || '';
+            if (cls.includes('active') || cls.includes('current') || cls.includes('sel')) {
+              if (i + 1 < items.length) { items[i + 1].click(); return 'seasonvar-list-next'; }
+            }
           }
         }
         
@@ -357,8 +364,29 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       icon: const Icon(Icons.person, color: Colors.orange),
                       onPressed: () {},
                     ),
-                    // Режим YouTube: «Оригинал» / «Сжатое»
-                    if (_onYouTube)
+                    // YouTube: кнопки «Сжать» + «Оригинал/Сжатое» в хедере
+                    if (_onYouTube) ...[
+                      // Кнопка «Сжать видео» — рядом с адресной строкой
+                      GestureDetector(
+                        onTap: _compressYouTube,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade700,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.compress, color: Colors.white, size: 14),
+                              SizedBox(width: 4),
+                              Text('Сжать', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      // Переключатель «Оригинал/Сжатое» (режим наложения кнопок на превью)
                       GestureDetector(
                         onTap: () {
                           setState(() => _compressMode = !_compressMode);
@@ -377,6 +405,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           ),
                         ),
                       ),
+                    ],
                     // Кнопка «Слить куки» — только на Filmix
                     if (urlController.text.contains('filmix'))
                       IconButton(
@@ -429,6 +458,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                        }
                        // YouTube fallback — если страница /watch загрузилась, глушим и предлагаем сжать
                        if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
+                        controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
                         setState(() {
                           _interceptedUrl = url.toString();
                           _currentReferer = url.toString();
@@ -549,39 +579,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
             ],
           ),
 
-          // YouTube FAB: большая плавающая кнопка поверх WebView
-          if (_onYouTube && !_showInterceptor && !_showPlayer)
-            Positioned(
-              bottom: 80,
-              right: 16,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Кнопка сжать
-                  FloatingActionButton.extended(
-                    heroTag: 'youtube',
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                    icon: const Icon(Icons.compress),
-                    label: const Text('Сжать видео', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onPressed: _compressYouTube,
-                  ),
-                  const SizedBox(height: 8),
-                  // Подсказка
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'YouTube не перехватывается авто — нажми сюда',
-                      style: TextStyle(color: Colors.white54, fontSize: 10),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          // YouTube FAB убран — кнопка «Сжать» теперь в хедере
 
           // Interceptor Overlay
           if (_showInterceptor)
@@ -635,7 +633,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         Expanded(
                           flex: 1,
                           child: OutlinedButton(
-                            onPressed: () => setState(() => _showInterceptor = false),
+                            onPressed: () {
+                              setState(() {
+                                _showInterceptor = false;
+                                _interceptedAlready = false;
+                              });
+                              // Возвращаем звук WebView — пользователь выбрал оригинал
+                              webViewController?.evaluateJavascript(source:
+                                "document.querySelectorAll('video,audio').forEach(function(e){e.muted=false;});");
+                            },
                             style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.grey)),
                             child: const Text('Оригинал'),
                           ),
@@ -692,15 +698,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         ),
                       ],
                     ),
-                    // Аварийный таймер + буфер: показываем если HLS без duration
-                    if (_videoController != null && _videoController!.value.isInitialized && 
-                        _videoController!.value.duration == Duration.zero)
-                      Positioned(
-                        bottom: 40,
-                        left: 20,
-                        right: 20,
-                        child: _MiniProgressOverlay(controller: _videoController!),
-                      ),
+                    // _MiniProgressOverlay убран — Chewie уже показывает время снизу
                   ],
                 ),
               ),
@@ -711,8 +709,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 }
 
-/// Аварийный индикатор времени и буфера для HLS без duration
-class _MiniProgressOverlay extends StatefulWidget {
+// _MiniProgressOverlay удалён — Chewie показывает время в своих контролах
+// (виджет существовал для HLS без duration, но создавал дублирующий таймер)
+class _MiniProgressOverlay extends StatefulWidget { // оставлен для совместимости на случай отката
   final VideoPlayerController controller;
   const _MiniProgressOverlay({required this.controller});
 
