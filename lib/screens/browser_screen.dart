@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -603,41 +604,135 @@ class _BrowserScreenState extends State<BrowserScreen> {
               ),
             ),
 
-          // Native Player Screen
+           // Native Player Screen
           if (_showPlayer)
             Positioned.fill(
               child: Container(
                 color: Colors.black,
-                child: Column(
+                child: Stack(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.only(top: 40, left: 10, right: 10, bottom: 10),
-                      color: Colors.black87,
-                      child: Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.arrow_back, color: Colors.white),
-                            onPressed: _stopPlayer,
+                    // Chewie плеер
+                    Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.only(top: 40, left: 10, right: 10, bottom: 10),
+                          color: Colors.black87,
+                          child: Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                                onPressed: _stopPlayer,
+                              ),
+                              Text('Стриминг: $_selectedQuality', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
+                              const Spacer(),
+                              TextButton.icon(
+                                onPressed: _playNextEpisode,
+                                icon: const Icon(Icons.skip_next, color: Colors.orange),
+                                label: const Text('След. серия', style: TextStyle(color: Colors.orange)),
+                              ),
+                            ],
                           ),
-                          Text('Стриминг: $_selectedQuality', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
-                          const Spacer(),
-                          TextButton.icon(
-                            onPressed: _playNextEpisode,
-                            icon: const Icon(Icons.skip_next, color: Colors.orange),
-                            label: const Text('След. серия', style: TextStyle(color: Colors.orange)),
-                          ),
-                        ],
+                        ),
+                        Expanded(
+                          child: _chewieController != null && _videoController != null && _videoController!.value.isInitialized
+                              ? Chewie(controller: _chewieController!)
+                              : const Center(child: CircularProgressIndicator(color: Colors.orange)),
+                        ),
+                      ],
+                    ),
+                    // Аварийный таймер + буфер: показываем если HLS без duration
+                    if (_videoController != null && _videoController!.value.isInitialized && 
+                        _videoController!.value.duration == Duration.zero)
+                      Positioned(
+                        bottom: 40,
+                        left: 20,
+                        right: 20,
+                        child: _MiniProgressOverlay(controller: _videoController!),
                       ),
-                    ),
-                    Expanded(
-                      child: _chewieController != null && _videoController != null && _videoController!.value.isInitialized
-                          ? Chewie(controller: _chewieController!)
-                          : const Center(child: CircularProgressIndicator(color: Colors.orange)),
-                    ),
                   ],
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Аварийный индикатор времени и буфера для HLS без duration
+class _MiniProgressOverlay extends StatefulWidget {
+  final VideoPlayerController controller;
+  const _MiniProgressOverlay({required this.controller});
+
+  @override
+  State<_MiniProgressOverlay> createState() => _MiniProgressOverlayState();
+}
+
+class _MiniProgressOverlayState extends State<_MiniProgressOverlay> {
+  late final Timer _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_tick);
+    // Принудительный тик каждые 500мс — HLS без duration не дёргает listener
+    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _tick());
+  }
+
+  void _tick() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    widget.controller.removeListener(_tick);
+    super.dispose();
+  }
+
+  String _fmt(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60);
+    final s = d.inSeconds.remainder(60);
+    return h > 0 ? '${h}h ${m}m' : '${m}:${s.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pos = widget.controller.value.position;
+    final buf = widget.controller.value.buffered.isNotEmpty 
+        ? widget.controller.value.buffered.last.end - pos 
+        : Duration.zero;
+    final buffering = widget.controller.value.isBuffering;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black87,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.withOpacity(0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.timer, color: Colors.orange, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            _fmt(pos),
+            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+          if (buffering) ...[
+            const SizedBox(width: 8),
+            const SizedBox(
+              width: 14, height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+            ),
+          ],
+          const SizedBox(width: 8),
+          Text(
+            buf > Duration.zero ? '(буфер ${_fmt(buf)})' : '(длит. неизвестна)',
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
         ],
       ),
     );
