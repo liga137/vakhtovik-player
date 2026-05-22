@@ -264,6 +264,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() => _showInterceptor = true);
   }
 
+  void _updateYouTubeState(Uri url) {
+    final isYT = url.host.contains('youtube.com') && url.path.contains('/watch');
+    if (isYT != _onYouTube) {
+      setState(() => _onYouTube = isYT);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -342,8 +349,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   initialSettings: InAppWebViewSettings(
                     useShouldOverrideUrlLoading: true,
                     useShouldInterceptRequest: true,
+                    useOnLoadResource: true,
                     mediaPlaybackRequiresUserGesture: false,
-                    domStorageEnabled: true, // Включаем кэш и локальное хранилище для ускорения загрузки
+                    domStorageEnabled: true,
                     databaseEnabled: true,
                     javaScriptEnabled: true,
                     transparentBackground: true,
@@ -354,25 +362,36 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   onLoadStop: (controller, url) {
                     if (url != null) {
                       urlController.text = url.toString();
-                      // Заливаем куки Filmix и инжектим скрипты
+                      // Filmix: куки + скрипты
                       if (url.host.contains('filmix')) {
                         FilmixAuth.injectCookies(controller, url);
                         controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
                       }
-                      // YouTube: если страница всё же загрузилась — сразу предлагаем сжать
+                      // YouTube fallback — если страница загрузилась, глушим и предлагаем сжать
+                      if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
+                        setState(() {
+                          _interceptedUrl = url.toString();
+                          _currentReferer = url.toString();
+                          _showInterceptor = true;
+                          _onYouTube = true;
+                        });
+                        controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
+                      }
+                      _updateYouTubeState(url);
+                    }
+                  },
+                  onUpdateVisitedHistory: (controller, url, isReload) {
+                    // YouTube: ловим pushState-навигацию (YouTube SPA)
+                    if (url != null) {
+                      urlController.text = url.toString();
+                      _updateYouTubeState(url);
                       if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
                         setState(() {
                           _interceptedUrl = url.toString();
                           _currentReferer = url.toString();
                           _showInterceptor = true;
                         });
-                        // Глушим YouTube плеер чтобы не орал фоном
                         controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
-                      }
-                      // Детектим YouTube
-                      final isYT = url.host.contains('youtube.com') && url.path.contains('/watch');
-                      if (isYT != _onYouTube) {
-                        setState(() => _onYouTube = isYT);
                       }
                     }
                   },
