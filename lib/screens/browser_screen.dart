@@ -76,40 +76,43 @@ class _BrowserScreenState extends State<BrowserScreen> {
     // Инжектим клик по кнопке «Следующая серия»
     webViewController!.evaluateJavascript(source: """
       (function() {
-        // Seasonvar: все известные селекторы кнопки «следующая»
-        var sel = document.querySelector(
-          '.pgs-player-next, .pgs-next-btn, .pgs_next, .pgs-player-controls .next, ' +
-          '.player-next, .next-episode, .next_episode, a[title*="След"], a[title*="след"], ' +
-          '.next-link, .nextbutton, #next, .pnext, .plnext, .vjs-next-button, ' +
-          '[data-action="next"], [data-role="next"], .plyr__controls__item--next'
-        );
-        if (sel) { sel.click(); return 'seasonvar-click'; }
-        
-        // Сезонвар v2: кнопка может быть внутри iframe плеера
-        try {
-          var iframes = document.querySelectorAll('iframe');
-          for (var i = 0; i < iframes.length; i++) {
-            try {
-              var doc = iframes[i].contentDocument || iframes[i].contentWindow.document;
-              if (!doc) continue;
-              var btn = doc.querySelector('.pgs-player-next, .next, [title*="след"], [title*="След"]');
-              if (btn) { btn.click(); return 'iframe-click'; }
-            } catch(e) { continue; }
+        // ===== SEASONVAR: плейлист #htmlPlayer_playlist =====
+        var playlist = document.querySelector('#htmlPlayer_playlist');
+        if (playlist) {
+          var items = playlist.querySelectorAll('li, div, a, span');
+          for (var i = 0; i < items.length; i++) {
+            var cls = items[i].className || '';
+            // Ищем активный/текущий эпизод
+            if (cls.includes('active') || cls.includes('current') || cls.includes('playing') || cls.includes('sel')) {
+              if (i + 1 < items.length) {
+                items[i + 1].click();
+                return 'seasonvar-playlist-next';
+              }
+            }
           }
-        } catch(e) {}
+          // Если не нашли активный — просто кликаем первый (сброс)
+          if (items.length > 0) {
+            items[0].click();
+            return 'seasonvar-playlist-first';
+          }
+        }
         
-        // Filmix
-        var fx = document.querySelector('.icon-next, .next-btn, .next-video, a[id*="next"], .vnext');
+        // ===== Резерв: поиск кнопок «следующая» =====
+        var sel = document.querySelector('.pgs-player-next, .pgs-next-btn, .pgs_next, .player-next, .next-episode, [title*="След"], [title*="след"], .next-link, #next, .pnext, .plnext, [data-action="next"]');
+        if (sel) { sel.click(); return 'button-click'; }
+        
+        // ===== Filmix =====
+        var fx = document.querySelector('.icon-next, .next-btn, .next-video, .vnext');
         if (fx) { fx.click(); return 'filmix-click'; }
         
-        // Универсальный поиск по тексту (только видимые элементы)
+        // ===== Универсальный поиск по тексту =====
         var all = document.querySelectorAll('a, button, span, div');
         for (var i = 0; i < all.length; i++) {
           if (all[i].offsetParent === null) continue;
           var t = (all[i].textContent || '').toLowerCase();
           if ((t.includes('следующая') || t.includes('след.') || t.includes('next')) && t.length < 30) {
             all[i].click();
-            return 'text-click:' + t.substring(0,20);
+            return 'text-click';
           }
         }
         return 'not-found';
@@ -362,22 +365,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   onLoadStop: (controller, url) {
                     if (url != null) {
                       urlController.text = url.toString();
-                      // Filmix: куки + скрипты
+                      // Filmix: инжектим скрипт (балансер + автослив кук если залогинен)
                       if (url.host.contains('filmix')) {
-                        controller.evaluateJavascript(source: """
-                          if (!sessionStorage.getItem('vakh_cookies_set')) {
-                            sessionStorage.setItem('vakh_cookies_set', '1');
-                          }
-                        """);
-                        // Только первый заход — ставим куки и перезагружаем
-                        FilmixAuth.injectCookies(controller, url).then((_) {
-                          controller.evaluateJavascript(source: """
-                            if (sessionStorage.getItem('vakh_cookies_set') === '1') {
-                              sessionStorage.setItem('vakh_cookies_set', '2');
-                              location.reload();
-                            }
-                          """);
-                        });
+                        // Куки НЕ инжектим — WebView сам хранит сессию после ручного входа.
+                        // Если не залогинен — балансер Kodik подставит плеер.
                         controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
                       }
                       // YouTube fallback — если страница загрузилась, глушим и предлагаем сжать
