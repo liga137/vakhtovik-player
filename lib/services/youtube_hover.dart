@@ -1,46 +1,42 @@
-/// JS для кнопки «Сжать» при наведении на видео YouTube
+/// JS для YouTube: ховер-кнопка + режим «Сжатое»
 class YouTubeHover {
   static String getInjectionJS() {
-    return r"""
+    return """
 (function() {
-  if (document.getElementById('vakh-hover-style')) return;
+  if (document.getElementById('vakh-yt-style')) return;
   
-  // Стили
   var style = document.createElement('style');
-  style.id = 'vakh-hover-style';
+  style.id = 'vakh-yt-style';
   style.textContent = 
-    '#vakh-hover-btn { position:fixed; z-index:2147483646; background:#e53935; color:#fff; padding:6px 14px; border-radius:6px; font:bold 13px sans-serif; cursor:pointer; display:none; white-space:nowrap; box-shadow:0 2px 12px rgba(0,0,0,0.6); user-select:none; letter-spacing:0.5px; }' +
-    '#vakh-hover-btn:hover { background:#c62828; transform:scale(1.05); }';
+    '#vakh-hover-btn{position:fixed;z-index:2147483646;background:#e53935;color:#fff;padding:6px 14px;border-radius:6px;font:bold 13px sans-serif;cursor:pointer;display:none;white-space:nowrap;box-shadow:0 2px 12px rgba(0,0,0,0.6);user-select:none}' +
+    '#vakh-hover-btn:hover{background:#c62828;transform:scale(1.05)}' +
+    '.vakh-btn{display:inline-block;background:#e53935;color:#fff;padding:3px 10px;border-radius:4px;font:bold 11px sans-serif;cursor:pointer;margin-left:6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.4)}' +
+    '.vakh-btn:hover{background:#c62828}';
   document.head.appendChild(style);
   
-  // Кнопка
-  var btn = document.createElement('div');
-  btn.id = 'vakh-hover-btn';
-  btn.innerHTML = '&#9654; Сжать';
-  btn.onclick = function(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    var url = btn.dataset.url;
-    if (url) {
-      // Навигация — наш shouldOverrideUrlLoading перехватит
-      window.location.href = url;
-    }
+  // Ховер-кнопка
+  var hoverBtn = document.createElement('div');
+  hoverBtn.id = 'vakh-hover-btn';
+  hoverBtn.innerHTML = '&#9654; Cжать';
+  hoverBtn.onclick = function(e) {
+    e.preventDefault(); e.stopPropagation();
+    var url = hoverBtn.dataset.url;
+    if (url) window.location.href = url;
   };
-  btn.onmouseover = function() { btn.style.display = 'block'; };
-  document.body.appendChild(btn);
+  hoverBtn.onmouseover = function() { hoverBtn.style.display = 'block'; };
+  document.body.appendChild(hoverBtn);
   
-  // Отслеживаем наведение на любые ссылки с /watch
-  var currentUrl = '';
+  var curUrl = '';
   document.addEventListener('mouseover', function(e) {
     var link = e.target.closest('a[href*="/watch"]');
     if (link && link.href) {
-      var href = link.href.split('&')[0]; // чистим от лишних параметров
-      if (href !== currentUrl) {
-        currentUrl = href;
-        btn.dataset.url = href;
-        btn.style.display = 'block';
-        btn.style.top = Math.min(e.clientY - 40, window.innerHeight - 50) + 'px';
-        btn.style.left = Math.min(e.clientX + 15, window.innerWidth - 120) + 'px';
+      var href = link.href.split('&')[0];
+      if (href !== curUrl) {
+        curUrl = href;
+        hoverBtn.dataset.url = href;
+        hoverBtn.style.display = 'block';
+        hoverBtn.style.top = Math.min(e.clientY - 40, window.innerHeight - 50) + 'px';
+        hoverBtn.style.left = Math.min(e.clientX + 15, window.innerWidth - 120) + 'px';
       }
     }
   }, true);
@@ -49,19 +45,36 @@ class YouTubeHover {
     var rel = e.relatedTarget;
     if (!rel || (!rel.closest('a[href*="/watch"]') && rel.id !== 'vakh-hover-btn')) {
       setTimeout(function() {
-        if (!btn.matches(':hover')) {
-          btn.style.display = 'none';
-          currentUrl = '';
-        }
+        if (!hoverBtn.matches(':hover')) { hoverBtn.style.display = 'none'; curUrl = ''; }
       }, 200);
     }
   }, true);
   
-  // Дополнительно: прячем кнопку при скролле
-  window.addEventListener('scroll', function() {
-    btn.style.display = 'none';
-    currentUrl = '';
-  });
+  window.addEventListener('scroll', function() { hoverBtn.style.display = 'none'; curUrl = ''; });
+  
+  // Функция переключения режима «Сжатое» (вызывается из Dart)
+  window.vakhCompressMode = function(on) {
+    if (on) {
+      var links = document.querySelectorAll('a[href*="/watch"]:not([href*="list="]):not([href*="&list="])');
+      for (var i = 0; i < links.length; i++) {
+        if (links[i].querySelector('.vakh-btn')) continue;
+        var btn = document.createElement('span');
+        btn.className = 'vakh-btn';
+        btn.textContent = '\\u25B6 Cжать';
+        (function(link) {
+          btn.addEventListener('click', function(e) {
+            e.preventDefault(); e.stopPropagation();
+            window.location.href = link.href;
+          });
+        })(links[i]);
+        links[i].style.position = 'relative';
+        links[i].appendChild(btn);
+      }
+    } else {
+      var btns = document.querySelectorAll('.vakh-btn');
+      for (var j = 0; j < btns.length; j++) btns[j].remove();
+    }
+  };
 })();
 """;
   }

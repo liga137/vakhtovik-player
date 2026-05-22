@@ -45,16 +45,29 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   Future<void> _loadPresets() async {
+    // Жёсткий фолбэк — если сервер не отвечает, качество всё равно будет
+    const fallback = [
+      Preset(id: '480p', label: '480p'),
+      Preset(id: '360p', label: '360p'),
+      Preset(id: '240p', label: '240p'),
+      Preset(id: '144p', label: '144p'),
+    ];
     try {
-      final presets = await ApiService.getPresets();
+      final presets = await ApiService.getPresets().timeout(const Duration(seconds: 5));
       if (mounted) {
         setState(() {
-          _presets = presets;
-          if (presets.isNotEmpty) _selectedQuality = presets.first.id;
+          _presets = presets.isNotEmpty ? presets : fallback;
+          if (_presets.isNotEmpty) _selectedQuality = _presets.first.id;
         });
       }
     } catch (e) {
-      print("Failed to load presets: $e");
+      print("Presets API failed, using fallback: $e");
+      if (mounted) {
+        setState(() {
+          _presets = fallback;
+          _selectedQuality = '240p';
+        });
+      }
     }
   }
 
@@ -271,49 +284,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _updateYouTubeState(Uri url) {
-    final isYT = url.host.contains('youtube.com') && url.path.contains('/watch');
-    if (isYT != _onYouTube) {
-      setState(() => _onYouTube = isYT);
-    }
-    // На всех страницах youtube.com показываем переключатель режима
-    if (url.host.contains('youtube.com') && !_onYouTube) {
-      setState(() => _onYouTube = true);
-    } else if (!url.host.contains('youtube.com') && _onYouTube) {
-      setState(() => _onYouTube = false);
-    }
+    final onYT = url.host.contains('youtube.com');
+    if (onYT != _onYouTube) setState(() => _onYouTube = onYT);
   }
 
   void _toggleYouTubeCompressMode() {
     if (webViewController == null) return;
     final mode = _compressMode;
-    webViewController!.evaluateJavascript(source: """
-      (function() {
-        if ($mode) {
-          // Добавляем кнопки «▶ Сжать» ко всем ссылкам на видео
-          var links = document.querySelectorAll('a[href*="/watch"]');
-          for (var i = 0; i < links.length; i++) {
-            if (links[i].querySelector('.vakh-compress-btn')) continue;
-            var btn = document.createElement('span');
-            btn.className = 'vakh-compress-btn';
-            btn.innerHTML = '&#9654; Сжать';
-            btn.style.cssText = 'display:inline-block;background:#e53935;color:#fff;padding:3px 10px;border-radius:4px;font:bold 11px sans-serif;cursor:pointer;margin:0 0 0 6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.4);';
-            btn.addEventListener('click', function(e) {
-              e.preventDefault();
-              e.stopPropagation();
-              window.location.href = links[i].href;
-            });
-            // Вставляем после названия видео
-            var title = links[i].querySelector('#video-title, .ytd-rich-grid-media, yt-formatted-string');
-            if (title) title.parentElement.appendChild(btn);
-            else links[i].appendChild(btn);
-          }
-        } else {
-          // Убираем все кнопки
-          var btns = document.querySelectorAll('.vakh-compress-btn');
-          for (var j = 0; j < btns.length; j++) btns[j].remove();
-        }
-      })();
-    """);
+    webViewController!.evaluateJavascript(source: "window.vakhCompressMode(" + (mode ? "true" : "false") + ");");
   }
 
   @override
@@ -471,8 +449,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     var url = navigationAction.request.url;
                     if (url == null) return NavigationActionPolicy.ALLOW;
                     
-                    // Перехват YouTube: не грузим страницу, сразу предлагаем сжать
-                    if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor) {
+                    // YouTube: не грузим страницу — грузим about:blank и показываем шторку
+                    if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
                       Future.microtask(() {
                         if (mounted) {
                           _interceptedUrl = url.toString();
@@ -480,6 +458,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           setState(() => _showInterceptor = true);
                         }
                       });
+                      // Возвращаем ALLOW но тут же редиректим на blank чтобы не грузить ютуб
+                      controller.loadUrl(urlRequest: URLRequest(url: WebUri("about:blank")));
                       return NavigationActionPolicy.CANCEL;
                     }
                     return NavigationActionPolicy.ALLOW;
