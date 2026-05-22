@@ -21,7 +21,9 @@ class YouTubeHover {
   hoverBtn.onclick = function(e) {
     e.preventDefault(); e.stopPropagation();
     var url = hoverBtn.dataset.url;
-    if (url) window.location.href = url;
+    if (url && window.flutter_inappwebview) {
+      window.flutter_inappwebview.callHandler('compressUrl', url);
+    }
   };
   hoverBtn.onmouseover = function() { hoverBtn.style.display = 'block'; };
   document.body.appendChild(hoverBtn);
@@ -64,7 +66,9 @@ class YouTubeHover {
         (function(link) {
           btn.addEventListener('click', function(e) {
             e.preventDefault(); e.stopPropagation();
-            window.location.href = link.href;
+            if (window.flutter_inappwebview) {
+              window.flutter_inappwebview.callHandler('compressUrl', link.href.split('&')[0]);
+            }
           });
         })(links[i]);
         links[i].style.position = 'relative';

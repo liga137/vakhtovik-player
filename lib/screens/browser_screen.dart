@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter/services.dart';
@@ -38,6 +39,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
   Duration _lastPosition = Duration.zero; // для детекта конца HLS без duration
   bool _endReached = false; // защита от множественных вызовов _playNextEpisode
   bool _interceptedAlready = false; // защита от повторного перехвата одного URL
+  bool _scanningSeasonvar = false;
+  List<Map<String, String>> _seasonvarEpisodes = [];
+  int _seasonvarIndex = 0;
 
   @override
   void initState() {
@@ -81,6 +85,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
   // Скрипт для авто-переключения серии — НЕ закрывает плеер, ждёт новый перехват
   void _playNextEpisode() {
     if (webViewController == null) return;
+
+    // Правильный режим Seasonvar: следующая серия берётся из собранного списка прямых ссылок
+    if (_seasonvarEpisodes.isNotEmpty && _seasonvarIndex + 1 < _seasonvarEpisodes.length) {
+      _seasonvarIndex++;
+      final ep = _seasonvarEpisodes[_seasonvarIndex];
+      _interceptedUrl = ep['url'] ?? '';
+      _currentReferer = urlController.text;
+      _interceptedAlready = false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Серия ${_seasonvarIndex + 1}: ${ep['title'] ?? ''}'), duration: const Duration(seconds: 2)),
+      );
+      _startMagic();
+      return;
+    }
     
     // Ставим флаг: следующие перехваченные URL обрабатываем автоматически
     _waitingForNextEpisode = true;
@@ -90,37 +108,31 @@ class _BrowserScreenState extends State<BrowserScreen> {
     );
     
     // Инжектим клик по кнопке «Следующая серия»
+    // Перед кликом читаем индекс текущей серии (записан трекером при загрузке страницы)
     webViewController!.evaluateJavascript(source: """
       (function() {
-        // ===== SEASONVAR v2: ищем dot (жёлтая точка = текущая серия) =====
-        // Seasonvar рисует список серий как <a> с точкой-маркером внутри
-        var allLinks = document.querySelectorAll('#htmlPlayer_playlist a, .playlists-videos a, .serial-series-item a');
-        for (var i = 0; i < allLinks.length; i++) {
-          // Текущая серия содержит точку (dot) или имеет особый стиль
-          var hasDot = allLinks[i].querySelector('span[style*="background"], .dot, .active-dot') !== null;
-          var isActive = (allLinks[i].className || '').includes('active') ||
-                         (allLinks[i].parentElement && (allLinks[i].parentElement.className || '').includes('active'));
-          if (hasDot || isActive) {
-            if (i + 1 < allLinks.length) {
-              allLinks[i + 1].click();
-              return 'seasonvar-dot-next';
-            }
-          }
+        var idx = (typeof window.__vakh_idx !== 'undefined') ? window.__vakh_idx : -1;
+        var items = document.querySelectorAll('#htmlPlayer_playlist > *');
+        
+        // Если трекер знает индекс — кликаем следующий
+        if (idx >= 0 && idx + 1 < items.length) {
+          window.__vakh_idx = idx + 1;
+          items[idx + 1].click();
+          return 'tracker-next:' + (idx+1);
         }
-
-        // ===== SEASONVAR fallback: ищем по li с маркером =====
-        var playlist = document.querySelector('#htmlPlayer_playlist');
-        if (playlist) {
-          var items = playlist.querySelectorAll('li, a');
-          for (var i = 0; i < items.length; i++) {
-            var cls = items[i].className || '';
-            if (cls.includes('active') || cls.includes('current') || cls.includes('sel')) {
-              if (i + 1 < items.length) { items[i + 1].click(); return 'seasonvar-list-next'; }
-            }
+        
+        // Fallback: ищем активный элемент по жёлтой точке (span с background)
+        for (var i = 0; i < items.length; i++) {
+          var dot = items[i].querySelector('span[style*="background"], i[style*="background"], .dot, .active, [class*="active"]');
+          var isCurrent = dot !== null || (items[i].className && (items[i].className.includes('active') || items[i].className.includes('current')));
+          if (isCurrent && i + 1 < items.length) {
+            window.__vakh_idx = i + 1;
+            items[i + 1].click();
+            return 'dot-next:' + (i+1);
           }
         }
         
-        // ===== Резерв: поиск кнопок «следующая» =====
+        // ===== Резерв: кнопки по селектору =====
         var sel = document.querySelector('.pgs-player-next, .pgs-next-btn, .pgs_next, .player-next, .next-episode, [title*="След"], [title*="след"], .next-link, #next, .pnext, .plnext, [data-action="next"]');
         if (sel) { sel.click(); return 'button-click'; }
         
@@ -138,7 +150,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
             return 'text-click';
           }
         }
-        return 'not-found';
+        return 'not-found:idx=' + idx + ',items=' + items.length;
       })();
     """);
     
@@ -169,6 +181,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
       
       _videoController = VideoPlayerController.networkUrl(Uri.parse(hlsUrl));
       await _videoController!.initialize();
+      // Всегда начинаем с начала (HLS event может стартовать с live-edge)
+      await _videoController!.seekTo(Duration.zero);
 
       // Ждём первый кадр чтобы получить реальный aspectRatio
       await Future.delayed(const Duration(milliseconds: 500));
@@ -294,10 +308,63 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _compressYouTube() {
     final ytUrl = urlController.text;
     if (!ytUrl.contains('youtube.com/watch')) return;
-    
-    _interceptedUrl = ytUrl;
-    _currentReferer = ytUrl;
-    setState(() => _showInterceptor = true);
+
+    _openCompressedUrl(ytUrl, referer: 'https://www.youtube.com/');
+  }
+
+  void _openCompressedUrl(String url, {String? referer}) {
+    if (url.trim().isEmpty) return;
+    _interceptedUrl = url.trim();
+    _currentReferer = referer ?? urlController.text;
+    _interceptedAlready = true;
+    _muteWebView();
+    if (mounted) setState(() => _showInterceptor = true);
+  }
+
+  void _scanSeasonvarPlaylist() {
+    if (webViewController == null) return;
+    _scanningSeasonvar = true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Сканирую серии Seasonvar...'), duration: Duration(seconds: 2)),
+    );
+    webViewController!.evaluateJavascript(source: r'''
+      (async function(){
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+        const waitForVideoSrc = (lastSrc) => new Promise((resolve) => {
+          let attempts = 0;
+          const check = setInterval(() => {
+            const video = document.querySelector('video');
+            if (video) { video.muted = true; video.pause(); }
+            attempts++;
+            if (video && video.src && video.src !== lastSrc && video.src.length > 10) {
+              clearInterval(check); resolve(video.src);
+            }
+            if (attempts > 30) { clearInterval(check); resolve(null); }
+          }, 350);
+        });
+
+        const items = Array.from(document.querySelectorAll('#htmlPlayer_playlist > *'));
+        const result = [];
+        let last = '';
+        for (let i = 0; i < items.length; i++) {
+          items[i].click();
+          await wait(250);
+          const src = await waitForVideoSrc(last);
+          if (src) {
+            result.push({
+              index: String(i),
+              title: (items[i].innerText || ('Серия ' + (i + 1))).trim(),
+              url: src
+            });
+            last = src;
+          }
+        }
+        if (window.flutter_inappwebview) {
+          window.flutter_inappwebview.callHandler('seasonvarPlaylist', JSON.stringify(result));
+        }
+        return result.length;
+      })();
+    ''');
   }
 
   void _updateYouTubeState(Uri url) {
@@ -364,6 +431,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       icon: const Icon(Icons.person, color: Colors.orange),
                       onPressed: () {},
                     ),
+                    if (urlController.text.contains('seasonvar'))
+                      GestureDetector(
+                        onTap: _scanningSeasonvar ? null : _scanSeasonvarPlaylist,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _scanningSeasonvar ? Colors.grey : Colors.blueGrey,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            _scanningSeasonvar ? 'Скан...' : 'Скан серий',
+                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
                     // YouTube: кнопки «Сжать» + «Оригинал/Сжатое» в хедере
                     if (_onYouTube) ...[
                       // Кнопка «Сжать видео» — рядом с адресной строкой
@@ -431,44 +513,118 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   initialSettings: InAppWebViewSettings(
                     useShouldOverrideUrlLoading: true,
                     useShouldInterceptRequest: true,
-                    useOnLoadResource: false, // экономим CPU
+                    useOnLoadResource: false,
                     mediaPlaybackRequiresUserGesture: false,
                     domStorageEnabled: true,
                     databaseEnabled: true,
                     cacheEnabled: true,
                     javaScriptEnabled: true,
-                    transparentBackground: false, // экономим GPU
+                    transparentBackground: false,
                     hardwareAcceleration: true,
+                    // Chrome UA — YouTube блокирует Edge/WebView2 UA
+                    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                   ),
                   onWebViewCreated: (controller) {
                     webViewController = controller;
+                    controller.addJavaScriptHandler(
+                      handlerName: 'compressUrl',
+                      callback: (args) {
+                        if (args.isEmpty) return null;
+                        final raw = args.first?.toString() ?? '';
+                        if (raw.isEmpty) return null;
+                        _openCompressedUrl(raw, referer: 'https://www.youtube.com/');
+                        return null;
+                      },
+                    );
+                    controller.addJavaScriptHandler(
+                      handlerName: 'seasonvarPlaylist',
+                      callback: (args) {
+                        _scanningSeasonvar = false;
+                        if (args.isEmpty) return null;
+                        try {
+                          final decoded = jsonDecode(args.first.toString()) as List<dynamic>;
+                          final episodes = decoded.map((e) {
+                            final m = Map<String, dynamic>.from(e as Map);
+                            return <String, String>{
+                              'index': m['index']?.toString() ?? '',
+                              'title': m['title']?.toString() ?? '',
+                              'url': m['url']?.toString() ?? '',
+                            };
+                          }).where((e) => (e['url'] ?? '').isNotEmpty).toList();
+                          if (mounted) {
+                            setState(() {
+                              _seasonvarEpisodes = episodes;
+                              _seasonvarIndex = 0;
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Найдено серий: ${episodes.length}'), duration: const Duration(seconds: 3)),
+                            );
+                            if (episodes.isNotEmpty) {
+                              final first = episodes.first;
+                              _openCompressedUrl(first['url'] ?? '', referer: urlController.text);
+                            }
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Ошибка скана Seasonvar: $e'), duration: const Duration(seconds: 4)),
+                            );
+                          }
+                        }
+                        return null;
+                      },
+                    );
                   },
                   onLoadStop: (controller, url) {
                     if (url != null) {
                       urlController.text = url.toString();
-                       // Filmix: инжектим скрипт (балансер + автослив кук если залогинен)
+
+                       // Seasonvar: трекер кликов (плейлист грузится через plist.txt ~3с)
+                       if (url.host.contains('seasonvar')) {
+                         Future.delayed(const Duration(seconds: 4), () {
+                           if (mounted) {
+                             controller.evaluateJavascript(source:
+                               "(function(){"
+                               "if(window.__vt)return 'ok';"
+                               "window.__vt=true;window.__vakh_idx=-1;"
+                               "var pl=document.querySelector('#htmlPlayer_playlist');"
+                               "if(!pl)return 'no-pl';"
+                               "var its=Array.from(pl.querySelectorAll('li,a'));"
+                               "its.forEach(function(it,i){it.addEventListener('click',function(){window.__vakh_idx=i;},true);});"
+                               "for(var i=0;i<its.length;i++){"
+                               "var d=its[i].querySelector('span[style]');"
+                               "var c=its[i].className||'';"
+                               "if(d||c.includes('active')||c.includes('current')){window.__vakh_idx=i;break;}"
+                               "}"
+                               "return 'ok:'+its.length+'/'+window.__vakh_idx;"
+                               "})();"
+                             );
+                           }
+                         });
+                       }
+
+                       // Filmix: автологин
                        if (url.host.contains('filmix')) {
-                         // Куки НЕ инжектим — WebView сам хранит сессию после ручного входа.
-                         // Если не залогинен — балансер Kodik подставит плеер.
                          controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
                        }
-                       // YouTube: инжектим ховер-кнопку на всех страницах
+
+                       // YouTube: ховер-кнопки
                        if (url.host.contains('youtube.com')) {
                          controller.evaluateJavascript(source: YouTubeHover.getInjectionJS());
                        }
-                       // YouTube fallback — если страница /watch загрузилась, глушим и предлагаем сжать
+
+                       // YouTube /watch — глушим и показываем шторку
                        if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
-                        controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
-                        setState(() {
-                          _interceptedUrl = url.toString();
-                          _currentReferer = url.toString();
-                          _showInterceptor = true;
-                          _onYouTube = true;
-                        });
-                        controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
-                      }
-                      _updateYouTubeState(url);
-                    }
+                         controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
+                         setState(() {
+                           _interceptedUrl = url.toString();
+                           _currentReferer = url.toString();
+                           _showInterceptor = true;
+                           _onYouTube = true;
+                         });
+                       }
+                       _updateYouTubeState(url);
+                     }
                   },
                   onUpdateVisitedHistory: (controller, url, isReload) {
                     // YouTube: ловим pushState-навигацию (YouTube SPA)
@@ -528,6 +684,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
                     // Исключаем чанки YouTube — серверу нужна ссылка на страницу, не на кусочек
                     if (uri.contains('googlevideo.com')) isMedia = false;
+
+                    // Во время скана Seasonvar не показываем шторку на каждую серию
+                    if (_scanningSeasonvar && isMedia) return null;
 
                     // Перехват медиа-запросов
                     if (method.toUpperCase() == "GET" && isMedia) {
