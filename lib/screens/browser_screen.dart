@@ -364,7 +364,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       urlController.text = url.toString();
                       // Filmix: куки + скрипты
                       if (url.host.contains('filmix')) {
-                        FilmixAuth.injectCookies(controller, url);
+                        controller.evaluateJavascript(source: """
+                          if (!sessionStorage.getItem('vakh_cookies_set')) {
+                            sessionStorage.setItem('vakh_cookies_set', '1');
+                          }
+                        """);
+                        // Только первый заход — ставим куки и перезагружаем
+                        FilmixAuth.injectCookies(controller, url).then((_) {
+                          controller.evaluateJavascript(source: """
+                            if (sessionStorage.getItem('vakh_cookies_set') === '1') {
+                              sessionStorage.setItem('vakh_cookies_set', '2');
+                              location.reload();
+                            }
+                          """);
+                        });
                         controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
                       }
                       // YouTube fallback — если страница загрузилась, глушим и предлагаем сжать
