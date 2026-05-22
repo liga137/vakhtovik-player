@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/preset.dart';
 import '../models/transcode_result.dart';
+import '../models/youtube_video.dart';
 
 /// Сервис для работы с API «Плеер Вахтовика»
 class ApiService {
@@ -34,7 +35,8 @@ class ApiService {
       return TranscodeResult.fromJson(json.decode(response.body));
     }
     final body = json.decode(response.body);
-    throw Exception(body['detail'] ?? 'Ошибка транскодирования: ${response.statusCode}');
+    throw Exception(
+        body['detail'] ?? 'Ошибка транскодирования: ${response.statusCode}');
   }
 
   /// Получить статус сессии
@@ -58,6 +60,28 @@ class ApiService {
 
   /// URL для экономного прокси-режима страниц
   static String liteUrl(String targetUrl) {
-    return Uri.parse('$_baseUrl/lite').replace(queryParameters: {'url': targetUrl}).toString();
+    return Uri.parse('$_baseUrl/lite')
+        .replace(queryParameters: {'url': targetUrl}).toString();
+  }
+
+  /// Нативный поиск YouTube через серверный yt-dlp
+  static Future<List<YouTubeVideo>> searchYouTube(String query,
+      {int limit = 12}) async {
+    final q = query.trim();
+    if (q.isEmpty) return [];
+
+    final uri = Uri.parse('$_baseUrl/yt/search').replace(
+      queryParameters: {'q': q, 'limit': limit.toString()},
+    );
+    final response = await http.get(uri).timeout(const Duration(seconds: 30));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as List<dynamic>;
+      return data
+          .whereType<Map<String, dynamic>>()
+          .map(YouTubeVideo.fromJson)
+          .where((v) => v.id.isNotEmpty || v.url.isNotEmpty)
+          .toList();
+    }
+    throw Exception('Ошибка поиска YouTube: ${response.statusCode}');
   }
 }

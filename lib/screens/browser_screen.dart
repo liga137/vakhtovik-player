@@ -9,6 +9,7 @@ import '../services/api_service.dart';
 import '../services/filmix_auth.dart';
 import '../services/youtube_hover.dart';
 import '../models/preset.dart';
+import 'youtube_search_screen.dart';
 
 class BrowserScreen extends StatefulWidget {
   const BrowserScreen({super.key});
@@ -813,7 +814,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       children: [
                         _HomeSiteButton(label: 'Seasonvar', icon: Icons.tv, onTap: () => _openSite('https://seasonvar.ru/')),
                         _HomeSiteButton(label: 'Filmix', icon: Icons.movie, onTap: () => _openSite('https://filmix.my/')),
-                        _HomeSiteButton(label: 'YouTube', icon: Icons.play_circle, onTap: () => _openSite('https://www.youtube.com/')),
+                        _HomeSiteButton(label: 'YouTube', icon: Icons.play_circle, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const YouTubeSearchScreen()))),
                         _HomeSiteButton(label: 'Свой сайт', icon: Icons.add_link, onTap: () => FocusScope.of(context).requestFocus(FocusNode())),
                       ],
                     ),
