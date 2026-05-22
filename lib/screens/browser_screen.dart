@@ -47,24 +47,23 @@ class _BrowserScreenState extends State<BrowserScreen> {
   Future<void> _loadPresets() async {
     // Жёсткий фолбэк — если сервер не отвечает, качество всё равно будет
     const fallback = [
-      Preset(id: '480p', label: '480p'),
-      Preset(id: '360p', label: '360p'),
-      Preset(id: '240p', label: '240p'),
-      Preset(id: '144p', label: '144p'),
+      Preset(id: '480p', label: '480p', width: 854, crf: 43, audioBitrate: '32k'),
+      Preset(id: '360p', label: '360p', width: 640, crf: 40, audioBitrate: '32k'),
+      Preset(id: '240p', label: '240p', width: 426, crf: 38, audioBitrate: '32k'),
+      Preset(id: '144p', label: '144p', width: 256, crf: 34, audioBitrate: '32k'),
     ];
     try {
       final presets = await ApiService.getPresets().timeout(const Duration(seconds: 5));
       if (mounted) {
         setState(() {
-          _presets = presets.isNotEmpty ? presets : fallback;
+          _presets = List<Preset>.from(presets.isNotEmpty ? presets : fallback);
           if (_presets.isNotEmpty) _selectedQuality = _presets.first.id;
         });
       }
     } catch (e) {
-      print("Presets API failed, using fallback: $e");
       if (mounted) {
         setState(() {
-          _presets = fallback;
+          _presets = List<Preset>.from(fallback);
           _selectedQuality = '240p';
         });
       }
