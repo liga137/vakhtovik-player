@@ -55,4 +55,9 @@ class ApiService {
   static String hlsUrl(String playlistPath) {
     return '$_baseUrl$playlistPath';
   }
+
+  /// URL для экономного прокси-режима страниц
+  static String liteUrl(String targetUrl) {
+    return Uri.parse('$_baseUrl/lite').replace(queryParameters: {'url': targetUrl}).toString();
+  }
 }

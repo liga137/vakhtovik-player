@@ -25,6 +25,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   
   bool _showInterceptor = false;
   bool _showHome = true;
+  bool _liteMode = false;
   String _interceptedUrl = "";
   String _currentReferer = "";
   List<Preset> _presets = [];
@@ -414,7 +415,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _openSite(String siteUrl) {
     setState(() => _showHome = false);
     urlController.text = siteUrl;
-    webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(siteUrl)));
+    final loadUrl = _liteMode ? ApiService.liteUrl(siteUrl) : siteUrl;
+    webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
   }
 
   @override
@@ -468,7 +470,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             var uri = Uri.parse(value);
                             if (!uri.hasScheme) value = "https://$value";
                             setState(() => _showHome = false);
-                            webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(value)));
+                            final loadUrl = _liteMode ? ApiService.liteUrl(value) : value;
+                            webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
                           },
                         ),
                       ),
@@ -476,6 +479,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     IconButton(
                       icon: const Icon(Icons.person, color: Colors.orange),
                       onPressed: () {},
+                    ),
+                    GestureDetector(
+                      onTap: () => setState(() => _liteMode = !_liteMode),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _liteMode ? Colors.greenAccent.shade400 : const Color(0xFF333333),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: _liteMode ? Colors.greenAccent : Colors.grey),
+                        ),
+                        child: Text(
+                          _liteMode ? '🪶 Эконом' : 'Обычный',
+                          style: TextStyle(color: _liteMode ? Colors.black : Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                      ),
                     ),
                     // YouTube: кнопки «Сжать» + «Оригинал/Сжатое» в хедере
                     if (_onYouTube) ...[
