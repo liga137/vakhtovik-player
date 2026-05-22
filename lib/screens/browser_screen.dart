@@ -354,8 +354,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     useShouldInterceptRequest: true,
                     useOnLoadResource: true,
                     mediaPlaybackRequiresUserGesture: false,
+                    // Сохранение кук и сессий для ВСЕХ сайтов
                     domStorageEnabled: true,
                     databaseEnabled: true,
+                    cacheEnabled: true,
+                    incognitoEnabled: false,
                     javaScriptEnabled: true,
                     transparentBackground: true,
                   ),
