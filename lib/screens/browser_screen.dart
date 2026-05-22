@@ -420,7 +420,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     domStorageEnabled: true,
                     databaseEnabled: true,
                     cacheEnabled: true,
-                    incognitoEnabled: false,
                     javaScriptEnabled: true,
                     transparentBackground: true,
                   ),
