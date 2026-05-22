@@ -5,8 +5,8 @@ import '../models/transcode_result.dart';
 
 /// Сервис для работы с API «Плеер Вахтовика»
 class ApiService {
-  // HTTP напрямую — SSL сертификат мог протухнуть, за VPN безопасно
-  static const String _baseUrl = 'http://195.226.92.151:8008';
+  // HTTPS — сертификат Let's Encrypt на 195.226.92.151.nip.io, HTTP не работает
+  static const String _baseUrl = 'https://195.226.92.151:8008';
 
   /// Получить список пресетов качества
   static Future<List<Preset>> getPresets() async {
