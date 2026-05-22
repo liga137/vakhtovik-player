@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter/services.dart';
@@ -37,7 +36,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _onYouTube = false; // флаг: мы на странице YouTube
   bool _compressMode = false; // Режим «Сжатое» — кнопки на всех видео YouTube
   Duration _lastPosition = Duration.zero; // для детекта конца HLS без duration
-  DateTime _lastInterceptCheck = DateTime.now(); // троттлинг перехватчика
+  bool _endReached = false; // защита от множественных вызовов _playNextEpisode
+  bool _interceptedAlready = false; // защита от повторного перехвата одного URL
 
   @override
   void initState() {
@@ -170,8 +170,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
           ? _videoController!.value.aspectRatio 
           : 16 / 9; // fallback 16:9 если HLS не дал размер
 
-      final dur = _videoController!.value.duration;
-
       _chewieController = ChewieController(
         videoPlayerController: _videoController!,
         autoPlay: true,
@@ -193,26 +191,35 @@ class _BrowserScreenState extends State<BrowserScreen> {
       );
 
       // Слушаем окончание видео
+      // ВАЖНО: listener вызывается каждый кадр (30 раз/сек).
+      // _endReached — защита от создания сотен Future.delayed таймеров.
+      _endReached = false;
       _videoController!.addListener(() {
         if (!_videoController!.value.isInitialized) return;
+        if (_endReached) return; // уже обработали конец — ничего не делаем
+
         final pos = _videoController!.value.position;
         final dur = _videoController!.value.duration;
         
         // Способ 1: точное знание длительности
         if (dur > Duration.zero && pos >= dur - const Duration(seconds: 1) && pos > Duration.zero) {
+          _endReached = true;
           _playNextEpisode();
           return;
         }
-        // Способ 2: HLS без duration — ждём что видео играло хотя бы 10 сек и позиция застыла
+        // Способ 2: HLS без duration — позиция застыла на 2 сек
         if (dur == Duration.zero && _videoController!.value.isPlaying) {
-          _lastPosition = pos;
-          // Проверим через секунду — если позиция не изменилась, считаем что конец
+          final snapshot = pos;
+          _lastPosition = snapshot;
+          // Один таймер — проверяем через 2 сек. Если позиция не изменилась = конец.
           Future.delayed(const Duration(seconds: 2), () {
-            if (_videoController != null && 
+            if (_endReached) return;
+            if (_videoController != null &&
                 _videoController!.value.isInitialized &&
                 _videoController!.value.duration == Duration.zero &&
-                _videoController!.value.position == _lastPosition &&
-                _lastPosition > const Duration(seconds: 5)) {
+                _videoController!.value.position == snapshot &&
+                snapshot > const Duration(seconds: 5)) {
+              _endReached = true;
               _playNextEpisode();
             }
           });
@@ -231,6 +238,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
         _muteWebView();
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -261,6 +269,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _videoController = null;
     setState(() {
       _showPlayer = false;
+      _interceptedAlready = false; // сбрасываем флаг — готовы перехватить следующий поток
+      _endReached = false;
     });
     // Возвращаем звук WebView
     webViewController?.evaluateJavascript(source: """
@@ -465,13 +475,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     return NavigationActionPolicy.ALLOW;
                   },
                   shouldInterceptRequest: (controller, request) async {
-                    // Троттлинг: не дёргаем перехватчик чаще 200мс (экономия CPU)
-                    final now = DateTime.now();
-                    if (now.difference(_lastInterceptCheck).inMilliseconds < 200) {
-                      return null;
-                    }
-                    _lastInterceptCheck = now;
-                    
                     var uri = request.url.toString().toLowerCase();
                     var method = request.method ?? "GET";
                     
@@ -479,39 +482,34 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     if (uri.contains('.js') || uri.contains('.css') || uri.contains('.jpg') || 
                         uri.contains('.png') || uri.contains('.gif') || uri.contains('.webp') || 
                         uri.contains('.woff') || uri.contains('.ttf') || uri.contains('.svg')) {
-                      return null; // пропускаем как есть
+                      return null;
                     }
 
-                    // 2. Ищем признаки медиа, исключая фоновые превьюшки и рекламу
+                    // 2. Ищем признаки медиа, исключая превьюшки и рекламу
                     bool isMedia = false;
                     if (uri.contains('.mp4') || uri.contains('.m3u8') || uri.contains('playlist.m3u8') || 
                         uri.contains('.mkv') || uri.contains('.webm') || uri.contains('.3gp') || 
                         uri.contains('.avi') || uri.contains('.flv')) {
-                      
-                      // Защита от ложных срабатываний (на превьюшки и баннеры)
                       if (!uri.contains('trailer') && !uri.contains('preview') && 
                           !uri.contains('banner') && !uri.contains('ad.mp4') && !uri.contains('promo')) {
                         isMedia = true;
                       }
                     }
 
-                    // Исключаем системные чанки YouTube (googlevideo.com), так как yt-dlp 
-                    // на сервере нужна ссылка на саму страницу, а не на отдельный кусочек видео.
-                    if (uri.contains('googlevideo.com')) {
-                      isMedia = false;
-                    }
+                    // Исключаем чанки YouTube — серверу нужна ссылка на страницу, не на кусочек
+                    if (uri.contains('googlevideo.com')) isMedia = false;
 
-                    // Перехват сырых медиа-запросов (даже из чужих плееров и iframe)
+                    // Перехват медиа-запросов
                     if (method.toUpperCase() == "GET" && isMedia) {
                       
-                      // Режим авто-переключения серий: не показываем шторку, сразу сжимаем
+                      // Режим авто-переключения серий: сразу сжимаем без шторки
                       if (_waitingForNextEpisode) {
                         _waitingForNextEpisode = false;
+                        _interceptedAlready = false;
                         Future.microtask(() {
                           if (mounted) {
                             _interceptedUrl = request.url.toString();
                             _currentReferer = urlController.text;
-                            // Не показываем шторку — сразу запускаем сжатие
                             _startMagic();
                           }
                         });
@@ -522,19 +520,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         );
                       }
                       
-                      // Обычный режим: показываем шторку выбора качества
-                      if (!_showInterceptor && !_showPlayer) {
-                        // Используем Future.microtask чтобы безопасно вызвать setState из фонового потока WebView
+                      // Обычный режим: показываем шторку выбора качества.
+                      // _interceptedAlready — защита от повторного срабатывания на тот же поток
+                      if (!_showInterceptor && !_showPlayer && !_interceptedAlready) {
+                        _interceptedAlready = true;
                         Future.microtask(() {
-                          setState(() {
-                            _interceptedUrl = request.url.toString();
-                            _currentReferer = urlController.text;
-                            _showInterceptor = true;
-                          });
+                          if (mounted) {
+                            setState(() {
+                              _interceptedUrl = request.url.toString();
+                              _currentReferer = urlController.text;
+                              _showInterceptor = true;
+                            });
+                          }
                         });
                       }
                       
-                      // Возвращаем "пустой" ответ, чтобы чужой плеер не начал жрать трафик
+                      // Пустой ответ — чужой плеер не начинает жрать трафик
                       return WebResourceResponse(
                         contentType: "text/plain",
                         data: Uint8List.fromList([]),
