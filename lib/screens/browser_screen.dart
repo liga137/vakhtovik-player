@@ -24,6 +24,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   final urlController = TextEditingController(text: "https://seasonvar.ru/");
   
   bool _showInterceptor = false;
+  bool _showHome = true;
   String _interceptedUrl = "";
   String _currentReferer = "";
   List<Preset> _presets = [];
@@ -341,7 +342,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _currentReferer = referer ?? urlController.text;
     _interceptedAlready = true;
     _muteWebView();
-    if (mounted) setState(() => _showInterceptor = true);
+    if (mounted) {
+      setState(() {
+        _showInterceptor = false;
+        _showHome = false;
+      });
+    }
+    _startMagic();
   }
 
   void _scanSeasonvarPlaylist({bool silent = false}) {
@@ -404,6 +411,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
     webViewController!.evaluateJavascript(source: "window.vakhCompressMode(" + (mode ? "true" : "false") + ");");
   }
 
+  void _openSite(String siteUrl) {
+    setState(() => _showHome = false);
+    urlController.text = siteUrl;
+    webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(siteUrl)));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -426,9 +439,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       },
                     ),
                     IconButton(
+                      icon: const Icon(Icons.refresh, color: Colors.white),
+                      tooltip: 'Обновить',
+                      onPressed: () => webViewController?.reload(),
+                    ),
+                    IconButton(
                       icon: const Icon(Icons.home, color: Colors.white),
                       onPressed: () {
-                        webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri("https://seasonvar.ru/")));
+                        setState(() => _showHome = true);
+                        webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri("about:blank")));
                       },
                     ),
                     Expanded(
@@ -448,6 +467,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           onSubmitted: (value) {
                             var uri = Uri.parse(value);
                             if (!uri.hasScheme) value = "https://$value";
+                            setState(() => _showHome = false);
                             webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(value)));
                           },
                         ),
@@ -520,7 +540,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
               Expanded(
                 child: InAppWebView(
                   key: webViewKey,
-                  initialUrlRequest: URLRequest(url: WebUri("https://seasonvar.ru/")),
+                  initialUrlRequest: URLRequest(url: WebUri("about:blank")),
                   initialSettings: InAppWebViewSettings(
                     useShouldOverrideUrlLoading: true,
                     useShouldInterceptRequest: true,
@@ -591,6 +611,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   onLoadStop: (controller, url) {
                     if (url != null) {
                       urlController.text = url.toString();
+                      if (url.toString() != 'about:blank' && _showHome) {
+                        setState(() => _showHome = false);
+                      }
 
                        // Seasonvar: трекер кликов (плейлист грузится через plist.txt ~3с)
                        if (url.host.contains('seasonvar')) {
@@ -626,16 +649,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                          controller.evaluateJavascript(source: YouTubeHover.getInjectionJS());
                        }
 
-                       // YouTube /watch — глушим и показываем шторку
-                       if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
-                         controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
-                         setState(() {
-                           _interceptedUrl = url.toString();
-                           _currentReferer = url.toString();
-                           _showInterceptor = true;
-                           _onYouTube = true;
-                         });
-                       }
+                      // YouTube /watch — fallback: если страница всё-таки открылась, глушим и сразу запускаем 240p
+                      if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
+                        controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
+                        _selectedQuality = '240p';
+                        _openCompressedUrl(url.toString(), referer: 'https://www.youtube.com/');
+                      }
                        _updateYouTubeState(url);
                      }
                   },
@@ -645,12 +664,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       urlController.text = url.toString();
                       _updateYouTubeState(url);
                       if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
-                        setState(() {
-                          _interceptedUrl = url.toString();
-                          _currentReferer = url.toString();
-                          _showInterceptor = true;
-                        });
                         controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
+                        _selectedQuality = '240p';
+                        _openCompressedUrl(url.toString(), referer: 'https://www.youtube.com/');
                       }
                     }
                   },
@@ -662,9 +678,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
                       Future.microtask(() {
                         if (mounted) {
-                          _interceptedUrl = url.toString();
-                          _currentReferer = url.toString();
-                          setState(() => _showInterceptor = true);
+                          _selectedQuality = '240p';
+                          _openCompressedUrl(url.toString(), referer: 'https://www.youtube.com/');
                         }
                       });
                       // Возвращаем ALLOW но тут же редиректим на blank чтобы не грузить ютуб
@@ -728,17 +743,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         );
                       }
                       
-                      // Обычный режим: показываем шторку выбора качества.
-                      // _interceptedAlready — защита от повторного срабатывания на тот же поток
+                      // Обычный режим: без шторки, сразу стартуем в качестве по умолчанию (240p)
                       if (!_showInterceptor && !_showPlayer && !_interceptedAlready) {
                         _interceptedAlready = true;
                         Future.microtask(() {
                           if (mounted) {
-                            setState(() {
-                              _interceptedUrl = request.url.toString();
-                              _currentReferer = urlController.text;
-                              _showInterceptor = true;
-                            });
+                            _interceptedUrl = request.url.toString();
+                            _currentReferer = urlController.text;
+                            _selectedQuality = '240p';
+                            _startMagic();
                           }
                         });
                       }
@@ -756,6 +769,34 @@ class _BrowserScreenState extends State<BrowserScreen> {
               ),
             ],
           ),
+
+          if (_showHome && !_showPlayer)
+            Positioned.fill(
+              top: 92,
+              child: Container(
+                color: const Color(0xFF111111),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Плеер Вахтовика', style: TextStyle(color: Colors.orange, fontSize: 24, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    const Text('Выбери сайт или введи свой адрес сверху', style: TextStyle(color: Colors.white70)),
+                    const SizedBox(height: 20),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        _HomeSiteButton(label: 'Seasonvar', icon: Icons.tv, onTap: () => _openSite('https://seasonvar.ru/')),
+                        _HomeSiteButton(label: 'Filmix', icon: Icons.movie, onTap: () => _openSite('https://filmix.my/')),
+                        _HomeSiteButton(label: 'YouTube', icon: Icons.play_circle, onTap: () => _openSite('https://www.youtube.com/')),
+                        _HomeSiteButton(label: 'Свой сайт', icon: Icons.add_link, onTap: () => FocusScope.of(context).requestFocus(FocusNode())),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           // YouTube FAB убран — кнопка «Сжать» теперь в хедере
 
@@ -869,6 +910,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                     style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
                                   ),
                                   const Spacer(),
+                                  PopupMenuButton<String>(
+                                    tooltip: 'Качество',
+                                    icon: const Icon(Icons.settings, color: Colors.orange),
+                                    color: const Color(0xFF1E1E1E),
+                                    initialValue: _selectedQuality,
+                                    onSelected: (q) {
+                                      setState(() => _selectedQuality = q);
+                                      _startMagic();
+                                    },
+                                    itemBuilder: (context) => const [
+                                      PopupMenuItem(value: '144p', child: Text('144p')),
+                                      PopupMenuItem(value: '240p', child: Text('240p')),
+                                      PopupMenuItem(value: '360p', child: Text('360p')),
+                                      PopupMenuItem(value: '480p', child: Text('480p')),
+                                    ],
+                                  ),
                                   TextButton.icon(
                                     onPressed: _playNextEpisode,
                                     icon: const Icon(Icons.skip_next, color: Colors.orange),
@@ -997,6 +1054,39 @@ class _MiniProgressOverlayState extends State<_MiniProgressOverlay> {
             style: const TextStyle(color: Colors.white54, fontSize: 11),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HomeSiteButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _HomeSiteButton({required this.label, required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        width: 150,
+        height: 92,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1E1E),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.orange.withOpacity(0.45)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.orange, size: 30),
+            const SizedBox(height: 8),
+            Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ],
+        ),
       ),
     );
   }
