@@ -5,56 +5,81 @@ class FilmixAuth {
   static const String filmixLogin = "vakhtovik_player";
   static const String filmixPassword = "ZaqXswCde123";
 
-  /// Инжектит куки через JS (если нужно)
   static Future<void> injectCookies(InAppWebViewController controller, Uri url) async {}
 
-  /// JS для инъекции на Filmix
+  /// JS для автологина на любом домене Filmix (filmix.ac, filmix.me, filmix.biz и др.)
   static String getInjectionScript() {
     return """
 (function() {
-  var host = window.location.hostname;
-  if (!host.includes('filmix') && !host.includes('kinogo') && !host.includes('hdrezka')) return;
+  if (!window.location.hostname.includes('filmix')) return;
 
-  var loggedIn = document.querySelector('.user-logged,.profile-link,.cabinet,a[href*="profile"],.login-username,.user-name,.user-menu');
-
-  if (!loggedIn) {
+  // Уже залогинен?
+  var ok = document.querySelector(
+    '.user-logged,.profile-link,.cabinet,a[href*=\"profile\"],' +
+    '.login-username,.user-name,.user-menu,.header-user,[class*=\"logged\"]'
+  );
+  if (ok) {
+    // Убираем баннеры ограничений
     setTimeout(function() {
-      var loginTrigger = document.querySelector('a[href*="login"],a[href*="signin"],.login-btn,.signin-btn,#login-btn,.btn-login,button.login,[class*="login_btn"],.header-login,.auth-btn,[data-modal*="login"]');
-      if (loginTrigger) {
-        loginTrigger.click();
-        setTimeout(function() {
-          var u = document.querySelector('input[name="email"],input[name="login"],input[type="email"],input[name="login_name"],#login_name,input[name="username"]');
-          var p = document.querySelector('input[name="password"],input[name="pass"],input[type="password"],#login_password');
-          var s = document.querySelector('button[type="submit"],input[type="submit"],.login-submit,#login_btn,button.log_btn,form button,.btn-primary');
-          if (u && p) {
-            u.value = '""" + filmixLogin + """';
-            p.value = '""" + filmixPassword + """';
-            u.dispatchEvent(new Event('input',{bubbles:true}));
-            u.dispatchEvent(new Event('change',{bubbles:true}));
-            p.dispatchEvent(new Event('input',{bubbles:true}));
-            p.dispatchEvent(new Event('change',{bubbles:true}));
-            setTimeout(function() {
-              if (s) s.click();
-              else { var f = u.closest('form'); if (f) f.submit(); }
-            }, 500);
-          }
-        }, 2000);
-      }
-    }, 1500);
+      document.querySelectorAll(
+        '[class*=\"register\"],[class*=\"premium\"],[class*=\"restrict\"],' +
+        '.reg-block,.paywall,[class*=\"paywall\"],[id*=\"paywall\"]'
+      ).forEach(function(b) {
+        if (b.offsetParent && (b.innerText||'').match(/регистрац|недоступ|стране|подпис/i)) b.remove();
+      });
+    }, 2000);
     return;
   }
 
-  setTimeout(function() {
-    var b = document.querySelectorAll('[class*="register"],[class*="premium"],[class*="restrict"],.reg-block,.paywall');
-    for (var i = 0; i < b.length; i++) {
-      if (b[i].offsetParent && (b[i].innerText||'').match(/регистрац|недоступ|стране/)) b[i].remove();
+  function fillAndSubmit() {
+    var u = document.querySelector(
+      'input[name=\"email\"],input[name=\"login\"],input[type=\"email\"],' +
+      'input[name=\"login_name\"],#login_name,input[name=\"username\"],' +
+      'input[placeholder*=\"mail\" i],input[placeholder*=\"логин\" i]'
+    );
+    var p = document.querySelector(
+      'input[name=\"password\"],input[name=\"pass\"],input[type=\"password\"],' +
+      '#login_password,input[placeholder*=\"пароль\" i]'
+    );
+    if (!u || !p) return false;
+    u.value = '""" + filmixLogin + """';
+    p.value = '""" + filmixPassword + """';
+    ['input','change'].forEach(function(ev) {
+      u.dispatchEvent(new Event(ev,{bubbles:true}));
+      p.dispatchEvent(new Event(ev,{bubbles:true}));
+    });
+    setTimeout(function() {
+      var btn = document.querySelector(
+        'button[type=\"submit\"],input[type=\"submit\"],.login-submit,' +
+        '#login_btn,button.log_btn,form button[class*=\"btn\"],.btn-primary'
+      );
+      if (btn) btn.click();
+      else { var f = u.closest('form'); if (f) f.submit(); }
+    }, 500);
+    return true;
+  }
+
+  function tryOpenAndLogin() {
+    // Пробуем открыть форму входа
+    var trigger = document.querySelector(
+      'a[href*=\"login\"],a[href*=\"signin\"],a[href*=\"auth\"],' +
+      '.login-btn,.signin-btn,#login-btn,.btn-login,button.login,' +
+      '[class*=\"login_btn\"],.header-login,.auth-btn,[data-modal*=\"login\"],' +
+      '[data-target*=\"login\"],[data-bs-target*=\"login\"]'
+    );
+    if (trigger) {
+      trigger.click();
+      setTimeout(fillAndSubmit, 1500);
+    } else {
+      fillAndSubmit();
     }
-  }, 2000);
+  }
+
+  setTimeout(tryOpenAndLogin, 1500);
 })();
 """;
   }
 
-  /// JS для кнопки ручного слива кук
   static String getCookieExtractorJS() {
     return "(function(){var c=document.cookie;prompt('Cookie:',c);return c;})();";
   }

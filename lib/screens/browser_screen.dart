@@ -257,6 +257,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
         });
         // Глушим WebView — чтобы фоном не орала реклама/оригинал
         _muteWebView();
+
+        // Seasonvar: основной поток уже ушёл на транскодер, теперь можно тихо собрать список серий
+        final isSeasonvar = _currentReferer.contains('seasonvar') || _interceptedUrl.contains('seasonvar');
+        if (isSeasonvar && _seasonvarEpisodes.isEmpty && !_scanningSeasonvar) {
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted && _showPlayer) _scanSeasonvarPlaylist(silent: true);
+          });
+        }
       }
     } catch (e) {
       if (!mounted) return;
@@ -312,6 +320,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _openCompressedUrl(ytUrl, referer: 'https://www.youtube.com/');
   }
 
+  void _playSeasonvarEpisode(int index) {
+    if (index < 0 || index >= _seasonvarEpisodes.length) return;
+    _seasonvarIndex = index;
+    final ep = _seasonvarEpisodes[index];
+    final epUrl = ep['url'] ?? '';
+    if (epUrl.isEmpty) return;
+    _interceptedUrl = epUrl;
+    _currentReferer = urlController.text;
+    _interceptedAlready = false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Запускаю серию ${index + 1}'), duration: const Duration(seconds: 1)),
+    );
+    _startMagic();
+  }
+
   void _openCompressedUrl(String url, {String? referer}) {
     if (url.trim().isEmpty) return;
     _interceptedUrl = url.trim();
@@ -321,12 +344,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (mounted) setState(() => _showInterceptor = true);
   }
 
-  void _scanSeasonvarPlaylist() {
+  void _scanSeasonvarPlaylist({bool silent = false}) {
     if (webViewController == null) return;
+    if (_scanningSeasonvar) return;
     _scanningSeasonvar = true;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Сканирую серии Seasonvar...'), duration: Duration(seconds: 2)),
-    );
+    if (!silent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сканирую серии Seasonvar...'), duration: Duration(seconds: 2)),
+      );
+    }
     webViewController!.evaluateJavascript(source: r'''
       (async function(){
         const wait = (ms) => new Promise(r => setTimeout(r, ms));
@@ -431,21 +457,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       icon: const Icon(Icons.person, color: Colors.orange),
                       onPressed: () {},
                     ),
-                    if (urlController.text.contains('seasonvar'))
-                      GestureDetector(
-                        onTap: _scanningSeasonvar ? null : _scanSeasonvarPlaylist,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: _scanningSeasonvar ? Colors.grey : Colors.blueGrey,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            _scanningSeasonvar ? 'Скан...' : 'Скан серий',
-                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
                     // YouTube: кнопки «Сжать» + «Оригинал/Сжатое» в хедере
                     if (_onYouTube) ...[
                       // Кнопка «Сжать видео» — рядом с адресной строкой
@@ -552,16 +563,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             };
                           }).where((e) => (e['url'] ?? '').isNotEmpty).toList();
                           if (mounted) {
+                            var currentIndex = 0;
+                            final currentUrl = _interceptedUrl;
+                            final foundIndex = episodes.indexWhere((e) => (e['url'] ?? '') == currentUrl);
+                            if (foundIndex >= 0) currentIndex = foundIndex;
                             setState(() {
                               _seasonvarEpisodes = episodes;
-                              _seasonvarIndex = 0;
+                              _seasonvarIndex = currentIndex;
                             });
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Найдено серий: ${episodes.length}'), duration: const Duration(seconds: 3)),
-                            );
                             if (episodes.isNotEmpty) {
-                              final first = episodes.first;
-                              _openCompressedUrl(first['url'] ?? '', referer: urlController.text);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Список серий готов: ${episodes.length}'), duration: const Duration(seconds: 2)),
+                              );
                             }
                           }
                         } catch (e) {
@@ -685,8 +698,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     // Исключаем чанки YouTube — серверу нужна ссылка на страницу, не на кусочек
                     if (uri.contains('googlevideo.com')) isMedia = false;
 
-                    // Во время скана Seasonvar не показываем шторку на каждую серию
-                    if (_scanningSeasonvar && isMedia) return null;
+                    // Во время фонового скана Seasonvar берём URL, но не даём сайту качать видео
+                    if (_scanningSeasonvar && isMedia) {
+                      return WebResourceResponse(
+                        contentType: "text/plain",
+                        data: Uint8List.fromList([]),
+                        statusCode: 200,
+                      );
+                    }
 
                     // Перехват медиа-запросов
                     if (method.toUpperCase() == "GET" && isMedia) {
@@ -834,19 +853,53 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         Container(
                           padding: const EdgeInsets.only(top: 40, left: 10, right: 10, bottom: 10),
                           color: Colors.black87,
-                          child: Row(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              IconButton(
-                                icon: const Icon(Icons.arrow_back, color: Colors.white),
-                                onPressed: _stopPlayer,
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                                    onPressed: _stopPlayer,
+                                  ),
+                                  Text(
+                                    _seasonvarEpisodes.isNotEmpty
+                                        ? 'Серия ${_seasonvarIndex + 1} / ${_seasonvarEpisodes.length} · $_selectedQuality'
+                                        : 'Стриминг: $_selectedQuality',
+                                    style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+                                  ),
+                                  const Spacer(),
+                                  TextButton.icon(
+                                    onPressed: _playNextEpisode,
+                                    icon: const Icon(Icons.skip_next, color: Colors.orange),
+                                    label: const Text('След. серия', style: TextStyle(color: Colors.orange)),
+                                  ),
+                                ],
                               ),
-                              Text('Стриминг: $_selectedQuality', style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold)),
-                              const Spacer(),
-                              TextButton.icon(
-                                onPressed: _playNextEpisode,
-                                icon: const Icon(Icons.skip_next, color: Colors.orange),
-                                label: const Text('След. серия', style: TextStyle(color: Colors.orange)),
-                              ),
+                              if (_seasonvarEpisodes.isNotEmpty)
+                                SizedBox(
+                                  height: 38,
+                                  child: ListView.builder(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: _seasonvarEpisodes.length,
+                                    itemBuilder: (context, index) {
+                                      final active = index == _seasonvarIndex;
+                                      return Padding(
+                                        padding: const EdgeInsets.only(right: 6),
+                                        child: OutlinedButton(
+                                          onPressed: () => _playSeasonvarEpisode(index),
+                                          style: OutlinedButton.styleFrom(
+                                            backgroundColor: active ? Colors.orange : Colors.transparent,
+                                            foregroundColor: active ? Colors.black : Colors.white,
+                                            side: BorderSide(color: active ? Colors.orange : Colors.white38),
+                                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                                          ),
+                                          child: Text('${index + 1}'),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
                             ],
                           ),
                         ),
