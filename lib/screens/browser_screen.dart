@@ -37,6 +37,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _onYouTube = false; // флаг: мы на странице YouTube
   bool _compressMode = false; // Режим «Сжатое» — кнопки на всех видео YouTube
   Duration _lastPosition = Duration.zero; // для детекта конца HLS без duration
+  DateTime _lastInterceptCheck = DateTime.now(); // троттлинг перехватчика
 
   @override
   void initState() {
@@ -391,14 +392,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   initialSettings: InAppWebViewSettings(
                     useShouldOverrideUrlLoading: true,
                     useShouldInterceptRequest: true,
-                    useOnLoadResource: true,
+                    useOnLoadResource: false, // экономим CPU
                     mediaPlaybackRequiresUserGesture: false,
-                    // Сохранение кук и сессий для ВСЕХ сайтов
                     domStorageEnabled: true,
                     databaseEnabled: true,
                     cacheEnabled: true,
                     javaScriptEnabled: true,
-                    transparentBackground: true,
+                    transparentBackground: false, // экономим GPU
+                    hardwareAcceleration: true,
                   ),
                   onWebViewCreated: (controller) {
                     webViewController = controller;
@@ -464,6 +465,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     return NavigationActionPolicy.ALLOW;
                   },
                   shouldInterceptRequest: (controller, request) async {
+                    // Троттлинг: не дёргаем перехватчик чаще 200мс (экономия CPU)
+                    final now = DateTime.now();
+                    if (now.difference(_lastInterceptCheck).inMilliseconds < 200) {
+                      return null;
+                    }
+                    _lastInterceptCheck = now;
+                    
                     var uri = request.url.toString().toLowerCase();
                     var method = request.method ?? "GET";
                     
