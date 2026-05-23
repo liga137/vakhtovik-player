@@ -13,6 +13,8 @@ class ApiService {
 
   static bool get isYouTubeLoggedIn => _ytToken != null;
   static String? get youtubeUsername => _ytUsername;
+  static String? get youtubeToken => _ytToken;
+  static String get baseUrl => _baseUrl;
 
   static Map<String, String> get _ytHeaders => {
         'Content-Type': 'application/json',
@@ -160,5 +162,24 @@ class ApiService {
           .toList();
     }
     throw Exception('Ошибка ленты: ${response.statusCode}');
+  }
+
+  static String youtubeGoogleStartUrl(String state) {
+    final token = _ytToken;
+    if (token == null) throw Exception('Сначала войдите во внутренний аккаунт');
+    return Uri.parse('$_baseUrl/yt/google/start').replace(
+      queryParameters: {'token': token, 'state': state},
+    ).toString();
+  }
+
+  static Future<Map<String, dynamic>> youtubeGoogleStatus(String state) async {
+    final uri = Uri.parse('$_baseUrl/yt/google/status').replace(
+      queryParameters: {'state': state},
+    );
+    final response = await http.get(uri);
+    if (response.statusCode == 200) {
+      return json.decode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Ошибка статуса Google: ${response.statusCode}');
   }
 }

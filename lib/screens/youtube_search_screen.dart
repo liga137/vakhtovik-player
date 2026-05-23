@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/youtube_video.dart';
 import '../services/api_service.dart';
 import 'player_screen.dart';
@@ -18,6 +20,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
   List<Map<String, dynamic>> _subs = const [];
   bool _loading = false;
   bool _starting = false;
+  bool _googleImporting = false;
+  Timer? _googlePollTimer;
   String _quality = '240p';
 
   static const _quickSearches = [
@@ -31,6 +35,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
 
   @override
   void dispose() {
+    _googlePollTimer?.cancel();
     _searchController.dispose();
     _subController.dispose();
     super.dispose();
@@ -91,6 +96,48 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
     }
   }
 
+  Future<void> _importGoogleSubscriptions() async {
+    if (!await _ensureLogin()) return;
+    final state = DateTime.now().millisecondsSinceEpoch.toString();
+    setState(() => _googleImporting = true);
+    try {
+      final url = ApiService.youtubeGoogleStartUrl(state);
+      final ok =
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!ok) throw Exception('Не удалось открыть браузер');
+
+      _googlePollTimer?.cancel();
+      var ticks = 0;
+      _googlePollTimer =
+          Timer.periodic(const Duration(seconds: 3), (timer) async {
+        ticks++;
+        try {
+          final status = await ApiService.youtubeGoogleStatus(state);
+          if (status['done'] == true) {
+            timer.cancel();
+            final err = (status['error'] ?? '').toString();
+            if (err.isNotEmpty) {
+              _snack('Ошибка импорта: $err');
+            } else {
+              _snack('Импортировано подписок: ${status['imported'] ?? 0}');
+              await _loadSubs();
+              await _loadFeed();
+            }
+            if (mounted) setState(() => _googleImporting = false);
+          }
+          if (ticks > 120) {
+            timer.cancel();
+            if (mounted) setState(() => _googleImporting = false);
+            _snack('Импорт не завершён. Попробуй ещё раз.');
+          }
+        } catch (_) {}
+      });
+    } catch (e) {
+      if (mounted) setState(() => _googleImporting = false);
+      _snack('Ошибка: $e');
+    }
+  }
+
   Future<bool> _ensureLogin() async {
     if (ApiService.isYouTubeLoggedIn) return true;
     final ok = await _showLoginDialog();
@@ -100,8 +147,30 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
   Future<bool?> _showLoginDialog() async {
     final user = TextEditingController();
     final pass = TextEditingController();
-    var register = false;
     var busy = false;
+    Future<void> auth(BuildContext context,
+        void Function(void Function()) setDialogState, bool register) async {
+      setDialogState(() => busy = true);
+      try {
+        if (register) {
+          await ApiService.youtubeRegister(user.text, pass.text);
+        } else {
+          await ApiService.youtubeLogin(user.text, pass.text);
+        }
+        if (context.mounted) Navigator.pop(context, true);
+      } catch (e) {
+        final msg = e.toString().contains('401')
+            ? 'Аккаунт не найден. Если входишь впервые — нажми «Создать». Это не Google-вход.'
+            : 'Ошибка: $e';
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(msg), duration: const Duration(seconds: 5)));
+        }
+      } finally {
+        setDialogState(() => busy = false);
+      }
+    }
+
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -118,11 +187,10 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
                   controller: pass,
                   obscureText: true,
                   decoration: const InputDecoration(labelText: 'Пароль')),
-              CheckboxListTile(
-                value: register,
-                onChanged: (v) => setDialogState(() => register = v ?? false),
-                title: const Text('Зарегистрировать новый'),
-                contentPadding: EdgeInsets.zero,
+              const SizedBox(height: 12),
+              const Text(
+                'Это локальный аккаунт Плеера Вахтовика, не Google. Первый раз нажми «Создать».',
+                style: TextStyle(fontSize: 12, color: Colors.white70),
               ),
               if (busy) const LinearProgressIndicator(color: Colors.orange),
             ],
@@ -131,29 +199,15 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
             TextButton(
                 onPressed: busy ? null : () => Navigator.pop(context, false),
                 child: const Text('Отмена')),
+            TextButton(
+              onPressed:
+                  busy ? null : () => auth(context, setDialogState, true),
+              child: const Text('Создать'),
+            ),
             FilledButton(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      setDialogState(() => busy = true);
-                      try {
-                        if (register) {
-                          await ApiService.youtubeRegister(
-                              user.text, pass.text);
-                        } else {
-                          await ApiService.youtubeLogin(user.text, pass.text);
-                        }
-                        if (context.mounted) Navigator.pop(context, true);
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Ошибка: $e')));
-                        }
-                      } finally {
-                        setDialogState(() => busy = false);
-                      }
-                    },
-              child: Text(register ? 'Создать' : 'Войти'),
+              onPressed:
+                  busy ? null : () => auth(context, setDialogState, false),
+              child: const Text('Войти'),
             ),
           ],
         ),
@@ -392,6 +446,24 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
 
   Widget _subsTab() {
     return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _googleImporting ? null : _importGoogleSubscriptions,
+            icon: _googleImporting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.cloud_download),
+            label: Text(_googleImporting
+                ? 'Жду вход Google...'
+                : 'Импортировать подписки из Google'),
+          ),
+        ),
+      ),
       Padding(
           padding: const EdgeInsets.all(8),
           child: Row(children: [

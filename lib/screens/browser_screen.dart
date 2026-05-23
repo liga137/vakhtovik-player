@@ -11,6 +11,8 @@ import '../services/youtube_hover.dart';
 import '../models/preset.dart';
 import 'youtube_search_screen.dart';
 
+enum EconomyLevel { none, economy, superEconomy, text }
+
 class BrowserScreen extends StatefulWidget {
   const BrowserScreen({super.key});
 
@@ -22,11 +24,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
   final GlobalKey webViewKey = GlobalKey();
   InAppWebViewController? webViewController;
   String url = "https://seasonvar.ru/";
+  String _currentRealUrl = "https://seasonvar.ru/";
   final urlController = TextEditingController(text: "https://seasonvar.ru/");
   
   bool _showInterceptor = false;
   bool _showHome = true;
   bool _liteMode = false;
+  EconomyLevel _economyLevel = EconomyLevel.none;
   String _interceptedUrl = "";
   String _currentReferer = "";
   List<Preset> _presets = [];
@@ -421,8 +425,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   void _openSite(String siteUrl) {
     setState(() => _showHome = false);
-    urlController.text = siteUrl;
+    _currentRealUrl = siteUrl;
     final loadUrl = _liteMode ? ApiService.liteUrl(siteUrl) : siteUrl;
+    urlController.text = loadUrl;
     webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
   }
 
@@ -430,7 +435,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final text = urlController.text.trim();
     final parsed = Uri.tryParse(text);
     if (parsed != null && parsed.path == '/lite' && parsed.queryParameters['url'] != null) return parsed.queryParameters['url']!;
-    return text.isEmpty ? url : text;
+    if (text.isEmpty || text == 'about:blank') return _currentRealUrl;
+    return text;
   }
 
   void _loadAddress(String value) {
@@ -438,18 +444,61 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (target.isEmpty) return;
     if (!Uri.parse(target).hasScheme) target = "https://$target";
     setState(() => _showHome = false);
-    urlController.text = target;
+    _currentRealUrl = target;
     final loadUrl = _liteMode ? ApiService.liteUrl(target) : target;
+    urlController.text = loadUrl;
     webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
   }
 
-  void _toggleLiteMode() {
+  ContentBlocker _block(String urlFilter, List<ContentBlockerTriggerResourceType> types) {
+    return ContentBlocker(
+      trigger: ContentBlockerTrigger(urlFilter: urlFilter, resourceType: types),
+      action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
+    );
+  }
+
+  List<ContentBlocker> _economyRules(EconomyLevel level) {
+    final adAndTrackers = _block(
+      r'.*(doubleclick|googlesyndication|google-analytics|googletagmanager|adfox|adriver|betweendigital|mc\.yandex|yandex\.ru/ads|mytarget|facebook\.net|scorecardresearch|hotjar|criteo|adsystem|getter\.cfd|schulist\.link).*',
+      [ContentBlockerTriggerResourceType.SCRIPT, ContentBlockerTriggerResourceType.RAW],
+    );
+    switch (level) {
+      case EconomyLevel.none:
+        return const [];
+      case EconomyLevel.economy:
+        return [adAndTrackers, _block(r'.*\.(woff2?|ttf|otf)(\?.*)?$', [ContentBlockerTriggerResourceType.FONT])];
+      case EconomyLevel.superEconomy:
+        return [
+          adAndTrackers,
+          _block(r'.*\.(woff2?|ttf|otf)(\?.*)?$', [ContentBlockerTriggerResourceType.FONT]),
+          _block(r'.*\.(jpg|jpeg|png|gif|webp|avif|svg)(\?.*)?$', [ContentBlockerTriggerResourceType.IMAGE, ContentBlockerTriggerResourceType.SVG_DOCUMENT]),
+        ];
+      case EconomyLevel.text:
+        return const [];
+    }
+  }
+
+  String _economyLabel(EconomyLevel level) {
+    switch (level) {
+      case EconomyLevel.none: return 'Обычный';
+      case EconomyLevel.economy: return '🪶 Эконом';
+      case EconomyLevel.superEconomy: return '⚡ Супер';
+      case EconomyLevel.text: return '📄 Текст';
+    }
+  }
+
+  Future<void> _setEconomyLevel(EconomyLevel level) async {
     final target = _realUrlFromAddress();
-    final next = !_liteMode;
-    setState(() => _liteMode = next);
+    final textMode = level == EconomyLevel.text;
+    setState(() {
+      _economyLevel = level;
+      _liteMode = textMode;
+    });
+    await webViewController?.setSettings(settings: InAppWebViewSettings(contentBlockers: _economyRules(level)));
     if (!_showHome && target.isNotEmpty && target != 'about:blank') {
-      final loadUrl = next ? ApiService.liteUrl(target) : target;
-      urlController.text = target;
+      _currentRealUrl = target;
+      final loadUrl = textMode ? ApiService.liteUrl(target) : target;
+      urlController.text = loadUrl;
       webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
     }
   }
@@ -520,18 +569,26 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       icon: const Icon(Icons.person, color: Colors.orange),
                       onPressed: () {},
                     ),
-                    GestureDetector(
-                      onTap: _toggleLiteMode,
+                    PopupMenuButton<EconomyLevel>(
+                      tooltip: 'Режим экономии',
+                      initialValue: _economyLevel,
+                      onSelected: _setEconomyLevel,
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: EconomyLevel.none, child: Text('Обычный')),
+                        PopupMenuItem(value: EconomyLevel.economy, child: Text('🪶 Эконом: режем рекламу/шрифты')),
+                        PopupMenuItem(value: EconomyLevel.superEconomy, child: Text('⚡ Супер: ещё без картинок')),
+                        PopupMenuItem(value: EconomyLevel.text, child: Text('📄 Текст: серверный /lite')),
+                      ],
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _liteMode ? Colors.greenAccent.shade400 : const Color(0xFF333333),
+                          color: _economyLevel == EconomyLevel.none ? const Color(0xFF333333) : Colors.greenAccent.shade400,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: _liteMode ? Colors.greenAccent : Colors.grey),
+                          border: Border.all(color: _economyLevel == EconomyLevel.none ? Colors.grey : Colors.greenAccent),
                         ),
                         child: Text(
-                          _liteMode ? '🪶 Эконом' : 'Обычный',
-                          style: TextStyle(color: _liteMode ? Colors.black : Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                          _economyLabel(_economyLevel),
+                          style: TextStyle(color: _economyLevel == EconomyLevel.none ? Colors.white70 : Colors.black, fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
