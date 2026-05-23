@@ -645,9 +645,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   backgroundColor: Color(0xFF333333),
                 ),
                
-              // WebView
-              Expanded(
-                child: InAppWebView(
+               // WebView — скрыт когда плеер сверху (экономия GPU)
+               Expanded(
+                 child: Offstage(
+                   offstage: _showPlayer,
+                   child: InAppWebView(
                   key: webViewKey,
                   initialUrlRequest: URLRequest(url: WebUri("about:blank")),
                   initialSettings: InAppWebViewSettings(
@@ -660,7 +662,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     cacheEnabled: true,
                     javaScriptEnabled: true,
                     transparentBackground: false,
-                    hardwareAcceleration: true,
+                    hardwareAcceleration: false,
                     // Chrome UA — YouTube блокирует Edge/WebView2 UA
                     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                   ),
@@ -909,8 +911,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   },
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
+        ),
 
           if (_showHome && !_showPlayer)
             Positioned.fill(
