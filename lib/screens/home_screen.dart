@@ -63,8 +63,6 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (_) => PlayerScreen(
             hlsUrl: hlsUrl,
             sessionId: result.sessionId,
-            sourceUrl: url,
-            quality: _selectedQuality,
           ),
         ),
       );

@@ -32,7 +32,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _liteMode = false;
   EconomyLevel _economyLevel = EconomyLevel.economy;
   bool _pageLoading = false;
-  double _pageProgress = 0;
   String _interceptedUrl = "";
   String _currentReferer = "";
   List<Preset> _presets = [];
@@ -641,11 +640,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 ),
               ),
               if (_pageLoading)
-                LinearProgressIndicator(
-                  value: _pageProgress <= 0 || _pageProgress >= 1 ? null : _pageProgress,
+                const LinearProgressIndicator(
                   minHeight: 3,
                   color: Colors.orange,
-                  backgroundColor: const Color(0xFF333333),
+                  backgroundColor: Color(0xFF333333),
                 ),
                
               // WebView
@@ -669,9 +667,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   ),
                   onWebViewCreated: (controller) {
                     webViewController = controller;
-                    if (_economyLevel != EconomyLevel.none) {
-                      controller.setSettings(settings: InAppWebViewSettings(contentBlockers: _economyRules(_economyLevel)));
-                    }
                     controller.addJavaScriptHandler(
                       handlerName: 'compressUrl',
                       callback: (args) {
@@ -724,13 +719,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     );
                   },
                   onLoadStart: (controller, url) {
-                    if (mounted) setState(() { _pageLoading = true; _pageProgress = 0.05; });
-                  },
-                  onProgressChanged: (controller, progress) {
-                    if (mounted) setState(() { _pageProgress = progress / 100.0; _pageLoading = progress < 100; });
+                    if (mounted) setState(() { _pageLoading = true; });
                   },
                   onLoadStop: (controller, url) {
-                    if (mounted) setState(() { _pageLoading = false; _pageProgress = 1; });
+                    if (mounted) setState(() { _pageLoading = false; });
                     if (url != null) {
                       if (url.path == '/lite' && url.queryParameters['url'] != null) {
                         urlController.text = url.queryParameters['url']!;
