@@ -1023,6 +1023,28 @@ class _BrowserScreenState extends State<BrowserScreen> {
               ),
             ),
 
+           // Загрузка плеера — оверлей пока идёт инициализация
+          if (_isLoading && !_showPlayer)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(color: const Color(0xCC1A0F08), borderRadius: BorderRadius.circular(16)),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(color: Colors.orange),
+                        const SizedBox(height: 14),
+                        Text('Запускаю $_selectedQuality...', style: const TextStyle(color: Colors.white, fontSize: 16)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
            // Native Player Screen
           if (_showPlayer)
             Positioned.fill(

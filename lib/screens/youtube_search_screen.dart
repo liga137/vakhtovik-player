@@ -535,14 +535,22 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
           TabBarView(children: [_feedTab(), _searchTab(), _subsTab()]),
           if (_starting)
             Container(
-                color: Colors.black54,
-                child: Center(
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const CircularProgressIndicator(color: Colors.orange),
-                  const SizedBox(height: 12),
-                  Text('Запускаю $_quality...',
-                      style: const TextStyle(color: Colors.white))
-                ]))),
+              color: Colors.black54,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(color: const Color(0xCC1A0F08), borderRadius: BorderRadius.circular(16)),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(color: Colors.orange),
+                      const SizedBox(height: 14),
+                      Text('Запускаю $_quality...', style: const TextStyle(color: Colors.white, fontSize: 16)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ]),
       ),
     );

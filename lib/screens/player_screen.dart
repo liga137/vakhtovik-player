@@ -135,7 +135,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
       body: Center(
         child: _isInitialized && _chewieController != null
             ? Chewie(controller: _chewieController!)
-            : const CircularProgressIndicator(color: Colors.orange),
+            : Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(color: const Color(0xCC1A0F08), borderRadius: BorderRadius.circular(16)),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(color: Colors.orange),
+                        const SizedBox(height: 14),
+                        Text('Запускаю ${widget.quality}...', style: const TextStyle(color: Colors.white, fontSize: 16)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
       ),
     );
   }
