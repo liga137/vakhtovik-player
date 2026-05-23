@@ -30,7 +30,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _showInterceptor = false;
   bool _showHome = true;
   bool _liteMode = false;
-  EconomyLevel _economyLevel = EconomyLevel.none;
+  EconomyLevel _economyLevel = EconomyLevel.economy;
+  bool _pageLoading = false;
+  double _pageProgress = 0;
   String _interceptedUrl = "";
   String _currentReferer = "";
   List<Preset> _presets = [];
@@ -634,23 +636,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         ),
                       ),
                     ],
-                    // Кнопка «Слить куки» — только на Filmix
-                    if (urlController.text.contains('filmix'))
-                      IconButton(
-                        icon: const Icon(Icons.cookie, color: Colors.amber),
-                        tooltip: 'Слить куки Filmix',
-                        onPressed: () {
-                          webViewController?.evaluateJavascript(source: FilmixAuth.getCookieExtractorJS());
-                          Clipboard.setData(const ClipboardData(text: 'Жди prompt'));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Появился prompt — скопируй куки (Ctrl+C)'), duration: Duration(seconds: 4))
-                          );
-                        },
-                      ),
                   ],
                 ),
               ),
-              
+              if (_pageLoading)
+                LinearProgressIndicator(
+                  value: _pageProgress <= 0 || _pageProgress >= 1 ? null : _pageProgress,
+                  minHeight: 3,
+                  color: Colors.orange,
+                  backgroundColor: const Color(0xFF333333),
+                ),
+               
               // WebView
               Expanded(
                 child: InAppWebView(
@@ -660,6 +656,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     useShouldOverrideUrlLoading: true,
                     useShouldInterceptRequest: true,
                     useOnLoadResource: false,
+                    contentBlockers: _economyRules(_economyLevel),
                     mediaPlaybackRequiresUserGesture: false,
                     domStorageEnabled: true,
                     databaseEnabled: true,
@@ -723,7 +720,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       },
                     );
                   },
+                  onLoadStart: (controller, url) {
+                    if (mounted) setState(() { _pageLoading = true; _pageProgress = 0.05; });
+                  },
+                  onProgressChanged: (controller, progress) {
+                    if (mounted) setState(() { _pageProgress = progress / 100.0; _pageLoading = progress < 100; });
+                  },
                   onLoadStop: (controller, url) {
+                    if (mounted) setState(() { _pageLoading = false; _pageProgress = 1; });
                     if (url != null) {
                       if (url.path == '/lite' && url.queryParameters['url'] != null) {
                         urlController.text = url.queryParameters['url']!;
@@ -761,8 +765,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
                        // Filmix: автологин
                         if (url.host.contains('filmix')) {
                           controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
+                          Future.delayed(const Duration(milliseconds: 700), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
                           Future.delayed(const Duration(seconds: 2), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
-                          Future.delayed(const Duration(seconds: 5), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
+                          Future.delayed(const Duration(seconds: 4), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
+                          Future.delayed(const Duration(seconds: 7), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
                         }
 
                        // YouTube: ховер-кнопки
@@ -798,6 +804,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   shouldOverrideUrlLoading: (controller, navigationAction) async {
                     var url = navigationAction.request.url;
                     if (url == null) return NavigationActionPolicy.ALLOW;
+
+                    if (url.host.contains('filmix') && (url.path.contains('profile') || url.path.contains('user') || url.path.contains('login'))) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Профиль Filmix заблокирован в приложении'), duration: Duration(seconds: 2)),
+                      );
+                      return NavigationActionPolicy.CANCEL;
+                    }
+
+                    if (_economyLevel == EconomyLevel.text && url.path != '/lite' && !url.toString().startsWith('about:')) {
+                      final wrapped = ApiService.liteUrl(url.toString());
+                      controller.loadUrl(urlRequest: URLRequest(url: WebUri(wrapped)));
+                      return NavigationActionPolicy.CANCEL;
+                    }
                     
                     // YouTube: не грузим страницу — грузим about:blank и показываем шторку
                     if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
