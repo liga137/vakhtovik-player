@@ -237,6 +237,10 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
           builder: (_) => PlayerScreen(
                 hlsUrl: ApiService.hlsUrl(result.playlistUrl),
                 sessionId: result.sessionId,
+                sourceUrl: targetUrl,
+                quality: _quality,
+                referer: 'https://www.youtube.com/',
+                duration: result.duration,
               )));
     } catch (e) {
       if (mounted) _snack('Ошибка запуска: $e');

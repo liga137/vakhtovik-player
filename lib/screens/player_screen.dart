@@ -7,11 +7,19 @@ import '../services/api_service.dart';
 class PlayerScreen extends StatefulWidget {
   final String hlsUrl;
   final String sessionId;
+  final String? sourceUrl;
+  final String quality;
+  final String referer;
+  final double duration;
 
   const PlayerScreen({
     super.key,
     required this.hlsUrl,
     required this.sessionId,
+    this.sourceUrl,
+    this.quality = '240p',
+    this.referer = '',
+    this.duration = 0,
   });
 
   @override
@@ -52,6 +60,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  Future<void> _switchQuality(String newQuality) async {
+    final source = widget.sourceUrl;
+    if (source == null || source.isEmpty || newQuality == widget.quality) return;
+
+    // Закрываем текущий и открываем новый плеер — без гонки
+    ApiService.stopSession(widget.sessionId).catchError((_) {});
+    final result = await ApiService.transcode(url: source, quality: newQuality, referer: widget.referer);
+    if (!mounted) return;
+
+    Navigator.of(context).pushReplacement(MaterialPageRoute(
+      builder: (_) => PlayerScreen(
+        hlsUrl: ApiService.hlsUrl(result.playlistUrl),
+        sessionId: result.sessionId,
+        sourceUrl: source,
+        quality: newQuality,
+        referer: widget.referer,
+        duration: widget.duration,
+      ),
+    ));
+  }
+
+  String _fmtDuration(double seconds) {
+    if (seconds <= 0) return '';
+    final d = seconds.round();
+    final h = d ~/ 3600;
+    final m = (d % 3600) ~/ 60;
+    final s = d % 60;
+    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
   @override
   void dispose() {
     ApiService.stopSession(widget.sessionId).catchError((_) {});
@@ -62,13 +101,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final dur = _fmtDuration(widget.duration);
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('Плеер'),
+        title: Text(dur.isNotEmpty ? 'Плеер · $dur' : 'Плеер'),
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         actions: [
+          if (widget.sourceUrl != null)
+            PopupMenuButton<String>(
+              tooltip: 'Качество',
+              initialValue: widget.quality,
+              onSelected: _switchQuality,
+              icon: const Icon(Icons.settings, color: Colors.orange),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: '144p', child: Text('144p')),
+                PopupMenuItem(value: '240p', child: Text('240p')),
+                PopupMenuItem(value: '360p', child: Text('360p')),
+                PopupMenuItem(value: '480p', child: Text('480p')),
+              ],
+            ),
           IconButton(
             icon: const Icon(Icons.stop),
             tooltip: 'Остановить транскодирование',
