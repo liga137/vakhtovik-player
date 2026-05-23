@@ -426,7 +426,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _openSite(String siteUrl) {
-    setState(() => _showHome = false);
+    setState(() { _showHome = false; _pageLoading = true; });
     _currentRealUrl = siteUrl;
     final loadUrl = _liteMode ? ApiService.liteUrl(siteUrl) : siteUrl;
     urlController.text = loadUrl;
@@ -445,7 +445,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     var target = value.trim();
     if (target.isEmpty) return;
     if (!Uri.parse(target).hasScheme) target = "https://$target";
-    setState(() => _showHome = false);
+    setState(() { _showHome = false; _pageLoading = true; });
     _currentRealUrl = target;
     final loadUrl = _liteMode ? ApiService.liteUrl(target) : target;
     urlController.text = loadUrl;
@@ -501,6 +501,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _currentRealUrl = target;
       final loadUrl = textMode ? ApiService.liteUrl(target) : target;
       urlController.text = loadUrl;
+      if (mounted) setState(() => _pageLoading = true);
       webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
     }
   }
@@ -656,7 +657,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     useShouldOverrideUrlLoading: true,
                     useShouldInterceptRequest: true,
                     useOnLoadResource: false,
-                    contentBlockers: _economyRules(_economyLevel),
                     mediaPlaybackRequiresUserGesture: false,
                     domStorageEnabled: true,
                     databaseEnabled: true,
@@ -669,6 +669,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   ),
                   onWebViewCreated: (controller) {
                     webViewController = controller;
+                    if (_economyLevel != EconomyLevel.none) {
+                      controller.setSettings(settings: InAppWebViewSettings(contentBlockers: _economyRules(_economyLevel)));
+                    }
                     controller.addJavaScriptHandler(
                       handlerName: 'compressUrl',
                       callback: (args) {
