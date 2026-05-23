@@ -495,7 +495,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _economyLevel = level;
       _liteMode = textMode;
     });
-    await webViewController?.setSettings(settings: InAppWebViewSettings(contentBlockers: _economyRules(level)));
     if (!_showHome && target.isNotEmpty && target != 'about:blank') {
       _currentRealUrl = target;
       final loadUrl = textMode ? ApiService.liteUrl(target) : target;
@@ -720,6 +719,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   },
                   onLoadStart: (controller, url) {
                     if (mounted) setState(() { _pageLoading = true; });
+                    // При переходе на другой сайт сбрасываем кнопки серий Seasonvar
+                    if (url != null && !url.toString().contains('seasonvar') && _seasonvarEpisodes.isNotEmpty) {
+                      setState(() { _seasonvarEpisodes = []; _seasonvarIndex = 0; });
+                    }
                   },
                   onLoadStop: (controller, url) {
                     if (mounted) setState(() { _pageLoading = false; });

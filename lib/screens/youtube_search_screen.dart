@@ -160,8 +160,10 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
         if (context.mounted) Navigator.pop(context, true);
       } catch (e) {
         final msg = e.toString().contains('401')
-            ? 'Аккаунт не найден. Если входишь впервые — нажми «Создать». Это не Google-вход.'
-            : 'Ошибка: $e';
+            ? 'Аккаунт не найден. Нажми «Создать» если впервые.'
+            : e.toString().contains('400') && e.toString().contains('exists')
+                ? 'Аккаунт уже существует. Нажми «Войти».'
+                : 'Ошибка: $e';
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(msg), duration: const Duration(seconds: 5)));
