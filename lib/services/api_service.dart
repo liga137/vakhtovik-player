@@ -8,6 +8,16 @@ import '../models/youtube_video.dart';
 class ApiService {
   // Домен nip.io совпадает с SSL-сертификатом Let's Encrypt (IP напрямую → ошибка mismatch)
   static const String _baseUrl = 'https://195.226.92.151.nip.io:8008';
+  static String? _ytToken;
+  static String? _ytUsername;
+
+  static bool get isYouTubeLoggedIn => _ytToken != null;
+  static String? get youtubeUsername => _ytUsername;
+
+  static Map<String, String> get _ytHeaders => {
+        'Content-Type': 'application/json',
+        if (_ytToken != null) 'Authorization': 'Bearer $_ytToken',
+      };
 
   /// Получить список пресетов качества
   static Future<List<Preset>> getPresets() async {
@@ -83,5 +93,72 @@ class ApiService {
           .toList();
     }
     throw Exception('Ошибка поиска YouTube: ${response.statusCode}');
+  }
+
+  static Future<void> youtubeRegister(String username, String password) async {
+    await _youtubeAuth('/yt/auth/register', username, password);
+  }
+
+  static Future<void> youtubeLogin(String username, String password) async {
+    await _youtubeAuth('/yt/auth/login', username, password);
+  }
+
+  static Future<void> _youtubeAuth(
+      String path, String username, String password) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl$path'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'username': username, 'password': password}),
+    );
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      _ytToken = data['token'] as String?;
+      _ytUsername = data['username'] as String? ?? username;
+      return;
+    }
+    throw Exception(
+        'Ошибка авторизации: ${response.statusCode} ${response.body}');
+  }
+
+  static void youtubeLogout() {
+    _ytToken = null;
+    _ytUsername = null;
+  }
+
+  static Future<List<Map<String, dynamic>>> youtubeSubscriptions() async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/yt/subscriptions'),
+      headers: _ytHeaders,
+    );
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(json.decode(response.body));
+    }
+    throw Exception('Ошибка подписок: ${response.statusCode}');
+  }
+
+  static Future<void> youtubeAddSubscription(String input,
+      {String channelName = ''}) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/yt/subscriptions/add'),
+      headers: _ytHeaders,
+      body: json.encode({'text': input, 'channel_name': channelName}),
+    );
+    if (response.statusCode == 200) return;
+    throw Exception(
+        'Ошибка добавления: ${response.statusCode} ${response.body}');
+  }
+
+  static Future<List<YouTubeVideo>> youtubeFeed({int limit = 30}) async {
+    final uri = Uri.parse('$_baseUrl/yt/feed')
+        .replace(queryParameters: {'limit': limit.toString()});
+    final response = await http.get(uri, headers: _ytHeaders);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as List<dynamic>;
+      return data
+          .whereType<Map<String, dynamic>>()
+          .map(YouTubeVideo.fromJson)
+          .toList();
+    }
+    throw Exception('Ошибка ленты: ${response.statusCode}');
   }
 }

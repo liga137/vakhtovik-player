@@ -426,6 +426,45 @@ class _BrowserScreenState extends State<BrowserScreen> {
     webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
   }
 
+  String _realUrlFromAddress() {
+    final text = urlController.text.trim();
+    final parsed = Uri.tryParse(text);
+    if (parsed != null && parsed.path == '/lite' && parsed.queryParameters['url'] != null) return parsed.queryParameters['url']!;
+    return text.isEmpty ? url : text;
+  }
+
+  void _loadAddress(String value) {
+    var target = value.trim();
+    if (target.isEmpty) return;
+    if (!Uri.parse(target).hasScheme) target = "https://$target";
+    setState(() => _showHome = false);
+    urlController.text = target;
+    final loadUrl = _liteMode ? ApiService.liteUrl(target) : target;
+    webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
+  }
+
+  void _toggleLiteMode() {
+    final target = _realUrlFromAddress();
+    final next = !_liteMode;
+    setState(() => _liteMode = next);
+    if (!_showHome && target.isNotEmpty && target != 'about:blank') {
+      final loadUrl = next ? ApiService.liteUrl(target) : target;
+      urlController.text = target;
+      webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
+    }
+  }
+
+  Future<void> _showCustomSiteDialog() async {
+    final c = TextEditingController(text: 'https://');
+    final result = await showDialog<String>(context: context, builder: (context) => AlertDialog(
+      title: const Text('Свой сайт'),
+      content: TextField(controller: c, autofocus: true, decoration: const InputDecoration(hintText: 'https://example.com'), onSubmitted: (v) => Navigator.pop(context, v)),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')), FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('Открыть'))],
+    ));
+    c.dispose();
+    if (result != null && result.trim().isNotEmpty) _loadAddress(result);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -473,13 +512,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             border: InputBorder.none,
                             icon: Icon(Icons.lock, color: Colors.green, size: 16),
                           ),
-                          onSubmitted: (value) {
-                            var uri = Uri.parse(value);
-                            if (!uri.hasScheme) value = "https://$value";
-                            setState(() => _showHome = false);
-                            final loadUrl = _liteMode ? ApiService.liteUrl(value) : value;
-                            webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
-                          },
+                          onSubmitted: _loadAddress,
                         ),
                       ),
                     ),
@@ -488,7 +521,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       onPressed: () {},
                     ),
                     GestureDetector(
-                      onTap: () => setState(() => _liteMode = !_liteMode),
+                      onTap: _toggleLiteMode,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -635,7 +668,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   },
                   onLoadStop: (controller, url) {
                     if (url != null) {
-                      urlController.text = url.toString();
+                      if (url.path == '/lite' && url.queryParameters['url'] != null) {
+                        urlController.text = url.queryParameters['url']!;
+                      } else {
+                        urlController.text = url.toString();
+                      }
                       if (url.toString() != 'about:blank' && _showHome) {
                         setState(() => _showHome = false);
                       }
@@ -665,9 +702,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                        }
 
                        // Filmix: автологин
-                       if (url.host.contains('filmix')) {
-                         controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
-                       }
+                        if (url.host.contains('filmix')) {
+                          controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
+                          Future.delayed(const Duration(seconds: 2), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
+                          Future.delayed(const Duration(seconds: 5), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
+                        }
 
                        // YouTube: ховер-кнопки
                        if (url.host.contains('youtube.com')) {
@@ -686,7 +725,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   onUpdateVisitedHistory: (controller, url, isReload) {
                     // YouTube: ловим pushState-навигацию (YouTube SPA)
                     if (url != null) {
-                      urlController.text = url.toString();
+                      if (url.path == '/lite' && url.queryParameters['url'] != null) {
+                        urlController.text = url.queryParameters['url']!;
+                      } else {
+                        urlController.text = url.toString();
+                      }
                       _updateYouTubeState(url);
                       if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
                         controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
@@ -815,7 +858,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         _HomeSiteButton(label: 'Seasonvar', icon: Icons.tv, onTap: () => _openSite('https://seasonvar.ru/')),
                         _HomeSiteButton(label: 'Filmix', icon: Icons.movie, onTap: () => _openSite('https://filmix.my/')),
                         _HomeSiteButton(label: 'YouTube', icon: Icons.play_circle, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const YouTubeSearchScreen()))),
-                        _HomeSiteButton(label: 'Свой сайт', icon: Icons.add_link, onTap: () => FocusScope.of(context).requestFocus(FocusNode())),
+                         _HomeSiteButton(label: 'Свой сайт', icon: Icons.add_link, onTap: _showCustomSiteDialog),
                       ],
                     ),
                   ],
