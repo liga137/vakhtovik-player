@@ -17,27 +17,36 @@ class GostService {
   static int get proxyPort => _port;
   static String get proxyUrl => 'http://$proxyHost:$proxyPort';
 
+  static Future<File> _findOrDownload() async {
+    // 1. Рядом с .exe (из артефакта сборки)
+    final bundled = File('${Directory.current.path}/gost.exe');
+    if (await bundled.exists()) return bundled;
+
+    // 2. В AppData (уже скачан ранее)
+    final dir = Directory('${Platform.environment['LOCALAPPDATA'] ?? '.'}/VakhtovikPlayer');
+    final exe = File('${dir.path}/gost.exe');
+    if (await exe.exists()) return exe;
+
+    // 3. Скачать с GitHub (запасной вариант)
+    try {
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final resp = await http.get(Uri.parse(_gostUrl));
+      if (resp.statusCode != 200) throw Exception('download failed');
+      final tmp = File('${dir.path}/gost.zip');
+      await tmp.writeAsBytes(resp.bodyBytes);
+      await Process.run('powershell', [
+        '-c', 'Expand-Archive -Force -Path "${tmp.path}" -DestinationPath "${dir.path}"'
+      ]);
+      await tmp.delete();
+      if (await exe.exists()) return exe;
+    } catch (_) {}
+    throw Exception('gost.exe not found');
+  }
+
   static Future<void> start() async {
     if (_started || !Platform.isWindows) return;
     try {
-      final dir = Directory('${Platform.environment['LOCALAPPDATA'] ?? '.'}/VakhtovikPlayer');
-      if (!await dir.exists()) await dir.create(recursive: true);
-      final exe = File('${dir.path}/gost.exe');
-
-      if (!await exe.exists()) {
-        // Скачиваем GOST при первом запуске
-        final resp = await http.get(Uri.parse(_gostUrl));
-        if (resp.statusCode != 200) return;
-        final tmp = File('${dir.path}/gost.zip');
-        await tmp.writeAsBytes(resp.bodyBytes);
-        // Распаковываем через PowerShell
-        await Process.run('powershell', [
-          '-c', 'Expand-Archive -Force -Path "${tmp.path}" -DestinationPath "${dir.path}"'
-        ]);
-        await tmp.delete();
-      }
-
-      if (!await exe.exists()) return;
+      final exe = await _findOrDownload();
 
       _process = await Process.start(
         exe.path,

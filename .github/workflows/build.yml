@@ -24,8 +24,17 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      - name: Download GOST tunnel (Windows)
+        run: |
+          curl -L -o gost.zip https://github.com/ginuerzh/gost/releases/download/v2.12.0/gost_2.12.0_windows_amd64.zip
+          Expand-Archive -Force gost.zip -DestinationPath .
+          mkdir -Force build\windows\x64\runner\Release
+
       - name: Build Windows Release
         run: flutter build windows --release
+
+      - name: Bundle GOST with Windows build
+        run: Copy-Item gost.exe build\windows\x64\runner\Release\gost.exe
 
       - name: Compress Windows Build
         run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath Vakhtovik-Player-Windows.zip
