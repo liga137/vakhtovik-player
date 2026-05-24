@@ -77,9 +77,9 @@ class HysteriaService {
     try {
       final client = HttpClient();
       client.findProxy = (uri) => 'PROXY $proxyHost:$proxyPort';
-      client.connectionTimeout = const Duration(seconds: 15);
-      final req = await client.getUrl(Uri.parse('http://195.226.92.151.nip.io:8008/presets'));
-      final resp = await req.close().timeout(const Duration(seconds: 20));
+      client.connectionTimeout = const Duration(seconds: 30);
+      final req = await client.getUrl(Uri.parse('https://195.226.92.151.nip.io:8008/presets'));
+      final resp = await req.close().timeout(const Duration(seconds: 40));
       return resp.statusCode == 200;
     } catch (_) {
       return false;
