@@ -11,6 +11,7 @@ import '../services/filmix_auth.dart';
 import '../services/youtube_hover.dart';
 import '../models/preset.dart';
 import 'youtube_search_screen.dart';
+import 'player_screen.dart';
 
 enum EconomyLevel { none, economy, superEconomy, text }
 
@@ -182,98 +183,27 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
     try {
       final result = await ApiService.transcode(url: _interceptedUrl, quality: _selectedQuality, referer: _currentReferer);
-      final hlsUrl = ApiService.hlsUrl(result.playlistUrl);
+      if (!mounted) return;
+      setState(() { _isLoading = false; });
+      _muteWebView();
 
-      // Инициализируем новый контроллер
-      _videoController?.dispose();
-      _chewieController?.dispose();
-      
-      _videoController = VideoPlayerController.networkUrl(Uri.parse(hlsUrl));
-      await _videoController!.initialize();
-      // Всегда начинаем с начала (HLS event может стартовать с live-edge)
-      await _videoController!.seekTo(Duration.zero);
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => PlayerScreen(
+          hlsUrl: ApiService.hlsUrl(result.playlistUrl),
+          sessionId: result.sessionId,
+          sourceUrl: _interceptedUrl,
+          quality: _selectedQuality,
+          referer: _currentReferer,
+          duration: result.duration,
+        ),
+      ));
 
-      // Ждём первый кадр чтобы получить реальный aspectRatio
-      await Future.delayed(const Duration(milliseconds: 500));
-      
-      final ar = _videoController!.value.aspectRatio > 0 
-          ? _videoController!.value.aspectRatio 
-          : 16 / 9; // fallback 16:9 если HLS не дал размер
+      _unmuteWebView();
 
-      _chewieController = ChewieController(
-        videoPlayerController: _videoController!,
-        autoPlay: true,
-        looping: false,
-        aspectRatio: ar,
-        allowFullScreen: true,
-        allowMuting: true,
-        showControls: true,
-        showControlsOnInitialize: true,
-        // НЕ используем кастомные контролы — даём Chewie самому выбрать (MaterialDesktopControls на Windows)
-        errorBuilder: (context, errorMessage) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Text(errorMessage, style: const TextStyle(color: Colors.white, fontSize: 16), textAlign: TextAlign.center),
-            ),
-          );
-        },
-      );
-
-      // Слушаем окончание видео
-      // ВАЖНО: listener вызывается каждый кадр (30 раз/сек).
-      // _endReached — защита от создания сотен Future.delayed таймеров.
-      _endReached = false;
-      _videoController!.addListener(() {
-        if (!_videoController!.value.isInitialized) return;
-        if (_endReached) return; // уже обработали конец — ничего не делаем
-
-        final pos = _videoController!.value.position;
-        final dur = _videoController!.value.duration;
-        
-        // Способ 1: точное знание длительности
-        if (dur > Duration.zero && pos >= dur - const Duration(seconds: 1) && pos > Duration.zero) {
-          _endReached = true;
-          _playNextEpisode();
-          return;
-        }
-        // Способ 2: HLS без duration — позиция застыла на 2 сек
-        if (dur == Duration.zero && _videoController!.value.isPlaying) {
-          final snapshot = pos;
-          _lastPosition = snapshot;
-          // Один таймер — проверяем через 2 сек. Если позиция не изменилась = конец.
-          Future.delayed(const Duration(seconds: 2), () {
-            if (_endReached) return;
-            if (_videoController != null &&
-                _videoController!.value.isInitialized &&
-                _videoController!.value.duration == Duration.zero &&
-                _videoController!.value.position == snapshot &&
-                snapshot > const Duration(seconds: 5)) {
-              _endReached = true;
-              _playNextEpisode();
-            }
-          });
-        }
-      });
-
-      // Дополнительно: слушаем событие завершения от Chewie
-      
-      if (mounted) {
-        setState(() {
-          _showInterceptor = false;
-          _isLoading = false;
-          _showPlayer = true;
-        });
-        // Глушим WebView — чтобы фоном не орала реклама/оригинал
-        _muteWebView();
-
-        // Seasonvar: основной поток уже ушёл на транскодер, теперь можно тихо собрать список серий
-        final isSeasonvar = _currentReferer.contains('seasonvar') || _interceptedUrl.contains('seasonvar');
-        if (isSeasonvar && _seasonvarEpisodes.isEmpty && !_scanningSeasonvar) {
-          Future.delayed(const Duration(seconds: 1), () {
-            if (mounted && _showPlayer) _scanSeasonvarPlaylist(silent: true);
-          });
-        }
+      // Seasonvar: сбор списка серий после просмотра
+      final isSeasonvar = _currentReferer.contains('seasonvar') || _interceptedUrl.contains('seasonvar');
+      if (isSeasonvar && _seasonvarEpisodes.isEmpty && !_scanningSeasonvar) {
+        _scanSeasonvarPlaylist(silent: true);
       }
     } catch (e) {
       if (!mounted) return;
@@ -303,18 +233,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _stopPlayer() {
-    _chewieController?.pause();
-    _videoController?.pause();
-    _chewieController?.dispose();
-    _videoController?.dispose();
-    _chewieController = null;
-    _videoController = null;
-    setState(() {
-      _showPlayer = false;
-      _interceptedAlready = false; // сбрасываем флаг — готовы перехватить следующий поток
-      _endReached = false;
-    });
-    // Возвращаем звук WebView
+    // WebView звук обратно
+    _unmuteWebView();
+  }
+
+  void _unmuteWebView() {
     webViewController?.evaluateJavascript(source: """
       (function(){
         var vids = document.querySelectorAll('video, audio');
@@ -952,6 +875,43 @@ class _BrowserScreenState extends State<BrowserScreen> {
               ),
             ),
 
+           // Эпизоды Seasonvar — кнопки поверх браузера
+          if (_seasonvarEpisodes.isNotEmpty)
+            Positioned(
+              top: 92,
+              left: 0,
+              right: 0,
+              child: Container(
+                color: Colors.black87,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      const Text('Серии: ', style: TextStyle(color: Colors.orange, fontSize: 13)),
+                      ...List.generate(_seasonvarEpisodes.length, (index) {
+                        final active = index == _seasonvarIndex;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: OutlinedButton(
+                            onPressed: () => _playSeasonvarEpisode(index),
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: active ? Colors.orange : Colors.transparent,
+                              foregroundColor: active ? Colors.black : Colors.white,
+                              side: BorderSide(color: active ? Colors.orange : Colors.white38),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              minimumSize: Size.zero,
+                            ),
+                            child: Text('${index + 1}', style: const TextStyle(fontSize: 12)),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
           // YouTube FAB убран — кнопка «Сжать» теперь в хедере
 
           // Interceptor Overlay
@@ -1154,8 +1114,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 }
 
-// _MiniProgressOverlay удалён — Chewie показывает время в своих контролах
-// (виджет существовал для HLS без duration, но создавал дублирующий таймер)
 class _MiniProgressOverlay extends StatefulWidget { // оставлен для совместимости на случай отката
   final VideoPlayerController controller;
   const _MiniProgressOverlay({required this.controller});
