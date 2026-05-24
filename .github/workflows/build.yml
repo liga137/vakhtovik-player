@@ -26,7 +26,7 @@ jobs:
 
       - name: Download GOST tunnel (Windows)
         run: |
-          curl -L -o gost.zip https://github.com/ginuerzh/gost/releases/download/v2.12.0/gost_2.12.0_windows_amd64.zip
+          curl -L -o gost.zip https://github.com/go-gost/gost/releases/download/v3.2.6/gost_3.2.6_windows_amd64.zip
           Expand-Archive -Force gost.zip -DestinationPath .
           mkdir -Force build\windows\x64\runner\Release
 

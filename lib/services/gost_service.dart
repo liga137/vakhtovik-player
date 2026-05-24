@@ -10,7 +10,7 @@ class GostService {
   static const _password = 'Vakh-4JOjF1znmw4kszAdMtarivhR';
   static const _server = '195.226.92.151.nip.io';
   static const _serverPort = 443;
-  static const _gostUrl = 'https://github.com/ginuerzh/gost/releases/download/v2.12.0/gost_2.12.0_windows_amd64.zip';
+  static const _gostUrl = 'https://github.com/go-gost/gost/releases/download/v3.2.6/gost_3.2.6_windows_amd64.zip';
 
   static bool get isRunning => _started && _process != null;
   static String get proxyHost => '127.0.0.1';
