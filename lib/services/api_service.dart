@@ -1,15 +1,18 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import '../models/preset.dart';
 import '../models/transcode_result.dart';
 import '../models/youtube_video.dart';
+import 'gost_service.dart';
 
 /// Сервис для работы с API «Плеер Вахтовика»
 class ApiService {
-  // Домен nip.io совпадает с SSL-сертификатом Let's Encrypt (IP напрямую → ошибка mismatch)
   static const String _baseUrl = 'https://195.226.92.151.nip.io:8008';
   static String? _ytToken;
   static String? _ytUsername;
+
+  static http.Client get _client => IOClient(GostService.createProxyClient());
 
   static bool get isYouTubeLoggedIn => _ytToken != null;
   static String? get youtubeUsername => _ytUsername;
@@ -23,7 +26,7 @@ class ApiService {
 
   /// Получить список пресетов качества
   static Future<List<Preset>> getPresets() async {
-    final response = await http.get(Uri.parse('$_baseUrl/presets'));
+    final response = await _client.get(Uri.parse('$_baseUrl/presets'));
     if (response.statusCode == 200) {
       final Map<String, dynamic> data = json.decode(response.body);
       return data.entries
@@ -42,7 +45,7 @@ class ApiService {
     final uri = Uri.parse('$_baseUrl/transcode').replace(
       queryParameters: {'url': url, 'quality': quality, 'referer': referer},
     );
-    final response = await http.post(uri);
+    final response = await _client.post(uri);
     if (response.statusCode == 200) {
       return TranscodeResult.fromJson(json.decode(response.body));
     }
@@ -53,7 +56,7 @@ class ApiService {
 
   /// Получить статус сессии
   static Future<Map<String, dynamic>> getStatus(String sessionId) async {
-    final response = await http.get(Uri.parse('$_baseUrl/status/$sessionId'));
+    final response = await _client.get(Uri.parse('$_baseUrl/status/$sessionId'));
     if (response.statusCode == 200) {
       return json.decode(response.body);
     }
@@ -62,7 +65,7 @@ class ApiService {
 
   /// Остановить и очистить сессию
   static Future<void> stopSession(String sessionId) async {
-    await http.post(Uri.parse('$_baseUrl/stop/$sessionId'));
+    await _client.post(Uri.parse('$_baseUrl/stop/$sessionId'));
   }
 
   /// Полный URL для HLS плейлиста
@@ -85,7 +88,7 @@ class ApiService {
     final uri = Uri.parse('$_baseUrl/yt/search').replace(
       queryParameters: {'q': q, 'limit': limit.toString()},
     );
-    final response = await http.get(uri).timeout(const Duration(seconds: 30));
+    final response = await _client.get(uri).timeout(const Duration(seconds: 30));
     if (response.statusCode == 200) {
       final data = json.decode(response.body) as List<dynamic>;
       return data
@@ -107,7 +110,7 @@ class ApiService {
 
   static Future<void> _youtubeAuth(
       String path, String username, String password) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$_baseUrl$path'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'username': username, 'password': password}),
@@ -128,7 +131,7 @@ class ApiService {
   }
 
   static Future<List<Map<String, dynamic>>> youtubeSubscriptions() async {
-    final response = await http.get(
+    final response = await _client.get(
       Uri.parse('$_baseUrl/yt/subscriptions'),
       headers: _ytHeaders,
     );
@@ -140,7 +143,7 @@ class ApiService {
 
   static Future<void> youtubeAddSubscription(String input,
       {String channelName = ''}) async {
-    final response = await http.post(
+    final response = await _client.post(
       Uri.parse('$_baseUrl/yt/subscriptions/add'),
       headers: _ytHeaders,
       body: json.encode({'text': input, 'channel_name': channelName}),
@@ -153,7 +156,7 @@ class ApiService {
   static Future<List<YouTubeVideo>> youtubeFeed({int limit = 30}) async {
     final uri = Uri.parse('$_baseUrl/yt/feed')
         .replace(queryParameters: {'limit': limit.toString()});
-    final response = await http.get(uri, headers: _ytHeaders);
+    final response = await _client.get(uri, headers: _ytHeaders);
     if (response.statusCode == 200) {
       final data = json.decode(response.body) as List<dynamic>;
       return data.whereType<Map<String, dynamic>>().map(YouTubeVideo.fromJson).toList();
@@ -164,7 +167,7 @@ class ApiService {
   static Future<List<YouTubeVideo>> youtubePopular({int limit = 24}) async {
     final uri = Uri.parse('$_baseUrl/yt/popular')
         .replace(queryParameters: {'limit': limit.toString()});
-    final response = await http.get(uri).timeout(const Duration(seconds: 30));
+    final response = await _client.get(uri).timeout(const Duration(seconds: 30));
     if (response.statusCode == 200) {
       final data = json.decode(response.body) as List<dynamic>;
       return data.whereType<Map<String, dynamic>>().map(YouTubeVideo.fromJson).toList();
@@ -184,7 +187,7 @@ class ApiService {
     final uri = Uri.parse('$_baseUrl/yt/google/status').replace(
       queryParameters: {'state': state},
     );
-    final response = await http.get(uri);
+    final response = await _client.get(uri);
     if (response.statusCode == 200) {
       return json.decode(response.body) as Map<String, dynamic>;
     }

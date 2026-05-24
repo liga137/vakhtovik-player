@@ -1,0 +1,69 @@
+import 'dart:io';
+import 'package:http/http.dart' as http;
+
+/// Запускает GOST HTTP-прокси для тоннеля к серверу Финляндии через Hysteria2
+class GostService {
+  static Process? _process;
+  static bool _started = false;
+
+  static const _port = 1080;
+  static const _password = 'Vakh-4JOjF1znmw4kszAdMtarivhR';
+  static const _server = '195.226.92.151.nip.io';
+  static const _serverPort = 443;
+  static const _gostUrl = 'https://github.com/ginuerzh/gost/releases/download/v2.12.0/gost_2.12.0_windows_amd64.zip';
+
+  static bool get isRunning => _started && _process != null;
+  static String get proxyHost => '127.0.0.1';
+  static int get proxyPort => _port;
+  static String get proxyUrl => 'http://$proxyHost:$proxyPort';
+
+  static Future<void> start() async {
+    if (_started || !Platform.isWindows) return;
+    try {
+      final dir = Directory('${Platform.environment['LOCALAPPDATA'] ?? '.'}/VakhtovikPlayer');
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final exe = File('${dir.path}/gost.exe');
+
+      if (!await exe.exists()) {
+        // Скачиваем GOST при первом запуске
+        final resp = await http.get(Uri.parse(_gostUrl));
+        if (resp.statusCode != 200) return;
+        final tmp = File('${dir.path}/gost.zip');
+        await tmp.writeAsBytes(resp.bodyBytes);
+        // Распаковываем через PowerShell
+        await Process.run('powershell', [
+          '-c', 'Expand-Archive -Force -Path "${tmp.path}" -DestinationPath "${dir.path}"'
+        ]);
+        await tmp.delete();
+      }
+
+      if (!await exe.exists()) return;
+
+      _process = await Process.start(
+        exe.path,
+        [
+          '-L', 'http://127.0.0.1:$_port',
+          '-F', 'hysteria2://$_password@$_server:$_serverPort?sni=$_server&insecure=1',
+        ],
+        mode: ProcessStartMode.detachedWithStdio,
+      );
+      _started = true;
+    } catch (e) {
+      print('GOST start failed: $e');
+    }
+  }
+
+  static void stop() {
+    _process?.kill();
+    _process = null;
+    _started = false;
+  }
+
+  static HttpClient createProxyClient() {
+    final client = HttpClient();
+    if (_started) {
+      client.findProxy = (uri) => 'PROXY $proxyHost:$proxyPort';
+    }
+    return client;
+  }
+}
