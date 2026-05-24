@@ -11,10 +11,17 @@ void main() async {
     WindowsVideoPlayer.registerWith();
     await windowManager.ensureInitialized();
     windowManager.setMinimumSize(const Size(400, 300));
-    // GOST — не блокирует запуск, ошибки молча
     GostService.start();
+    windowManager.addListener(_GostCleanup());
   }
   runApp(const VakhtovikApp());
+}
+
+class _GostCleanup extends WindowListener {
+  @override
+  void onWindowClose() {
+    GostService.stop();
+  }
 }
 
 class VakhtovikApp extends StatelessWidget {
