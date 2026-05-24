@@ -5,6 +5,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'package:window_manager/window_manager.dart';
 import '../services/api_service.dart';
 import '../services/filmix_auth.dart';
 import '../services/youtube_hover.dart';
@@ -565,6 +566,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           onSubmitted: _loadAddress,
                         ),
                       ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.fullscreen, color: Colors.white),
+                      tooltip: 'На весь экран',
+                      onPressed: () async {
+                        final isFs = await windowManager.isFullScreen();
+                        await windowManager.setFullScreen(!isFs);
+                      },
                     ),
                     IconButton(
                       icon: const Icon(Icons.person, color: Colors.orange),

@@ -156,12 +156,20 @@ class ApiService {
     final response = await http.get(uri, headers: _ytHeaders);
     if (response.statusCode == 200) {
       final data = json.decode(response.body) as List<dynamic>;
-      return data
-          .whereType<Map<String, dynamic>>()
-          .map(YouTubeVideo.fromJson)
-          .toList();
+      return data.whereType<Map<String, dynamic>>().map(YouTubeVideo.fromJson).toList();
     }
     throw Exception('Ошибка ленты: ${response.statusCode}');
+  }
+
+  static Future<List<YouTubeVideo>> youtubePopular({int limit = 24}) async {
+    final uri = Uri.parse('$_baseUrl/yt/popular')
+        .replace(queryParameters: {'limit': limit.toString()});
+    final response = await http.get(uri).timeout(const Duration(seconds: 30));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as List<dynamic>;
+      return data.whereType<Map<String, dynamic>>().map(YouTubeVideo.fromJson).toList();
+    }
+    throw Exception('Ошибка популярного: ${response.statusCode}');
   }
 
   static String youtubeGoogleStartUrl(String state) {

@@ -17,6 +17,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
   final _subController = TextEditingController();
   List<YouTubeVideo> _searchResults = const [];
   List<YouTubeVideo> _feed = const [];
+  List<YouTubeVideo> _popular = const [];
   List<Map<String, dynamic>> _subs = const [];
   bool _loading = false;
   bool _starting = false;
@@ -39,6 +40,12 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
     _searchController.dispose();
     _subController.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPopular();
   }
 
   Future<void> _search([String? query]) async {
@@ -64,6 +71,18 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
       if (mounted) setState(() => _feed = items);
     } catch (e) {
       if (mounted) _snack('Ошибка ленты: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadPopular() async {
+    setState(() => _loading = true);
+    try {
+      final items = await ApiService.youtubePopular(limit: 24);
+      if (mounted) setState(() => _popular = items);
+    } catch (e) {
+      if (mounted) _snack('Ошибка популярного: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -451,6 +470,10 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
     ]);
   }
 
+  Widget _popularTab() {
+    return _videoGrid(_popular, empty: const Center(child: Text('Загрузка...', style: TextStyle(color: Colors.white70))));
+  }
+
   Widget _subsTab() {
     return Column(children: [
       Padding(
@@ -517,7 +540,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         backgroundColor: const Color(0xFF111111),
         appBar: AppBar(
@@ -528,11 +551,12 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
           bottom: const TabBar(tabs: [
             Tab(icon: Icon(Icons.home), text: 'Лента'),
             Tab(icon: Icon(Icons.search), text: 'Поиск'),
+            Tab(icon: Icon(Icons.trending_up), text: 'Популярное'),
             Tab(icon: Icon(Icons.subscriptions), text: 'Подписки')
           ]),
         ),
         body: Stack(children: [
-          TabBarView(children: [_feedTab(), _searchTab(), _subsTab()]),
+          TabBarView(children: [_feedTab(), _searchTab(), _popularTab(), _subsTab()]),
           if (_starting)
             Container(
               color: Colors.black54,

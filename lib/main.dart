@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:video_player_win/video_player_win.dart';
+import 'package:window_manager/window_manager.dart';
 import 'dart:io' show Platform;
 import 'screens/browser_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (Platform.isWindows) {
     WindowsVideoPlayer.registerWith();
+    await windowManager.ensureInitialized();
+    windowManager.setMinimumSize(const Size(400, 300));
   }
   runApp(const VakhtovikApp());
 }
