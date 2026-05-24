@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 /// Запускает родной Hysteria2 клиент как HTTP-прокси к серверу Финляндии
 class HysteriaService {
@@ -17,37 +18,48 @@ class HysteriaService {
   static int get proxyPort => _port;
   static String get proxyUrl => 'http://$proxyHost:$proxyPort';
 
-  static Future<File> _findOrDownload() async {
-    final dir = Directory('${Platform.environment['LOCALAPPDATA'] ?? '.'}/VakhtovikPlayer');
-    if (!await dir.exists()) await dir.create(recursive: true);
-    final exe = File('${dir.path}/$_exeName');
-    if (await exe.exists()) return exe;
-
-    // Скачать
-    final resp = await HttpClient().getUrl(Uri.parse(_downloadUrl));
-    final response = await resp.close();
-    if (response.statusCode != 200) throw Exception('download failed');
-    await exe.openWrite().addStream(response);
-    return exe;
+  static Future<Directory> get _dir async {
+    final d = Directory('${Platform.environment['LOCALAPPDATA'] ?? '.'}/VakhtovikPlayer');
+    if (!await d.exists()) await d.create(recursive: true);
+    return d;
   }
 
   static Future<void> start() async {
     if (!Platform.isWindows) return;
     stop();
     try {
-      final exe = await _findOrDownload();
-      _process = await Process.start(exe.path, [
-        'client',
-        '--server', _server,
-        '--auth', _password,
-        '--tls-sni', _sni,
-        '--tls-insecure',
-        '--http-listen', '127.0.0.1:$_port',
-        '--socks5-listen', '127.0.0.1:${_port + 1}',
-        '--log-level', 'warn',
-      ], mode: ProcessStartMode.detachedWithStdio);
-      await Future.delayed(const Duration(seconds: 5));
-      if (_process != null) _started = true;
+      final dir = await _dir;
+      final exe = File('${dir.path}/$_exeName');
+
+      // Скачать если нет или битый
+      if (!await exe.exists() || await exe.length() < 20000000) {
+        if (await exe.exists()) await exe.delete();
+        final resp = await HttpClient().getUrl(Uri.parse(_downloadUrl));
+        final response = await resp.close();
+        if (response.statusCode == 200) {
+          await exe.openWrite().addStream(response);
+        }
+      }
+      if (!await exe.exists()) return;
+
+      // Создать конфиг
+      final config = File('${dir.path}/config.yaml');
+      await config.writeAsString(
+        'server: $_server\n'
+        'auth: $_password\n'
+        'tls:\n'
+        '  sni: $_sni\n'
+        '  insecure: true\n'
+        'http:\n'
+        '  listen: 127.0.0.1:$_port\n',
+      );
+
+      _process = await Process.start(
+        exe.path,
+        ['-c', config.path, '-l', 'warn'],
+        mode: ProcessStartMode.detachedWithStdio,
+      );
+      _started = true;
     } catch (e) {
       _started = false;
       _process = null;
@@ -65,9 +77,9 @@ class HysteriaService {
     try {
       final client = HttpClient();
       client.findProxy = (uri) => 'PROXY $proxyHost:$proxyPort';
-      client.connectionTimeout = const Duration(seconds: 8);
+      client.connectionTimeout = const Duration(seconds: 15);
       final req = await client.getUrl(Uri.parse('http://195.226.92.151.nip.io:8008/presets'));
-      final resp = await req.close().timeout(const Duration(seconds: 10));
+      final resp = await req.close().timeout(const Duration(seconds: 20));
       return resp.statusCode == 200;
     } catch (_) {
       return false;
@@ -78,7 +90,7 @@ class HysteriaService {
     final client = HttpClient();
     if (_started && _process != null) {
       client.findProxy = (uri) => 'PROXY $proxyHost:$proxyPort';
-      client.connectionTimeout = const Duration(seconds: 8);
+      client.connectionTimeout = const Duration(seconds: 10);
     }
     return client;
   }
