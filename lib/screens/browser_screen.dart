@@ -36,6 +36,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   EconomyLevel _economyLevel = EconomyLevel.economy;
   bool _pageLoading = false;
   bool _gostActive = false;
+  bool _gostConnecting = false;
   String _interceptedUrl = "";
   String _currentReferer = "";
   List<Preset> _presets = [];
@@ -63,7 +64,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _checkGostLater() {
-    Future.delayed(const Duration(seconds: 3), () async {
+    Future.delayed(const Duration(seconds: 15), () async {
       if (mounted) {
         final ok = await GostService.check();
         if (mounted) setState(() => _gostActive = ok);
@@ -515,25 +516,34 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       onPressed: () {},
                     ),
                     GestureDetector(
-                      onTap: () async {
+                      onTap: _gostConnecting ? null : () async {
                         if (_gostActive) {
                           GostService.stop();
                           setState(() => _gostActive = false);
                         } else {
+                          setState(() => _gostConnecting = true);
                           await GostService.start();
-                          final ok = await GostService.check();
-                          if (mounted) setState(() => _gostActive = ok);
+                          // Ждём до 90 сек на сателлите
+                          for (var i = 0; i < 30; i++) {
+                            await Future.delayed(const Duration(seconds: 3));
+                            final ok = await GostService.check();
+                            if (ok) {
+                              if (mounted) setState(() { _gostActive = true; _gostConnecting = false; });
+                              return;
+                            }
+                          }
+                          if (mounted) setState(() => _gostConnecting = false);
                         }
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _gostActive ? Colors.green.shade700 : const Color(0xFF333333),
+                          color: _gostActive ? Colors.green.shade700 : _gostConnecting ? Colors.orange.shade800 : const Color(0xFF333333),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          _gostActive ? 'VPN ON' : 'VPN OFF',
-                          style: TextStyle(color: _gostActive ? Colors.greenAccent : Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
+                          _gostActive ? 'VPN ON' : _gostConnecting ? '...' : 'VPN OFF',
+                          style: TextStyle(color: _gostActive ? Colors.greenAccent : _gostConnecting ? Colors.orange : Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),

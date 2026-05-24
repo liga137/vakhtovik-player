@@ -57,7 +57,7 @@ class GostService {
         mode: ProcessStartMode.detachedWithStdio,
       );
       // Ждём и проверяем что прокси отвечает
-      await Future.delayed(const Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 5));
       if (_process != null) {
         _started = true;
       }
