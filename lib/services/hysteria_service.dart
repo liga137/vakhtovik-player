@@ -59,6 +59,8 @@ class HysteriaService {
         ['-c', config.path, '-l', 'warn'],
         mode: ProcessStartMode.detachedWithStdio,
       );
+      // Ждём и проверяем что процесс жив
+      await Future.delayed(const Duration(seconds: 5));
       _started = true;
     } catch (e) {
       _started = false;
@@ -80,7 +82,6 @@ class HysteriaService {
       final req = await client.getUrl(Uri.parse('https://195.226.92.151.nip.io:8008/presets'));
       final resp = await req.close().timeout(const Duration(seconds: 40));
       final ok = resp.statusCode == 200;
-      if (ok) { _started = true; } // нашли чужой процесс
       return ok;
     } catch (_) {
       return false;
