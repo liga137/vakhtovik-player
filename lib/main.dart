@@ -3,7 +3,7 @@ import 'package:video_player_win/video_player_win.dart';
 import 'package:window_manager/window_manager.dart';
 import 'dart:io' show Platform;
 import 'screens/browser_screen.dart';
-import 'services/gost_service.dart';
+import 'services/hysteria_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,16 +11,16 @@ void main() async {
     WindowsVideoPlayer.registerWith();
     await windowManager.ensureInitialized();
     windowManager.setMinimumSize(const Size(400, 300));
-    GostService.start();
-    windowManager.addListener(_GostCleanup());
+    HysteriaService.start();
+    windowManager.addListener(_HysteriaCleanup());
   }
   runApp(const VakhtovikApp());
 }
 
-class _GostCleanup extends WindowListener {
+class _HysteriaCleanup extends WindowListener {
   @override
   void onWindowClose() {
-    GostService.stop();
+    HysteriaService.stop();
   }
 }
 

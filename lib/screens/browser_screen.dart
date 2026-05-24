@@ -7,7 +7,7 @@ import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:window_manager/window_manager.dart';
 import '../services/api_service.dart';
-import '../services/gost_service.dart';
+import '../services/hysteria_service.dart';
 import '../services/filmix_auth.dart';
 import '../services/youtube_hover.dart';
 import '../models/preset.dart';
@@ -66,7 +66,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _checkGostLater() {
     Future.delayed(const Duration(seconds: 15), () async {
       if (mounted) {
-        final ok = await GostService.check();
+        final ok = await HysteriaService.check();
         if (mounted) setState(() => _gostActive = ok);
       }
     });
@@ -518,15 +518,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     GestureDetector(
                       onTap: _gostConnecting ? null : () async {
                         if (_gostActive) {
-                          GostService.stop();
+                          HysteriaService.stop();
                           setState(() => _gostActive = false);
                         } else {
                           setState(() => _gostConnecting = true);
-                          await GostService.start();
+                          await HysteriaService.start();
                           // Ждём до 90 сек на сателлите
                           for (var i = 0; i < 30; i++) {
                             await Future.delayed(const Duration(seconds: 3));
-                            final ok = await GostService.check();
+                            final ok = await HysteriaService.check();
                             if (ok) {
                               if (mounted) setState(() { _gostActive = true; _gostConnecting = false; });
                               return;

@@ -4,7 +4,7 @@ import 'package:http/io_client.dart';
 import '../models/preset.dart';
 import '../models/transcode_result.dart';
 import '../models/youtube_video.dart';
-import 'gost_service.dart';
+import 'hysteria_service.dart';
 
 /// Сервис для работы с API «Плеер Вахтовика»
 class ApiService {
@@ -12,7 +12,7 @@ class ApiService {
   static String? _ytToken;
   static String? _ytUsername;
 
-  static http.Client get _client => IOClient(GostService.createProxyClient());
+  static http.Client get _client => IOClient(HysteriaService.createProxyClient());
 
   static bool get isYouTubeLoggedIn => _ytToken != null;
   static String? get youtubeUsername => _ytUsername;
