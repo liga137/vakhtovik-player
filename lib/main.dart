@@ -11,7 +11,8 @@ void main() async {
     WindowsVideoPlayer.registerWith();
     await windowManager.ensureInitialized();
     windowManager.setMinimumSize(const Size(400, 300));
-    GostService.start(); // тоннель к Финляндии
+    // GOST — не блокирует запуск, ошибки молча
+    GostService.start();
   }
   runApp(const VakhtovikApp());
 }

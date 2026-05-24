@@ -44,10 +44,10 @@ class GostService {
   }
 
   static Future<void> start() async {
-    if (_started || !Platform.isWindows) return;
+    if (!Platform.isWindows) return;
+    stop();
     try {
       final exe = await _findOrDownload();
-
       _process = await Process.start(
         exe.path,
         [
@@ -56,9 +56,14 @@ class GostService {
         ],
         mode: ProcessStartMode.detachedWithStdio,
       );
-      _started = true;
+      // Ждём и проверяем что прокси отвечает
+      await Future.delayed(const Duration(seconds: 2));
+      if (_process != null) {
+        _started = true;
+      }
     } catch (e) {
-      print('GOST start failed: $e');
+      _started = false;
+      _process = null;
     }
   }
 
@@ -68,10 +73,29 @@ class GostService {
     _started = false;
   }
 
+  /// Проверяет жив ли прокси (стучится в сам прокси)
+  static Future<bool> check() async {
+    if (!_started || _process == null) return false;
+    try {
+      final client = HttpClient();
+      client.findProxy = (uri) => 'PROXY $proxyHost:$proxyPort';
+      client.connectionTimeout = const Duration(seconds: 4);
+      final req = await client.getUrl(Uri.parse('http://195.226.92.151.nip.io:8008/presets'));
+      final resp = await req.close().timeout(const Duration(seconds: 5));
+      return resp.statusCode == 200;
+    } catch (_) {
+      _started = false;
+      return false;
+    }
+  }
+
+  /// HttpClient через локальный HTTP-прокси (если GOST запущен), иначе напрямую
   static HttpClient createProxyClient() {
     final client = HttpClient();
-    if (_started) {
+    if (_started && _process != null) {
       client.findProxy = (uri) => 'PROXY $proxyHost:$proxyPort';
+      // Таймаут чтобы не висло при мёртвом прокси
+      client.connectionTimeout = const Duration(seconds: 8);
     }
     return client;
   }

@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:window_manager/window_manager.dart';
 import '../services/api_service.dart';
+import '../services/gost_service.dart';
 import '../services/filmix_auth.dart';
 import '../services/youtube_hover.dart';
 import '../models/preset.dart';
@@ -34,6 +35,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _liteMode = false;
   EconomyLevel _economyLevel = EconomyLevel.economy;
   bool _pageLoading = false;
+  bool _gostActive = false;
   String _interceptedUrl = "";
   String _currentReferer = "";
   List<Preset> _presets = [];
@@ -57,6 +59,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void initState() {
     super.initState();
     _loadPresets();
+    _checkGostLater();
+  }
+
+  void _checkGostLater() {
+    Future.delayed(const Duration(seconds: 3), () async {
+      if (mounted) {
+        final ok = await GostService.check();
+        if (mounted) setState(() => _gostActive = ok);
+      }
+    });
   }
 
   Future<void> _loadPresets() async {
@@ -501,6 +513,29 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     IconButton(
                       icon: const Icon(Icons.person, color: Colors.orange),
                       onPressed: () {},
+                    ),
+                    GestureDetector(
+                      onTap: () async {
+                        if (_gostActive) {
+                          GostService.stop();
+                          setState(() => _gostActive = false);
+                        } else {
+                          await GostService.start();
+                          final ok = await GostService.check();
+                          if (mounted) setState(() => _gostActive = ok);
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _gostActive ? Colors.green.shade700 : const Color(0xFF333333),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          _gostActive ? 'VPN ON' : 'VPN OFF',
+                          style: TextStyle(color: _gostActive ? Colors.greenAccent : Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
+                        ),
+                      ),
                     ),
                     PopupMenuButton<EconomyLevel>(
                       tooltip: 'Режим экономии',
