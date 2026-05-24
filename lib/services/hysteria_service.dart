@@ -73,14 +73,15 @@ class HysteriaService {
   }
 
   static Future<bool> check() async {
-    if (!_started || _process == null) return false;
     try {
       final client = HttpClient();
       client.findProxy = (uri) => 'PROXY $proxyHost:$proxyPort';
       client.connectionTimeout = const Duration(seconds: 30);
       final req = await client.getUrl(Uri.parse('https://195.226.92.151.nip.io:8008/presets'));
       final resp = await req.close().timeout(const Duration(seconds: 40));
-      return resp.statusCode == 200;
+      final ok = resp.statusCode == 200;
+      if (ok) { _started = true; } // нашли чужой процесс
+      return ok;
     } catch (_) {
       return false;
     }
@@ -88,7 +89,7 @@ class HysteriaService {
 
   static HttpClient createProxyClient() {
     final client = HttpClient();
-    if (_started && _process != null) {
+    if (_started) {
       client.findProxy = (uri) => 'PROXY $proxyHost:$proxyPort';
       client.connectionTimeout = const Duration(seconds: 10);
     }
