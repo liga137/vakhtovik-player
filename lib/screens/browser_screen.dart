@@ -519,6 +519,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       onTap: _gostConnecting ? null : () async {
                         if (_gostActive) {
                           HysteriaService.stop();
+                          await ProxyController.instance().clearProxyOverride();
                           setState(() => _gostActive = false);
                         } else {
                           setState(() => _gostConnecting = true);
@@ -528,6 +529,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             await Future.delayed(const Duration(seconds: 3));
                             final ok = await HysteriaService.check();
                             if (ok) {
+                              await ProxyController.instance().setProxyOverride(
+                                settings: ProxySettings(proxyRules: [ProxyRule(url: HysteriaService.proxyUrl)]),
+                              );
                               if (mounted) setState(() { _gostActive = true; _gostConnecting = false; });
                               return;
                             }
