@@ -24,17 +24,16 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
-      - name: Download GOST tunnel (Windows)
+      - name: Download Hysteria2 client
         run: |
-          curl -L -o gost.zip https://github.com/go-gost/gost/releases/download/v3.2.6/gost_3.2.6_windows_amd64.zip
-          Expand-Archive -Force gost.zip -DestinationPath .
+          curl -L -o hysteria.exe https://github.com/apernet/hysteria/releases/download/app/v2.9.2/hysteria-windows-amd64.exe
           mkdir -Force build\windows\x64\runner\Release
 
       - name: Build Windows Release
         run: flutter build windows --release
 
-      - name: Bundle GOST with Windows build
-        run: Copy-Item gost.exe build\windows\x64\runner\Release\gost.exe
+      - name: Bundle Hysteria2 with Windows build
+        run: Copy-Item hysteria.exe build\windows\x64\runner\Release\hysteria.exe
 
       - name: Compress Windows Build
         run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath Vakhtovik-Player-Windows.zip

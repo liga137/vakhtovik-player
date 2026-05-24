@@ -19,6 +19,12 @@ class HysteriaService {
   static String get proxyUrl => 'http://$proxyHost:$proxyPort';
 
   static Future<Directory> get _dir async {
+    // 1. Сначала рядом с приложением (из артефакта сборки)
+    final bundled = File('${Directory.current.path}/$_exeName');
+    if (await bundled.exists() && await bundled.length() > 20000000) {
+      return Directory.current;
+    }
+    // 2. В AppData
     final d = Directory('${Platform.environment['LOCALAPPDATA'] ?? '.'}/VakhtovikPlayer');
     if (!await d.exists()) await d.create(recursive: true);
     return d;
