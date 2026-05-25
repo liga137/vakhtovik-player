@@ -504,8 +504,10 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
                         Text(v.title,
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold)),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            )),
                         const Spacer(),
                         Text(
                             [v.channel, dur]
