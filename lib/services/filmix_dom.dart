@@ -4,8 +4,19 @@ class FilmixDom {
     return r'''
 (function() {
   var host = (window.location.hostname || '').toLowerCase();
+  var ref = (document.referrer || '').toLowerCase();
   if (!host) return 'no-host';
-  if (!(host.includes('filmix') || host.includes('kodik') || host.includes('videocdn'))) {
+  var hostOk =
+    host.includes('filmix') ||
+    host.includes('kodik') ||
+    host.includes('videocdn') ||
+    host.includes('werkecdn') ||
+    host.includes('cdnsqu');
+  var refOk =
+    ref.includes('filmix') ||
+    ref.includes('kodik') ||
+    ref.includes('videocdn');
+  if (!(hostOk || refOk)) {
     return 'skip-host';
   }
 
@@ -31,6 +42,60 @@ class FilmixDom {
     return /\.m3u8|\.mp4|\.mkv|\.webm|\.mpd|\/hls\/|master\.m3u8|playlist\.m3u8|manifest|\/stream\/|\/vod\/|\/video\//i.test(u);
   }
 
+  function inferHintFromMediaUrl(url) {
+    try {
+      var u = new URL(url, window.location.href);
+      var parts = (u.pathname || '')
+        .split('/')
+        .filter(function(p) { return p && p.trim().length > 0; });
+      var file = parts.length > 0 ? decodeURIComponent(parts[parts.length - 1]) : '';
+      var folder = parts.length > 1 ? decodeURIComponent(parts[parts.length - 2]) : '';
+
+      var se = file.match(/s(\d{1,2})e(\d{1,3})/i) || folder.match(/s(\d{1,2})e(\d{1,3})/i);
+      var season = se ? String(parseInt(se[1], 10) || '') : '';
+      var episode = se ? String(parseInt(se[2], 10) || '') : '';
+
+      var translation = '';
+      var title = '';
+      if (folder) {
+        var cleaned = folder.replace(/[_\.]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+        var chunks = cleaned.split('-').filter(function(c) { return c && c.trim().length > 0; });
+        title = cleaned.replace(/-/g, ' ');
+        if (chunks.length > 0) {
+          var ban = {
+            '1080p': 1, '720p': 1, '480p': 1, '360p': 1, '240p': 1, '144p': 1,
+            '2160p': 1, 'uhd': 1, 'hdr': 1, 'sdr': 1, 'webrip': 1, 'webdl': 1,
+            'dvdrip': 1, 'bdrip': 1, 'x264': 1, 'h264': 1, 'h265': 1, 'hevc': 1,
+            'aac': 1, 'ac3': 1, 'rus': 1, 'eng': 1, 'ukr': 1, 'usa': 1, 'multi': 1
+          };
+          for (var i = chunks.length - 1; i >= 0; i--) {
+            var c = (chunks[i] || '').trim();
+            var cl = c.toLowerCase();
+            if (!c) continue;
+            if (ban[cl]) continue;
+            if (/^\d{2,4}$/.test(cl)) continue;
+            if (!/[a-zа-я]/i.test(c)) continue;
+            translation = c;
+            break;
+          }
+          if (!translation) {
+            translation = chunks[chunks.length - 1];
+          }
+        }
+      }
+
+      if (!season && !episode && !translation) return null;
+      return {
+        title: normText(title || ''),
+        season: season,
+        episode: episode,
+        translation: normText(translation || '')
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
   function emitMedia(url) {
     if (!mediaLike(url)) return;
     var clean = String(url).split('#')[0];
@@ -38,6 +103,16 @@ class FilmixDom {
     if (window.__vakhLastFilmixMedia === clean) return;
     window.__vakhLastFilmixMedia = clean;
     safeCall('filmixMediaUrl', clean);
+    var hint = inferHintFromMediaUrl(clean);
+    if (hint) {
+      window.__vakhFilmixState = {
+        season: hint.season || '',
+        episode: hint.episode || '',
+        translation: hint.translation || '',
+        title: hint.title || ''
+      };
+      safeCall('filmixEpisodeHint', JSON.stringify(hint));
+    }
   }
 
   function emitMediaFromElement(el) {

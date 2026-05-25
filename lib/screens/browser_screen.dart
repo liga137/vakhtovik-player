@@ -73,6 +73,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   List<Map<String, String>> _filmixSeasons = [];
   String _filmixSeasonId = '';
   String _lastFilmixMediaUrl = '';
+  String _lastAutoMediaUrl = '';
   List<String> _recentLinks = [];
   bool _checkingUpdates = false;
   bool _proxyRecovering = false;
@@ -665,6 +666,230 @@ class _BrowserScreenState extends State<BrowserScreen> {
         .replaceAll('\n', ' ');
   }
 
+  bool _looksLikeMediaUrl(String rawUrl) {
+    final u = rawUrl.trim().toLowerCase();
+    if (u.isEmpty) return false;
+    if (u.startsWith('blob:')) return false;
+    if (u.contains('trailer') ||
+        u.contains('preview') ||
+        u.contains('poster') ||
+        u.contains('thumb') ||
+        u.contains('banner') ||
+        u.contains('ad.mp4') ||
+        u.contains('promo')) {
+      return false;
+    }
+    if (u.contains('.mp4') ||
+        u.contains('.m3u8') ||
+        u.contains('.mkv') ||
+        u.contains('.webm') ||
+        u.contains('.mpd') ||
+        u.contains('/hls/') ||
+        u.contains('master.m3u8') ||
+        u.contains('playlist.m3u8') ||
+        u.contains('manifest') ||
+        u.contains('/stream/') ||
+        u.contains('/vod/') ||
+        u.contains('/video/')) {
+      return true;
+    }
+    return false;
+  }
+
+  bool _isFilmixContext(String rawUrl) {
+    final u = rawUrl.toLowerCase();
+    return u.contains('filmix') ||
+        u.contains('kodik') ||
+        u.contains('videocdn') ||
+        u.contains('werkecdn') ||
+        u.contains('cdnsqu');
+  }
+
+  Map<String, String>? _filmixHintFromMediaUrl(String mediaUrl) {
+    final uri = Uri.tryParse(mediaUrl);
+    if (uri == null) return null;
+    final parts = uri.pathSegments
+        .map(Uri.decodeComponent)
+        .where((s) => s.trim().isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return null;
+    final file = parts.last;
+    final folder = parts.length > 1 ? parts[parts.length - 2] : '';
+    final match = RegExp(r's(\d{1,2})e(\d{1,3})', caseSensitive: false)
+            .firstMatch(file) ??
+        RegExp(r's(\d{1,2})e(\d{1,3})', caseSensitive: false)
+            .firstMatch(folder);
+    final season = match != null ? '${int.tryParse(match.group(1)!) ?? 0}' : '';
+    final episode = match != null ? '${int.tryParse(match.group(2)!) ?? 0}' : '';
+    if (season.isEmpty && episode.isEmpty) return null;
+
+    final normalizedFolder = folder
+        .replaceAll(RegExp(r'[_\.]+'), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    final chunks =
+        normalizedFolder.split('-').where((c) => c.trim().isNotEmpty).toList();
+    const banned = {
+      '1080p',
+      '720p',
+      '480p',
+      '360p',
+      '240p',
+      '144p',
+      '2160p',
+      'uhd',
+      'hdr',
+      'sdr',
+      'webrip',
+      'webdl',
+      'dvdrip',
+      'bdrip',
+      'x264',
+      'h264',
+      'h265',
+      'hevc',
+      'aac',
+      'ac3',
+      'rus',
+      'eng',
+      'ukr',
+      'usa',
+      'multi',
+    };
+    String translation = '';
+    for (final raw in chunks.reversed) {
+      final c = raw.trim();
+      final low = c.toLowerCase();
+      if (c.isEmpty) continue;
+      if (banned.contains(low)) continue;
+      if (RegExp(r'^\d{2,4}$').hasMatch(low)) continue;
+      if (!RegExp(r'[a-zа-я]', caseSensitive: false).hasMatch(c)) continue;
+      translation = c;
+      break;
+    }
+    if (translation.isEmpty && chunks.isNotEmpty) {
+      translation = chunks.last;
+    }
+
+    final title = normalizedFolder.replaceAll('-', ' ').trim();
+    return {
+      'title': title.isNotEmpty ? title : 'S$season E$episode',
+      'season': season == '0' ? '' : season,
+      'episode': episode == '0' ? '' : episode,
+      'translation': translation,
+    };
+  }
+
+  void _applyFilmixHintFromMediaUrl(String mediaUrl) {
+    final hint = _filmixHintFromMediaUrl(mediaUrl);
+    if (hint == null) return;
+    final season = (hint['season'] ?? '').trim();
+    final episode = (hint['episode'] ?? '').trim();
+    final translation = (hint['translation'] ?? '').trim();
+    final title = (hint['title'] ?? '').trim();
+    if (season.isEmpty && episode.isEmpty) return;
+    if (!mounted) return;
+
+    setState(() {
+      if (season.isNotEmpty) {
+        final hasSeason = _filmixSeasons.any((s) => (s['id'] ?? '') == season);
+        if (!hasSeason) {
+          _filmixSeasons = [
+            ..._filmixSeasons,
+            {'id': season, 'name': 'Сезон $season'}
+          ];
+          _filmixSeasons.sort((a, b) =>
+              (int.tryParse(a['id'] ?? '') ?? 0)
+                  .compareTo(int.tryParse(b['id'] ?? '') ?? 0));
+        }
+        if (_filmixSeasonId.isEmpty) _filmixSeasonId = season;
+      }
+      if (translation.isNotEmpty) {
+        final hasTranslation =
+            _filmixTranslations.any((t) => (t['id'] ?? '') == translation);
+        if (!hasTranslation) {
+          _filmixTranslations = [
+            ..._filmixTranslations,
+            {'id': translation, 'name': translation}
+          ];
+          _filmixTranslations
+              .sort((a, b) => (a['name'] ?? '').compareTo(b['name'] ?? ''));
+        }
+        if (_filmixTranslationId.isEmpty) _filmixTranslationId = translation;
+      }
+
+      final existing = _filmixEpisodes.indexWhere((e) =>
+          (e['season'] ?? '') == season &&
+          (e['episode'] ?? '') == episode &&
+          (e['translation'] ?? '') == translation &&
+          season.isNotEmpty &&
+          episode.isNotEmpty);
+      if (existing >= 0) {
+        _filmixEpisodes[existing] = {
+          ..._filmixEpisodes[existing],
+          'title': title.isNotEmpty ? title : _filmixEpisodes[existing]['title'] ?? ''
+        };
+        _filmixIndex = existing;
+      } else {
+        _filmixEpisodes = [
+          ..._filmixEpisodes,
+          {
+            'title': title.isNotEmpty ? title : 'S$season E$episode',
+            'season': season,
+            'episode': episode,
+            'translation': translation
+          }
+        ];
+        _filmixEpisodes.sort((a, b) {
+          final sa = int.tryParse(a['season'] ?? '') ?? 0;
+          final sb = int.tryParse(b['season'] ?? '') ?? 0;
+          if (sa != sb) return sa.compareTo(sb);
+          final ea = int.tryParse(a['episode'] ?? '') ?? 0;
+          final eb = int.tryParse(b['episode'] ?? '') ?? 0;
+          if (ea != eb) return ea.compareTo(eb);
+          return (a['translation'] ?? '').compareTo(b['translation'] ?? '');
+        });
+        final added = _filmixEpisodes.indexWhere((e) =>
+            (e['season'] ?? '') == season &&
+            (e['episode'] ?? '') == episode &&
+            (e['translation'] ?? '') == translation);
+        _filmixIndex = added >= 0 ? added : _filmixIndex;
+      }
+    });
+  }
+
+  void _autoStartFromMediaUrl(String mediaUrl, {String? referer}) {
+    final clean = mediaUrl.trim();
+    if (clean.isEmpty) return;
+    final lower = clean.toLowerCase();
+    if (!_looksLikeMediaUrl(lower)) return;
+    if (lower.contains('googlevideo.com')) return;
+    if (_showPlayer || _isLoading) return;
+    if (clean == _lastAutoMediaUrl) return;
+
+    final isFilmixSource = _isFilmixContext(lower) || _isFilmixContext(_currentRealUrl);
+    if (isFilmixSource) {
+      _applyFilmixHintFromMediaUrl(clean);
+    }
+
+    final canAutostart =
+        _waitingForNextEpisode || (!_showInterceptor && !_interceptedAlready);
+    if (!canAutostart) return;
+
+    _lastAutoMediaUrl = clean;
+    if (_waitingForNextEpisode) _waitingForNextEpisode = false;
+    _interceptedAlready = true;
+    _interceptedUrl = clean;
+    _currentReferer = (referer ?? urlController.text).trim();
+    _selectedQuality = '240p';
+
+    Future.microtask(() {
+      if (!mounted) return;
+      setState(() => _showHome = false);
+      _startMagic();
+    });
+  }
+
   bool _sameFilmixEpisode(Map<String, String> a, Map<String, String> b) {
     return (a['season'] ?? '') == (b['season'] ?? '') &&
         (a['episode'] ?? '') == (b['episode'] ?? '') &&
@@ -756,6 +981,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _waitingForNextEpisode = true;
     _interceptedAlready = false;
     _lastFilmixMediaUrl = '';
+    _lastAutoMediaUrl = '';
 
     await webViewController!
         .evaluateJavascript(source: FilmixDom.getInjectionJS());
@@ -1598,7 +1824,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         initialSettings: InAppWebViewSettings(
                           useShouldOverrideUrlLoading: true,
                           useShouldInterceptRequest: true,
-                          useOnLoadResource: false,
+                          useOnLoadResource: true,
                           mediaPlaybackRequiresUserGesture: false,
                           domStorageEnabled: true,
                           databaseEnabled: true,
@@ -1627,6 +1853,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                 urlRequest:
                                     URLRequest(url: WebUri(restoreUrl)));
                           }
+                          unawaited(controller
+                              .addUserScript(
+                                userScript: UserScript(
+                                  groupName: 'vakhtovik_filmix_dom',
+                                  source: FilmixDom.getInjectionJS(),
+                                  injectionTime:
+                                      UserScriptInjectionTime.AT_DOCUMENT_END,
+                                  forMainFrameOnly: false,
+                                ),
+                              )
+                              .catchError((_) {}));
                           controller.addJavaScriptHandler(
                             handlerName: 'compressUrl',
                             callback: (args) {
@@ -1963,31 +2200,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               if (mediaUrl.isEmpty) return null;
                               if (mediaUrl == _lastFilmixMediaUrl) return null;
                               _lastFilmixMediaUrl = mediaUrl;
-
-                              if (_showPlayer || _isLoading) return null;
-
-                              final canAutostart = _waitingForNextEpisode ||
-                                  (!_showInterceptor && !_interceptedAlready);
-                              if (!canAutostart) return null;
-                              final realUrl = urlController.text.toLowerCase();
-                              final isFilmixDetailsPage =
-                                  realUrl.contains('/seria/') ||
-                                      realUrl.contains('/film/');
-                              if (!_waitingForNextEpisode &&
-                                  !isFilmixDetailsPage) return null;
-
-                              if (_waitingForNextEpisode)
-                                _waitingForNextEpisode = false;
-                              _interceptedAlready = true;
-                              _interceptedUrl = mediaUrl;
-                              _currentReferer = urlController.text;
-                              _selectedQuality = '240p';
-
-                              Future.microtask(() {
-                                if (!mounted) return;
-                                setState(() => _showHome = false);
-                                _startMagic();
-                              });
+                              _autoStartFromMediaUrl(mediaUrl,
+                                  referer: urlController.text);
                               return null;
                             },
                           );
@@ -2023,6 +2237,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               _filmixTranslationId = '';
                               _filmixSeasons = [];
                               _filmixSeasonId = '';
+                              _lastFilmixMediaUrl = '';
+                              _lastAutoMediaUrl = '';
                             });
                           }
                         },
@@ -2194,6 +2410,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             }
                           }
                         },
+                        onLoadResource: (controller, resource) {
+                          final raw = resource.url?.toString() ?? '';
+                          if (raw.isEmpty) return;
+                          final low = raw.toLowerCase();
+                          if (!_looksLikeMediaUrl(low)) return;
+                          if (!(_isFilmixContext(low) ||
+                              _isFilmixContext(_currentRealUrl))) {
+                            return;
+                          }
+                          _autoStartFromMediaUrl(raw,
+                              referer: urlController.text);
+                        },
                         shouldOverrideUrlLoading:
                             (controller, navigationAction) async {
                           var url = navigationAction.request.url;
@@ -2260,22 +2488,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           }
 
                           // 2. Ищем признаки медиа, исключая превьюшки и рекламу
-                          bool isMedia = false;
-                          if (uri.contains('.mp4') ||
-                              uri.contains('.m3u8') ||
-                              uri.contains('playlist.m3u8') ||
-                              uri.contains('.mkv') ||
-                              uri.contains('.webm') ||
-                              uri.contains('.3gp') ||
-                              uri.contains('.avi') ||
-                              uri.contains('.flv')) {
-                            if (!uri.contains('trailer') &&
-                                !uri.contains('preview') &&
-                                !uri.contains('banner') &&
-                                !uri.contains('ad.mp4') &&
-                                !uri.contains('promo')) {
-                              isMedia = true;
-                            }
+                          var isMedia = _looksLikeMediaUrl(uri);
+                          if (!isMedia &&
+                              (uri.contains('.3gp') ||
+                                  uri.contains('.avi') ||
+                                  uri.contains('.flv'))) {
+                            isMedia = true;
                           }
 
                           final isMediaPlatformRelated =
@@ -2312,17 +2530,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
                           // Перехват медиа-запросов
                           if (method.toUpperCase() == "GET" && isMedia) {
+                            if (_isFilmixContext(uri) ||
+                                _isFilmixContext(_currentRealUrl)) {
+                              _applyFilmixHintFromMediaUrl(request.url.toString());
+                            }
                             // Режим авто-переключения серий: сразу сжимаем без шторки
                             if (_waitingForNextEpisode) {
-                              _waitingForNextEpisode = false;
                               _interceptedAlready = false;
-                              Future.microtask(() {
-                                if (mounted) {
-                                  _interceptedUrl = request.url.toString();
-                                  _currentReferer = urlController.text;
-                                  _startMagic();
-                                }
-                              });
+                              _autoStartFromMediaUrl(request.url.toString(),
+                                  referer: urlController.text);
                               return WebResourceResponse(
                                   contentType: "text/plain",
                                   data: Uint8List.fromList([]),
@@ -2333,15 +2549,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             if (!_showInterceptor &&
                                 !_showPlayer &&
                                 !_interceptedAlready) {
-                              _interceptedAlready = true;
-                              Future.microtask(() {
-                                if (mounted) {
-                                  _interceptedUrl = request.url.toString();
-                                  _currentReferer = urlController.text;
-                                  _selectedQuality = '240p';
-                                  _startMagic();
-                                }
-                              });
+                              _autoStartFromMediaUrl(request.url.toString(),
+                                  referer: urlController.text);
                             }
 
                             // Пустой ответ — чужой плеер не начинает жрать трафик
