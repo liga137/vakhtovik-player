@@ -663,70 +663,155 @@ class _BrowserScreenState extends State<BrowserScreen> {
           return 0;
         }
 
-        const waitForVideoSrc = (lastSrc) => new Promise((resolve) => {
-          let attempts = 0;
-          const check = setInterval(() => {
-            attempts++;
+        const playerContainer = document.querySelector('#oframehtmlPlayer');
+        const restoreContainerStyles = playerContainer ? {
+          opacity: playerContainer.style.opacity,
+          pointerEvents: playerContainer.style.pointerEvents,
+        } : null;
+        if (playerContainer) {
+          playerContainer.style.opacity = '0.02';
+          playerContainer.style.pointerEvents = 'none';
+        }
+
+        const getPlaylistItems = () =>
+          Array.from(document.querySelectorAll('#htmlPlayer_playlist > *, #htmlPlayer_playlist li, #htmlPlayer_playlist a'))
+            .filter(el => txt(el.textContent).length > 0);
+
+        const getActiveItem = () =>
+          document.querySelector('#htmlPlayer_playlist > .current, #htmlPlayer_playlist > .active, #htmlPlayer_playlist .current, #htmlPlayer_playlist .active');
+
+        const originalActiveItem = getActiveItem();
+        const originalActiveIndex = (() => {
+          const items = getPlaylistItems();
+          const idx = items.indexOf(originalActiveItem);
+          return idx >= 0 ? idx : 0;
+        })();
+
+        const waitForVideoSrc = (lastSrc, timeoutMs = 25000) => new Promise((resolve) => {
+          const started = Date.now();
+          let done = false;
+          let lastFound = null;
+
+          const pickSrc = () => {
             const video = document.querySelector('video');
-            if (video) {
-              try { video.muted = true; video.pause(); } catch (_) {}
-            }
-            if (video && video.src && video.src !== lastSrc && video.src.length > 10) {
-              clearInterval(check);
-              resolve(video.src);
+            if (!video) return '';
+            try { video.muted = true; } catch (_) {}
+            return String(video.currentSrc || video.src || '').trim();
+          };
+
+          const finish = (value) => {
+            if (done) return;
+            done = true;
+            try { clearInterval(pollTimer); } catch (_) {}
+            try { mo.disconnect(); } catch (_) {}
+            resolve(value || null);
+          };
+
+          const check = () => {
+            const src = pickSrc();
+            if (!src || src.length < 10 || src.indexOf('undefined') >= 0) return;
+            if (!lastSrc || src !== lastSrc) {
+              finish(src);
               return;
             }
-            if (attempts > 35) {
-              clearInterval(check);
-              resolve(null);
+            lastFound = src;
+          };
+
+          const mo = new MutationObserver(check);
+          mo.observe(document.body, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            attributeFilter: ['src', 'class'],
+          });
+
+          const pollTimer = setInterval(() => {
+            check();
+            if (Date.now() - started >= timeoutMs) {
+              finish(lastFound);
             }
-          }, 320);
+          }, 260);
+
+          check();
         });
 
+        const switchPlaylistItem = async (index, lastSrc) => {
+          const items = getPlaylistItems();
+          if (index < 0 || index >= items.length) return null;
+          try { items[index].click(); } catch (_) {}
+          await wait(220);
+          return await waitForVideoSrc(lastSrc, 25000);
+        };
+
         const collectOneTranslation = async (translationName) => {
-          const items = Array.from(document.querySelectorAll('#htmlPlayer_playlist > *, #htmlPlayer_playlist li, #htmlPlayer_playlist a'))
-            .filter(el => txt(el.textContent).length > 0);
+          const items = getPlaylistItems();
           const result = [];
           let last = '';
           for (let i = 0; i < items.length; i++) {
-            try { items[i].click(); } catch (_) {}
-            await wait(240);
-            const src = await waitForVideoSrc(last);
+            const src = await switchPlaylistItem(i, last);
+            const currentItems = getPlaylistItems();
+            const titleNode = currentItems[i] || items[i];
+            const title = txt((titleNode && (titleNode.innerText || titleNode.textContent)) || ('Серия ' + (i + 1)));
             if (src) {
               result.push({
                 index: String(i),
-                title: txt(items[i].innerText || ('Серия ' + (i + 1))),
+                title: title,
                 translation: translationName,
-                url: src
+                url: src,
               });
               last = src;
             }
+            await wait(850);
           }
           return result;
         };
 
         const all = [];
-        const maxTranslations = Math.min(4, translationNodes.length);
-        for (let t = 0; t < maxTranslations; t++) {
-          const trNode = translationNodes[t];
-          const trName = txt(trNode.textContent) || ('Озвучка ' + (t + 1));
-          try { trNode.click(); } catch (_) {}
-          await wait(2200);
-          const chunk = await collectOneTranslation(trName);
-          for (let i = 0; i < chunk.length; i++) all.push(chunk[i]);
-        }
+        const translationPlan = translationNodes.length > 0
+          ? translationNodes.slice(0, 12).map((node, idx) => ({
+              node,
+              name: txt(node.textContent) || ('Озвучка ' + (idx + 1)),
+            }))
+          : [{ node: null, name: 'Стандартная' }];
 
-        // Восстанавливаем исходную озвучку, если нашли.
-        if (activeTrId) {
-          let backNode = document.querySelector('.pgs-trans li[data-translate="' + activeTrId + '"], .pgs-trans li[data-id="' + activeTrId + '"]');
-          if (!backNode && activeTrId.indexOf('idx:') === 0) {
-            const idx = parseInt(activeTrId.split(':')[1] || '-1', 10);
-            if (!Number.isNaN(idx) && idx >= 0 && idx < translationNodes.length) {
-              backNode = translationNodes[idx];
+        try {
+          for (let t = 0; t < translationPlan.length; t++) {
+            const tr = translationPlan[t];
+            if (tr.node) {
+              try { tr.node.click(); } catch (_) {}
+              await wait(2300);
+            } else {
+              await wait(500);
+            }
+            const chunk = await collectOneTranslation(tr.name);
+            for (let i = 0; i < chunk.length; i++) all.push(chunk[i]);
+          }
+        } finally {
+          if (activeTrId) {
+            let backNode = document.querySelector('.pgs-trans li[data-translate="' + activeTrId + '"], .pgs-trans li[data-id="' + activeTrId + '"]');
+            if (!backNode && activeTrId.indexOf('idx:') === 0) {
+              const idx = parseInt(activeTrId.split(':')[1] || '-1', 10);
+              if (!Number.isNaN(idx) && idx >= 0 && idx < translationNodes.length) {
+                backNode = translationNodes[idx];
+              }
+            }
+            if (backNode) {
+              try { backNode.click(); } catch (_) {}
+              await wait(350);
             }
           }
-          if (backNode) {
-            try { backNode.click(); } catch (_) {}
+
+          const finalItems = getPlaylistItems();
+          if (finalItems.length > 0) {
+            const backIndex = Math.min(Math.max(0, originalActiveIndex), finalItems.length - 1);
+            try { finalItems[backIndex].click(); } catch (_) {}
+          } else if (originalActiveItem) {
+            try { originalActiveItem.click(); } catch (_) {}
+          }
+
+          if (playerContainer && restoreContainerStyles) {
+            playerContainer.style.opacity = restoreContainerStyles.opacity;
+            playerContainer.style.pointerEvents = restoreContainerStyles.pointerEvents;
           }
         }
 
@@ -734,7 +819,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
         const seen = new Set();
         for (let i = 0; i < all.length; i++) {
           const item = all[i];
-          const key = (item.url || '') + '|' + (item.translation || '');
+          const key = (item.translation || '') + '|' + (item.index || '') + '|' + (item.url || '');
           if (seen.has(key)) continue;
           seen.add(key);
           dedup.push(item);
