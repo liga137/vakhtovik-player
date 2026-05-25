@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import '../services/api_service.dart';
 
@@ -33,11 +34,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
   ChewieController? _chewieController;
   bool _isInitialized = false;
   bool _isDownloading = false;
+  double _durationHintSeconds = 0;
+  Timer? _durationTimer;
+  bool _durationRefreshInFlight = false;
 
   @override
   void initState() {
     super.initState();
+    _durationHintSeconds = widget.duration;
     _initPlayer();
+    _startDurationProbe();
   }
 
   Future<void> _initPlayer() async {
@@ -45,14 +51,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
     await _controller!.initialize();
 
     await Future.delayed(const Duration(milliseconds: 500));
-    final ar = _controller!.value.aspectRatio > 0 ? _controller!.value.aspectRatio : 16 / 9;
+    final ar = _controller!.value.aspectRatio > 0
+        ? _controller!.value.aspectRatio
+        : 16 / 9;
 
     _chewieController = ChewieController(
       videoPlayerController: _controller!,
       autoPlay: true,
       looping: false,
       aspectRatio: ar,
-      isLive: widget.duration <= 0,
+      isLive: false,
       allowFullScreen: true,
       allowMuting: true,
       showControls: true,
@@ -64,13 +72,87 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  void _startDurationProbe() {
+    _durationTimer?.cancel();
+    _durationTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _refreshDurationHint();
+    });
+    unawaited(_refreshDurationHint());
+  }
+
+  Future<double> _readPlaylistDurationSeconds() async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 10);
+    client.badCertificateCallback = (_, __, ___) => true;
+    try {
+      final req = await client.getUrl(Uri.parse(widget.hlsUrl));
+      final resp = await req.close().timeout(const Duration(seconds: 10));
+      if (resp.statusCode != 200) return 0;
+      final body = await utf8.decoder.bind(resp).join();
+      final re = RegExp(r'#EXTINF:([0-9]*\.?[0-9]+)');
+      var total = 0.0;
+      for (final m in re.allMatches(body)) {
+        total += double.tryParse(m.group(1) ?? '') ?? 0;
+      }
+      return total;
+    } catch (_) {
+      return 0;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  double _extractDurationFromStatus(Map<String, dynamic> status) {
+    final keys = [
+      'duration',
+      'duration_sec',
+      'duration_seconds',
+      'total_duration',
+      'media_duration',
+    ];
+    for (final key in keys) {
+      final raw = status[key];
+      if (raw is num && raw > 0) return raw.toDouble();
+      final parsed = double.tryParse('${raw ?? ''}') ?? 0;
+      if (parsed > 0) return parsed;
+    }
+    return 0;
+  }
+
+  Future<void> _refreshDurationHint() async {
+    if (_durationRefreshInFlight) return;
+    _durationRefreshInFlight = true;
+    try {
+      final status = await ApiService.getStatus(widget.sessionId)
+          .timeout(const Duration(seconds: 8));
+      final fromStatus = _extractDurationFromStatus(status);
+      final fromPlaylist = await _readPlaylistDurationSeconds();
+      final best = [
+        widget.duration,
+        _durationHintSeconds,
+        fromStatus,
+        fromPlaylist
+      ].fold<double>(0, (prev, e) => e > prev ? e : prev);
+      if (!mounted) return;
+      if (best > _durationHintSeconds + 0.3) {
+        setState(() => _durationHintSeconds = best);
+      }
+    } catch (_) {
+      // Тихий фоновый опрос: не шумим пользователю.
+    } finally {
+      _durationRefreshInFlight = false;
+    }
+  }
+
   Future<void> _switchQuality(String newQuality) async {
     final source = widget.sourceUrl;
-    if (source == null || source.isEmpty || newQuality == widget.quality) return;
+    if (source == null || source.isEmpty || newQuality == widget.quality)
+      return;
 
     // Закрываем текущий и открываем новый плеер — без гонки
     ApiService.stopSession(widget.sessionId).catchError((_) {});
-    final result = await ApiService.transcode(url: source, quality: newQuality, referer: widget.referer);
+    final result = await ApiService.transcode(
+        url: source, quality: newQuality, referer: widget.referer);
     if (!mounted) return;
 
     Navigator.of(context).pushReplacement(MaterialPageRoute(
@@ -91,7 +173,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final h = d ~/ 3600;
     final m = (d % 3600) ~/ 60;
     final s = d % 60;
-    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    if (h > 0)
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
@@ -123,12 +206,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Скачано: $outputPath'), duration: const Duration(seconds: 4)),
+        SnackBar(
+            content: Text('Скачано: $outputPath'),
+            duration: const Duration(seconds: 4)),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка скачивания: $e'), duration: const Duration(seconds: 4)),
+        SnackBar(
+            content: Text('Ошибка скачивания: $e'),
+            duration: const Duration(seconds: 4)),
       );
     } finally {
       if (mounted) setState(() => _isDownloading = false);
@@ -137,6 +224,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    _durationTimer?.cancel();
     ApiService.stopSession(widget.sessionId).catchError((_) {});
     _chewieController?.dispose();
     _controller?.dispose();
@@ -145,7 +233,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final dur = _fmtDuration(widget.duration);
+    final dur = _fmtDuration(
+        _durationHintSeconds > 0 ? _durationHintSeconds : widget.duration);
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -171,7 +260,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.orange),
                   )
                 : const Icon(Icons.download),
             tooltip: 'Скачать mp4',
@@ -191,7 +281,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: _isInitialized && _chewieController != null
             ? Stack(
                 children: [
-                  Positioned.fill(child: Chewie(controller: _chewieController!)),
+                  Positioned.fill(
+                      child: Chewie(controller: _chewieController!)),
                   Positioned(
                     left: 12,
                     right: 12,
@@ -199,7 +290,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     child: IgnorePointer(
                       child: _PlaybackStatusOverlay(
                         controller: _controller!,
-                        fallbackDurationSeconds: widget.duration,
+                        fallbackDurationSeconds: _durationHintSeconds,
+                        availableDurationSeconds: _durationHintSeconds,
                       ),
                     ),
                   ),
@@ -210,13 +302,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 child: Center(
                   child: Container(
                     padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(color: const Color(0xCC1A0F08), borderRadius: BorderRadius.circular(16)),
+                    decoration: BoxDecoration(
+                        color: const Color(0xCC1A0F08),
+                        borderRadius: BorderRadius.circular(16)),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const CircularProgressIndicator(color: Colors.orange),
                         const SizedBox(height: 14),
-                        Text('Запускаю ${widget.quality}...', style: const TextStyle(color: Colors.white, fontSize: 16)),
+                        Text('Запускаю ${widget.quality}...',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 16)),
                       ],
                     ),
                   ),
@@ -230,10 +326,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
 class _PlaybackStatusOverlay extends StatefulWidget {
   final VideoPlayerController controller;
   final double fallbackDurationSeconds;
+  final double availableDurationSeconds;
 
   const _PlaybackStatusOverlay({
     required this.controller,
     required this.fallbackDurationSeconds,
+    required this.availableDurationSeconds,
   });
 
   @override
@@ -285,14 +383,25 @@ class _PlaybackStatusOverlayState extends State<_PlaybackStatusOverlay> {
     final value = widget.controller.value;
     final position = value.position;
     final duration = _effectiveDuration(value);
-    final bufferedEnd = value.buffered.isNotEmpty ? value.buffered.last.end : Duration.zero;
+    var bufferedEnd =
+        value.buffered.isNotEmpty ? value.buffered.last.end : Duration.zero;
+    final availableMs = (widget.availableDurationSeconds * 1000).round();
+    if (availableMs > bufferedEnd.inMilliseconds) {
+      bufferedEnd = Duration(milliseconds: availableMs);
+    }
 
     final totalMs = duration.inMilliseconds;
-    final posMs = position.inMilliseconds.clamp(0, totalMs > 0 ? totalMs : position.inMilliseconds).toDouble();
-    final bufMs = bufferedEnd.inMilliseconds.clamp(0, totalMs > 0 ? totalMs : bufferedEnd.inMilliseconds).toDouble();
+    final posMs = position.inMilliseconds
+        .clamp(0, totalMs > 0 ? totalMs : position.inMilliseconds)
+        .toDouble();
+    final bufMs = bufferedEnd.inMilliseconds
+        .clamp(0, totalMs > 0 ? totalMs : bufferedEnd.inMilliseconds)
+        .toDouble();
 
-    final progress = totalMs > 0 ? (posMs / totalMs).clamp(0.0, 1.0).toDouble() : 0.0;
-    final bufferProgress = totalMs > 0 ? (bufMs / totalMs).clamp(0.0, 1.0).toDouble() : 0.0;
+    final progress =
+        totalMs > 0 ? (posMs / totalMs).clamp(0.0, 1.0).toDouble() : 0.0;
+    final bufferProgress =
+        totalMs > 0 ? (bufMs / totalMs).clamp(0.0, 1.0).toDouble() : 0.0;
     final bufferedAhead = bufferedEnd - position;
 
     return Container(
@@ -311,18 +420,24 @@ class _PlaybackStatusOverlayState extends State<_PlaybackStatusOverlay> {
               const SizedBox(width: 6),
               Text(
                 '${_fmt(position)} / ${totalMs > 0 ? _fmt(duration) : 'длит. не определена'}',
-                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600),
               ),
               const Spacer(),
               if (value.isBuffering)
                 const SizedBox(
                   width: 12,
                   height: 12,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.orange),
                 ),
               const SizedBox(width: 8),
               Text(
-                bufferedAhead.inSeconds > 0 ? 'Буфер +${bufferedAhead.inSeconds}с' : 'Буфер 0с',
+                bufferedAhead.inSeconds > 0
+                    ? 'Буфер +${bufferedAhead.inSeconds}с'
+                    : 'Буфер 0с',
                 style: const TextStyle(color: Colors.white70, fontSize: 11),
               ),
             ],

@@ -1,12 +1,85 @@
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 /// Сервис Filmix: авто-логин + балансер Kodik
 class FilmixAuth {
   static const String filmixLogin = "vakhtovik_player";
   static const String filmixPassword = "ZaqXswCde123";
+  static const String _cookieKey = 'filmix_cookie_jar_v1';
 
   static Future<void> injectCookies(
-      InAppWebViewController controller, Uri url) async {}
+      InAppWebViewController controller, Uri url) async {
+    if (!url.host.contains('filmix')) return;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_cookieKey);
+    if (raw == null || raw.trim().isEmpty) return;
+    List<dynamic> decoded;
+    try {
+      decoded = jsonDecode(raw) as List<dynamic>;
+    } catch (_) {
+      return;
+    }
+    final manager = CookieManager.instance();
+    for (final item in decoded) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item as Map);
+      final name = (map['name'] ?? '').toString();
+      final value = (map['value'] ?? '').toString();
+      if (name.isEmpty || value.isEmpty) continue;
+      final domain = (map['domain'] ?? '').toString();
+      if (domain.isNotEmpty) {
+        final normalized =
+            domain.startsWith('.') ? domain.substring(1) : domain;
+        if (!url.host.endsWith(normalized)) continue;
+      }
+      await manager.setCookie(
+        url: WebUri(url.toString()),
+        name: name,
+        value: value,
+        domain: domain.isNotEmpty ? domain : url.host,
+        path: (map['path'] ?? '/').toString(),
+        isHttpOnly: map['httpOnly'] == true,
+        isSecure: map['secure'] == true,
+        expiresDate: (map['expiresDate'] as num?)?.toInt(),
+      );
+    }
+  }
+
+  static Future<void> persistCookies(Uri url) async {
+    if (!url.host.contains('filmix')) return;
+    final manager = CookieManager.instance();
+    final cookies = await manager.getCookies(url: WebUri(url.toString()));
+    if (cookies.isEmpty) return;
+    final serializable = <Map<String, dynamic>>[];
+    for (final c in cookies) {
+      final name = c.name.trim();
+      final value = c.value.trim();
+      if (name.isEmpty || value.isEmpty) continue;
+      // Держим только полезные cookie для сессии, чтобы не тащить шум.
+      final low = name.toLowerCase();
+      if (!(low.contains('sess') ||
+          low.contains('auth') ||
+          low.contains('token') ||
+          low.contains('user') ||
+          low.contains('dle_') ||
+          low.contains('filmix'))) {
+        continue;
+      }
+      serializable.add({
+        'name': c.name,
+        'value': c.value,
+        'domain': c.domain ?? '',
+        'path': c.path ?? '/',
+        'httpOnly': c.isHttpOnly,
+        'secure': c.isSecure,
+        'expiresDate': c.expiresDate,
+      });
+    }
+    if (serializable.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_cookieKey, jsonEncode(serializable));
+  }
 
   /// JS для автологина на любом домене Filmix (filmix.ac, filmix.me, filmix.biz и др.)
   static String getInjectionScript() {

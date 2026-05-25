@@ -37,7 +37,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   String url = "https://seasonvar.ru/";
   String _currentRealUrl = "https://seasonvar.ru/";
   final urlController = TextEditingController(text: "https://seasonvar.ru/");
-  
+
   bool _showInterceptor = false;
   bool _showHome = true;
   bool _liteMode = false;
@@ -121,12 +121,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
     return _currentRealUrl;
   }
 
-  Future<WebViewEnvironment?> _createWindowsEnvironment({required bool useProxy}) async {
+  Future<WebViewEnvironment?> _createWindowsEnvironment(
+      {required bool useProxy}) async {
     if (!Platform.isWindows) return null;
     final availableVersion = await WebViewEnvironment.getAvailableVersion();
     if (availableVersion == null) return null;
 
-    final localAppData = Platform.environment['LOCALAPPDATA'] ?? Directory.current.path;
+    final localAppData =
+        Platform.environment['LOCALAPPDATA'] ?? Directory.current.path;
     final baseDir = Directory('$localAppData/VakhtovikPlayer/webview2');
     if (!await baseDir.exists()) {
       await baseDir.create(recursive: true);
@@ -147,12 +149,24 @@ class _BrowserScreenState extends State<BrowserScreen> {
     );
   }
 
+  Future<void> _safeDisposeEnvironment(WebViewEnvironment? env) async {
+    if (env == null) return;
+    try {
+      await env.dispose();
+    } on MissingPluginException {
+      // В некоторых сборках flutter_inappwebview для Windows метод dispose
+      // у окружения не реализован. Игнорируем, чтобы не ломать переключение proxy.
+    } catch (_) {}
+  }
+
   Future<void> _switchWindowsWebViewProxy({
     required bool useProxy,
     required bool preservePage,
   }) async {
     if (!Platform.isWindows) return;
-    if (_webViewReady && _webViewEnvironment != null && _webViewProxyEnabled == useProxy) {
+    if (_webViewReady &&
+        _webViewEnvironment != null &&
+        _webViewProxyEnabled == useProxy) {
       return;
     }
 
@@ -184,10 +198,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
     try {
       final environment = await _createWindowsEnvironment(useProxy: useProxy);
       if (!mounted) {
-        await environment?.dispose();
+        await _safeDisposeEnvironment(environment);
         return;
       }
-      await oldEnvironment?.dispose();
+      await _safeDisposeEnvironment(oldEnvironment);
       setState(() {
         _webViewEnvironment = environment;
         _webViewProxyEnabled = useProxy;
@@ -204,12 +218,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
         _pageLoading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка WebView2 proxy: $e'), duration: const Duration(seconds: 4)),
+        SnackBar(
+            content: Text('Ошибка WebView2 proxy: $e'),
+            duration: const Duration(seconds: 4)),
       );
     }
   }
 
-  Future<void> _recoverProxyIfNeeded({Uri? failedUrl, String reason = ''}) async {
+  Future<void> _recoverProxyIfNeeded(
+      {Uri? failedUrl, String reason = ''}) async {
     if (!Platform.isWindows) return;
     if (!_webViewProxyEnabled || !_gostActive) return;
     if (_proxyRecovering) return;
@@ -218,7 +235,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final target = (url.startsWith('http://') || url.startsWith('https://'))
         ? url
         : _proxyCheckTargetUrl();
-    if (!(target.startsWith('http://') || target.startsWith('https://'))) return;
+    if (!(target.startsWith('http://') || target.startsWith('https://')))
+      return;
 
     _proxyRecovering = true;
     try {
@@ -279,13 +297,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
   Future<void> _loadPresets() async {
     // Жёсткий фолбэк — если сервер не отвечает, качество всё равно будет
     const fallback = [
-      Preset(id: '480p', label: '480p', width: 854, crf: 43, audioBitrate: '32k'),
-      Preset(id: '360p', label: '360p', width: 640, crf: 40, audioBitrate: '32k'),
-      Preset(id: '240p', label: '240p', width: 426, crf: 38, audioBitrate: '32k'),
-      Preset(id: '144p', label: '144p', width: 256, crf: 34, audioBitrate: '32k'),
+      Preset(
+          id: '480p', label: '480p', width: 854, crf: 43, audioBitrate: '32k'),
+      Preset(
+          id: '360p', label: '360p', width: 640, crf: 40, audioBitrate: '32k'),
+      Preset(
+          id: '240p', label: '240p', width: 426, crf: 38, audioBitrate: '32k'),
+      Preset(
+          id: '144p', label: '144p', width: 256, crf: 34, audioBitrate: '32k'),
     ];
     try {
-      final presets = await ApiService.getPresets().timeout(const Duration(seconds: 5));
+      final presets =
+          await ApiService.getPresets().timeout(const Duration(seconds: 5));
       if (mounted) {
         setState(() {
           _presets = List<Preset>.from(presets.isNotEmpty ? presets : fallback);
@@ -304,7 +327,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Future<File> _recentLinksFile() async {
     if (Platform.isWindows) {
-      final localAppData = Platform.environment['LOCALAPPDATA'] ?? Directory.current.path;
+      final localAppData =
+          Platform.environment['LOCALAPPDATA'] ?? Directory.current.path;
       final appDir = Directory('$localAppData/VakhtovikPlayer');
       if (!await appDir.exists()) await appDir.create(recursive: true);
       return File('${appDir.path}/recent_links.json');
@@ -319,7 +343,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final file = await _recentLinksFile();
       if (!await file.exists()) return;
       final data = jsonDecode(await file.readAsString()) as List<dynamic>;
-      final links = data.map((e) => e.toString()).where((e) => e.startsWith('http://') || e.startsWith('https://')).toList();
+      final links = data
+          .map((e) => e.toString())
+          .where((e) => e.startsWith('http://') || e.startsWith('https://'))
+          .toList();
       if (mounted) {
         setState(() {
           _recentLinks = links.take(30).toList();
@@ -343,7 +370,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() {
       _recentLinks.removeWhere((x) => x == t);
       _recentLinks.insert(0, t);
-      if (_recentLinks.length > 30) _recentLinks = _recentLinks.take(30).toList();
+      if (_recentLinks.length > 30)
+        _recentLinks = _recentLinks.take(30).toList();
     });
     _saveRecentLinks();
   }
@@ -383,7 +411,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
             'Открыть страницу релиза?',
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Позже')),
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Позже')),
             if (info.windowsAssetUrl.isNotEmpty)
               TextButton(
                 onPressed: () {
@@ -425,7 +455,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void dispose() {
     _videoController?.dispose();
     _chewieController?.dispose();
-    unawaited(_webViewEnvironment?.dispose() ?? Future<void>.value());
+    unawaited(_safeDisposeEnvironment(_webViewEnvironment));
     super.dispose();
   }
 
@@ -434,14 +464,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (webViewController == null) return;
 
     // Правильный режим Seasonvar: следующая серия берётся из собранного списка прямых ссылок
-    if (_seasonvarEpisodes.isNotEmpty && _seasonvarIndex + 1 < _seasonvarEpisodes.length) {
+    if (_seasonvarEpisodes.isNotEmpty &&
+        _seasonvarIndex + 1 < _seasonvarEpisodes.length) {
       _seasonvarIndex++;
       final ep = _seasonvarEpisodes[_seasonvarIndex];
       _interceptedUrl = ep['url'] ?? '';
       _currentReferer = urlController.text;
       _interceptedAlready = false;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Серия ${_seasonvarIndex + 1}: ${ep['title'] ?? ''}'), duration: const Duration(seconds: 2)),
+        SnackBar(
+            content: Text('Серия ${_seasonvarIndex + 1}: ${ep['title'] ?? ''}'),
+            duration: const Duration(seconds: 2)),
       );
       _startMagic();
       return;
@@ -454,14 +487,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
         return;
       }
     }
-    
+
     // Ставим флаг: следующие перехваченные URL обрабатываем автоматически
     _waitingForNextEpisode = true;
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Переключаю серию...'), duration: Duration(seconds: 1))
-    );
-    
+
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Переключаю серию...'), duration: Duration(seconds: 1)));
+
     // Инжектим клик по кнопке «Следующая серия»
     // Перед кликом читаем индекс текущей серии (записан трекером при загрузке страницы)
     webViewController!.evaluateJavascript(source: """
@@ -508,15 +540,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
         return 'not-found:idx=' + idx + ',items=' + items.length;
       })();
     """);
-    
+
     // Таймаут: если за 15 секунд новая серия не перехватилась — закрываем плеер
     Future.delayed(const Duration(seconds: 15), () {
       if (_waitingForNextEpisode && mounted) {
         _waitingForNextEpisode = false;
         _stopPlayer();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось переключить серию'), duration: Duration(seconds: 2))
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Не удалось переключить серию'),
+            duration: Duration(seconds: 2)));
       }
     });
   }
@@ -527,9 +559,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
     });
 
     try {
-      final result = await ApiService.transcode(url: _interceptedUrl, quality: _selectedQuality, referer: _currentReferer);
+      final result = await ApiService.transcode(
+          url: _interceptedUrl,
+          quality: _selectedQuality,
+          referer: _currentReferer);
       if (!mounted) return;
-      setState(() { _isLoading = false; });
+      setState(() {
+        _isLoading = false;
+      });
       _muteWebView();
 
       await Navigator.of(context).push(MaterialPageRoute(
@@ -546,7 +583,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _unmuteWebView();
 
       // Seasonvar: сбор списка серий после просмотра
-      final isSeasonvar = _currentReferer.contains('seasonvar') || _interceptedUrl.contains('seasonvar');
+      final isSeasonvar = _currentReferer.contains('seasonvar') ||
+          _interceptedUrl.contains('seasonvar');
       if (isSeasonvar && _seasonvarEpisodes.isEmpty && !_scanningSeasonvar) {
         _scanSeasonvarPlaylist(silent: true);
       }
@@ -555,9 +593,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
       setState(() {
         _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e'), duration: const Duration(seconds: 4))
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Ошибка: $e'), duration: const Duration(seconds: 4)));
     }
   }
 
@@ -598,7 +635,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   // Сжатие YouTube: показывает шторку выбора качества (как обычный перехват)
   void _compressYouTube() {
     final ytUrl = urlController.text;
-    if (!(ytUrl.contains('youtube.com/watch') || ytUrl.contains('youtube.com/shorts/'))) return;
+    if (!(ytUrl.contains('youtube.com/watch') ||
+        ytUrl.contains('youtube.com/shorts/'))) return;
 
     _openCompressedUrl(ytUrl, referer: 'https://www.youtube.com/');
   }
@@ -613,13 +651,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _currentReferer = urlController.text;
     _interceptedAlready = false;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Запускаю серию ${index + 1}'), duration: const Duration(seconds: 1)),
+      SnackBar(
+          content: Text('Запускаю серию ${index + 1}'),
+          duration: const Duration(seconds: 1)),
     );
     _startMagic();
   }
 
   String _jsString(String value) {
-    return value.replaceAll('\\', '\\\\').replaceAll("'", r"\'").replaceAll('\n', ' ');
+    return value
+        .replaceAll('\\', '\\\\')
+        .replaceAll("'", r"\'")
+        .replaceAll('\n', ' ');
   }
 
   bool _sameFilmixEpisode(Map<String, String> a, Map<String, String> b) {
@@ -642,7 +685,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   int _findFilmixGlobalIndexByEpisode(Map<String, String> target) {
-    final idx = _filmixEpisodes.indexWhere((e) => _sameFilmixEpisode(e, target));
+    final idx =
+        _filmixEpisodes.indexWhere((e) => _sameFilmixEpisode(e, target));
     if (idx >= 0) return idx;
     return _filmixEpisodes.indexWhere((e) =>
         (e['season'] ?? '') == (target['season'] ?? '') &&
@@ -676,7 +720,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Future<void> _selectFilmixTranslation(String translationId) async {
     if (translationId.trim().isEmpty || webViewController == null) return;
-    await webViewController!.evaluateJavascript(source: FilmixDom.getInjectionJS());
+    await webViewController!
+        .evaluateJavascript(source: FilmixDom.getInjectionJS());
     if (!mounted) return;
     setState(() {
       _filmixTranslationId = translationId.trim();
@@ -687,7 +732,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Future<void> _selectFilmixSeason(String seasonId) async {
     if (seasonId.trim().isEmpty || webViewController == null) return;
-    await webViewController!.evaluateJavascript(source: FilmixDom.getInjectionJS());
+    await webViewController!
+        .evaluateJavascript(source: FilmixDom.getInjectionJS());
     if (!mounted) return;
     setState(() {
       _filmixSeasonId = seasonId.trim();
@@ -711,7 +757,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _interceptedAlready = false;
     _lastFilmixMediaUrl = '';
 
-    await webViewController!.evaluateJavascript(source: FilmixDom.getInjectionJS());
+    await webViewController!
+        .evaluateJavascript(source: FilmixDom.getInjectionJS());
     final clickResult = await webViewController!.evaluateJavascript(source: """
       (function() {
         var season = '${_jsString(season)}';
@@ -726,9 +773,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
     """);
 
     final resultText = (clickResult ?? '').toString();
-    if (mounted && (resultText.contains('not-found') || resultText.contains('helper-missing'))) {
+    if (mounted &&
+        (resultText.contains('not-found') ||
+            resultText.contains('helper-missing'))) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Filmix: не нашёл кнопку серии в iframe ($resultText)'), duration: const Duration(seconds: 3)),
+        SnackBar(
+            content:
+                Text('Filmix: не нашёл кнопку серии в iframe ($resultText)'),
+            duration: const Duration(seconds: 3)),
       );
     }
 
@@ -747,7 +799,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (webViewController == null) return;
     if (!silent) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Сканирую серии Filmix...'), duration: Duration(seconds: 2)),
+        const SnackBar(
+            content: Text('Сканирую серии Filmix...'),
+            duration: Duration(seconds: 2)),
       );
     }
     webViewController!.evaluateJavascript(source: FilmixDom.getInjectionJS());
@@ -774,7 +828,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _scanningSeasonvar = true;
     if (!silent) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Сканирую серии Seasonvar...'), duration: Duration(seconds: 2)),
+        const SnackBar(
+            content: Text('Сканирую серии Seasonvar...'),
+            duration: Duration(seconds: 2)),
       );
     }
     webViewController!.evaluateJavascript(source: r'''
@@ -1036,7 +1092,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
-  Future<void> _selectSeasonvarTranslation(String translationId, {String fallbackIndex = ''}) async {
+  Future<void> _selectSeasonvarTranslation(String translationId,
+      {String fallbackIndex = ''}) async {
     if (translationId.isEmpty || webViewController == null) return;
     await webViewController!.evaluateJavascript(source: """
       (function() {
@@ -1078,11 +1135,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _toggleYouTubeCompressMode() {
     if (webViewController == null) return;
     final mode = _compressMode;
-    webViewController!.evaluateJavascript(source: "window.vakhCompressMode(" + (mode ? "true" : "false") + ");");
+    webViewController!.evaluateJavascript(
+        source: "window.vakhCompressMode(" + (mode ? "true" : "false") + ");");
   }
 
   void _openSite(String siteUrl) {
-    setState(() { _showHome = false; _pageLoading = true; });
+    setState(() {
+      _showHome = false;
+      _pageLoading = true;
+    });
     _currentRealUrl = siteUrl;
     _rememberUrl(siteUrl);
     final loadUrl = _liteMode ? ApiService.liteUrl(siteUrl) : siteUrl;
@@ -1093,7 +1154,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
   String _realUrlFromAddress() {
     final text = urlController.text.trim();
     final parsed = Uri.tryParse(text);
-    if (parsed != null && parsed.path == '/lite' && parsed.queryParameters['url'] != null) return parsed.queryParameters['url']!;
+    if (parsed != null &&
+        parsed.path == '/lite' &&
+        parsed.queryParameters['url'] != null)
+      return parsed.queryParameters['url']!;
     if (text.isEmpty || text == 'about:blank') return _currentRealUrl;
     return text;
   }
@@ -1102,7 +1166,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
     var target = value.trim();
     if (target.isEmpty) return;
     if (!Uri.parse(target).hasScheme) target = "https://$target";
-    setState(() { _showHome = false; _pageLoading = true; });
+    setState(() {
+      _showHome = false;
+      _pageLoading = true;
+    });
     _currentRealUrl = target;
     _rememberUrl(target);
     final loadUrl = _liteMode ? ApiService.liteUrl(target) : target;
@@ -1110,7 +1177,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
   }
 
-  ContentBlocker _block(String urlFilter, List<ContentBlockerTriggerResourceType> types) {
+  ContentBlocker _block(
+      String urlFilter, List<ContentBlockerTriggerResourceType> types) {
     return ContentBlocker(
       trigger: ContentBlockerTrigger(urlFilter: urlFilter, resourceType: types),
       action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
@@ -1120,18 +1188,29 @@ class _BrowserScreenState extends State<BrowserScreen> {
   List<ContentBlocker> _economyRules(EconomyLevel level) {
     final adAndTrackers = _block(
       r'.*(doubleclick|googlesyndication|google-analytics|googletagmanager|adfox|adriver|betweendigital|mc\.yandex|yandex\.ru/ads|mytarget|facebook\.net|scorecardresearch|hotjar|criteo|adsystem|getter\.cfd|schulist\.link).*',
-      [ContentBlockerTriggerResourceType.SCRIPT, ContentBlockerTriggerResourceType.RAW],
+      [
+        ContentBlockerTriggerResourceType.SCRIPT,
+        ContentBlockerTriggerResourceType.RAW
+      ],
     );
     switch (level) {
       case EconomyLevel.none:
         return const [];
       case EconomyLevel.economy:
-        return [adAndTrackers, _block(r'.*\.(woff2?|ttf|otf)(\?.*)?$', [ContentBlockerTriggerResourceType.FONT])];
+        return [
+          adAndTrackers,
+          _block(r'.*\.(woff2?|ttf|otf)(\?.*)?$',
+              [ContentBlockerTriggerResourceType.FONT])
+        ];
       case EconomyLevel.superEconomy:
         return [
           adAndTrackers,
-          _block(r'.*\.(woff2?|ttf|otf)(\?.*)?$', [ContentBlockerTriggerResourceType.FONT]),
-          _block(r'.*\.(jpg|jpeg|png|gif|webp|avif|svg)(\?.*)?$', [ContentBlockerTriggerResourceType.IMAGE, ContentBlockerTriggerResourceType.SVG_DOCUMENT]),
+          _block(r'.*\.(woff2?|ttf|otf)(\?.*)?$',
+              [ContentBlockerTriggerResourceType.FONT]),
+          _block(r'.*\.(jpg|jpeg|png|gif|webp|avif|svg)(\?.*)?$', [
+            ContentBlockerTriggerResourceType.IMAGE,
+            ContentBlockerTriggerResourceType.SVG_DOCUMENT
+          ]),
         ];
       case EconomyLevel.text:
         return const [];
@@ -1140,10 +1219,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   String _economyLabel(EconomyLevel level) {
     switch (level) {
-      case EconomyLevel.none: return 'Обычный';
-      case EconomyLevel.economy: return '🪶 Эконом';
-      case EconomyLevel.superEconomy: return '⚡ Супер';
-      case EconomyLevel.text: return '📄 Текст';
+      case EconomyLevel.none:
+        return 'Обычный';
+      case EconomyLevel.economy:
+        return '🪶 Эконом';
+      case EconomyLevel.superEconomy:
+        return '⚡ Супер';
+      case EconomyLevel.text:
+        return '📄 Текст';
     }
   }
 
@@ -1165,11 +1248,25 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Future<void> _showCustomSiteDialog() async {
     final c = TextEditingController(text: 'https://');
-    final result = await showDialog<String>(context: context, builder: (context) => AlertDialog(
-      title: const Text('Свой сайт'),
-      content: TextField(controller: c, autofocus: true, decoration: const InputDecoration(hintText: 'https://example.com'), onSubmitted: (v) => Navigator.pop(context, v)),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')), FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('Открыть'))],
-    ));
+    final result = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('Свой сайт'),
+              content: TextField(
+                  controller: c,
+                  autofocus: true,
+                  decoration:
+                      const InputDecoration(hintText: 'https://example.com'),
+                  onSubmitted: (v) => Navigator.pop(context, v)),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Отмена')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, c.text),
+                    child: const Text('Открыть'))
+              ],
+            ));
     c.dispose();
     if (result != null && result.trim().isNotEmpty) _loadAddress(result);
   }
@@ -1184,7 +1281,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
             children: [
               // Browser Header
               Container(
-                padding: const EdgeInsets.only(top: 40, left: 10, right: 10, bottom: 10),
+                padding: const EdgeInsets.only(
+                    top: 40, left: 10, right: 10, bottom: 10),
                 color: const Color(0xFF1A1A1A),
                 child: Row(
                   children: [
@@ -1221,13 +1319,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           ];
                         }
                         final items = <PopupMenuEntry<String>>[
-                          ..._recentLinks.take(12).map((link) => PopupMenuItem<String>(
-                                value: link,
-                                child: SizedBox(
-                                  width: 340,
-                                  child: Text(link, overflow: TextOverflow.ellipsis),
-                                ),
-                              )),
+                          ..._recentLinks
+                              .take(12)
+                              .map((link) => PopupMenuItem<String>(
+                                    value: link,
+                                    child: SizedBox(
+                                      width: 340,
+                                      child: Text(link,
+                                          overflow: TextOverflow.ellipsis),
+                                    ),
+                                  )),
                           const PopupMenuDivider(),
                           const PopupMenuItem<String>(
                             value: '__clear__',
@@ -1241,7 +1342,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       icon: const Icon(Icons.home, color: Colors.white),
                       onPressed: () {
                         setState(() => _showHome = true);
-                        webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri("about:blank")));
+                        webViewController?.loadUrl(
+                            urlRequest: URLRequest(url: WebUri("about:blank")));
                       },
                     ),
                     Expanded(
@@ -1253,10 +1355,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         ),
                         child: TextField(
                           controller: urlController,
-                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 14),
                           decoration: const InputDecoration(
                             border: InputBorder.none,
-                            icon: Icon(Icons.lock, color: Colors.green, size: 16),
+                            icon:
+                                Icon(Icons.lock, color: Colors.green, size: 16),
                           ),
                           onSubmitted: _loadAddress,
                         ),
@@ -1275,15 +1379,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           ? const SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.orange),
                             )
-                          : const Icon(Icons.system_update, color: Colors.orange),
+                          : const Icon(Icons.system_update,
+                              color: Colors.orange),
                       tooltip: 'Проверить обновления',
-                      onPressed: _checkingUpdates ? null : () => _checkForUpdates(silent: false),
+                      onPressed: _checkingUpdates
+                          ? null
+                          : () => _checkForUpdates(silent: false),
                     ),
-                    if (_currentRealUrl.contains('seasonvar') || _currentRealUrl.contains('filmix'))
+                    if (_currentRealUrl.contains('seasonvar') ||
+                        _currentRealUrl.contains('filmix'))
                       IconButton(
-                        icon: const Icon(Icons.playlist_play, color: Colors.orange),
+                        icon: const Icon(Icons.playlist_play,
+                            color: Colors.orange),
                         tooltip: 'Сканировать сезоны/серии/озвучки',
                         onPressed: () {
                           if (_currentRealUrl.contains('seasonvar')) {
@@ -1294,49 +1404,72 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         },
                       ),
                     GestureDetector(
-                      onTap: _gostConnecting ? null : () async {
-                        if (_gostActive) {
-                          HysteriaService.stop();
-                          setState(() => _gostActive = false);
-                          await _switchWindowsWebViewProxy(useProxy: false, preservePage: true);
-                        } else {
-                          setState(() => _gostConnecting = true);
-                          await HysteriaService.start();
-                          // Ждём до 90 сек на сателлите
-                          for (var i = 0; i < 30; i++) {
-                            await Future.delayed(const Duration(seconds: 3));
-                            final ok = await HysteriaService.checkWebProxy();
-                            if (ok) {
-                              if (mounted) {
-                                setState(() {
-                                  _gostActive = true;
-                                  _gostConnecting = false;
-                                });
-                                await _switchWindowsWebViewProxy(useProxy: true, preservePage: true);
+                      onTap: _gostConnecting
+                          ? null
+                          : () async {
+                              if (_gostActive) {
+                                HysteriaService.stop();
+                                setState(() => _gostActive = false);
+                                await _switchWindowsWebViewProxy(
+                                    useProxy: false, preservePage: true);
+                              } else {
+                                setState(() => _gostConnecting = true);
+                                await HysteriaService.start();
+                                // Ждём до 90 сек на сателлите
+                                for (var i = 0; i < 30; i++) {
+                                  await Future.delayed(
+                                      const Duration(seconds: 3));
+                                  final ok =
+                                      await HysteriaService.checkWebProxy();
+                                  if (ok) {
+                                    if (mounted) {
+                                      setState(() {
+                                        _gostActive = true;
+                                        _gostConnecting = false;
+                                      });
+                                      await _switchWindowsWebViewProxy(
+                                          useProxy: true, preservePage: true);
+                                    }
+                                    return;
+                                  }
+                                }
+                                if (mounted) {
+                                  setState(() => _gostConnecting = false);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'VPN поднялся, но веб-прокси не открыл сайты. Проверь сеть/сервер.'),
+                                      duration: Duration(seconds: 5),
+                                    ),
+                                  );
+                                }
                               }
-                              return;
-                            }
-                          }
-                          if (mounted) {
-                            setState(() => _gostConnecting = false);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('VPN поднялся, но веб-прокси не открыл сайты. Проверь сеть/сервер.'),
-                                duration: Duration(seconds: 5),
-                              ),
-                            );
-                          }
-                        }
-                      },
+                            },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _gostActive ? Colors.green.shade700 : _gostConnecting ? Colors.orange.shade800 : const Color(0xFF333333),
+                          color: _gostActive
+                              ? Colors.green.shade700
+                              : _gostConnecting
+                                  ? Colors.orange.shade800
+                                  : const Color(0xFF333333),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          _gostActive ? 'VPN ON' : _gostConnecting ? '...' : 'VPN OFF',
-                          style: TextStyle(color: _gostActive ? Colors.greenAccent : _gostConnecting ? Colors.orange : Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
+                          _gostActive
+                              ? 'VPN ON'
+                              : _gostConnecting
+                                  ? '...'
+                                  : 'VPN OFF',
+                          style: TextStyle(
+                              color: _gostActive
+                                  ? Colors.greenAccent
+                                  : _gostConnecting
+                                      ? Colors.orange
+                                      : Colors.white54,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
@@ -1345,21 +1478,39 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       initialValue: _economyLevel,
                       onSelected: _setEconomyLevel,
                       itemBuilder: (_) => const [
-                        PopupMenuItem(value: EconomyLevel.none, child: Text('Обычный')),
-                        PopupMenuItem(value: EconomyLevel.economy, child: Text('🪶 Эконом: режем рекламу/шрифты')),
-                        PopupMenuItem(value: EconomyLevel.superEconomy, child: Text('⚡ Супер: ещё без картинок')),
-                        PopupMenuItem(value: EconomyLevel.text, child: Text('📄 Текст: серверный /lite')),
+                        PopupMenuItem(
+                            value: EconomyLevel.none, child: Text('Обычный')),
+                        PopupMenuItem(
+                            value: EconomyLevel.economy,
+                            child: Text('🪶 Эконом: режем рекламу/шрифты')),
+                        PopupMenuItem(
+                            value: EconomyLevel.superEconomy,
+                            child: Text('⚡ Супер: ещё без картинок')),
+                        PopupMenuItem(
+                            value: EconomyLevel.text,
+                            child: Text('📄 Текст: серверный /lite')),
                       ],
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _economyLevel == EconomyLevel.none ? const Color(0xFF333333) : Colors.greenAccent.shade400,
+                          color: _economyLevel == EconomyLevel.none
+                              ? const Color(0xFF333333)
+                              : Colors.greenAccent.shade400,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: _economyLevel == EconomyLevel.none ? Colors.grey : Colors.greenAccent),
+                          border: Border.all(
+                              color: _economyLevel == EconomyLevel.none
+                                  ? Colors.grey
+                                  : Colors.greenAccent),
                         ),
                         child: Text(
                           _economyLabel(_economyLevel),
-                          style: TextStyle(color: _economyLevel == EconomyLevel.none ? Colors.white70 : Colors.black, fontSize: 11, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                              color: _economyLevel == EconomyLevel.none
+                                  ? Colors.white70
+                                  : Colors.black,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
@@ -1369,7 +1520,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       GestureDetector(
                         onTap: _compressYouTube,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.red.shade700,
                             borderRadius: BorderRadius.circular(6),
@@ -1377,9 +1529,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.compress, color: Colors.white, size: 14),
+                              Icon(Icons.compress,
+                                  color: Colors.white, size: 14),
                               SizedBox(width: 4),
-                              Text('Сжать', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                              Text('Сжать',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold)),
                             ],
                           ),
                         ),
@@ -1392,15 +1549,26 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           _toggleYouTubeCompressMode();
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: _compressMode ? Colors.orange : const Color(0xFF333333),
+                            color: _compressMode
+                                ? Colors.orange
+                                : const Color(0xFF333333),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: _compressMode ? Colors.orange : Colors.grey, width: 1.5),
+                            border: Border.all(
+                                color:
+                                    _compressMode ? Colors.orange : Colors.grey,
+                                width: 1.5),
                           ),
                           child: Text(
                             _compressMode ? '🔥 Сжатое' : '🔄 Оригинал',
-                            style: TextStyle(color: _compressMode ? Colors.black : Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                                color: _compressMode
+                                    ? Colors.black
+                                    : Colors.white70,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),
@@ -1414,602 +1582,791 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   color: Colors.orange,
                   backgroundColor: Color(0xFF333333),
                 ),
-               
-               // WebView — скрыт когда плеер сверху (экономия GPU)
-               Expanded(
-                 child: Offstage(
-                   offstage: _showPlayer,
-                   child: Stack(
-                     children: [
-                       InAppWebView(
-                  key: ValueKey('webview_${_webViewInstance}_${_webViewProxyEnabled ? 'proxy' : 'direct'}'),
-                  webViewEnvironment: _webViewEnvironment,
-                  initialUrlRequest: URLRequest(url: WebUri("about:blank")),
-                  initialSettings: InAppWebViewSettings(
-                    useShouldOverrideUrlLoading: true,
-                    useShouldInterceptRequest: true,
-                    useOnLoadResource: false,
-                    mediaPlaybackRequiresUserGesture: false,
-                    domStorageEnabled: true,
-                    databaseEnabled: true,
-                    cacheEnabled: true,
-                    javaScriptEnabled: true,
-                    transparentBackground: false,
-                    hardwareAcceleration: false,
-                    // Chrome UA — YouTube блокирует Edge/WebView2 UA
-                    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                  ),
-                  onWebViewCreated: (controller) {
-                    webViewController = controller;
-                    final restoreUrl = _webViewRestoreUrl;
-                    _webViewRestoreUrl = null;
-                    if (mounted) {
-                      setState(() {
-                        _webViewReady = true;
-                        _pageLoading = restoreUrl != null && restoreUrl != 'about:blank';
-                      });
-                    }
-                    if (restoreUrl != null && restoreUrl != 'about:blank') {
-                      controller.loadUrl(urlRequest: URLRequest(url: WebUri(restoreUrl)));
-                    }
-                    controller.addJavaScriptHandler(
-                      handlerName: 'compressUrl',
-                      callback: (args) {
-                        if (args.isEmpty) return null;
-                        final raw = args.first?.toString() ?? '';
-                        if (raw.isEmpty) return null;
-                        _openCompressedUrl(raw, referer: 'https://www.youtube.com/');
-                        return null;
-                      },
-                    );
-                    controller.addJavaScriptHandler(
-                      handlerName: 'seasonvarMeta',
-                      callback: (args) {
-                        if (args.isEmpty) return null;
-                        try {
-                          final map = Map<String, dynamic>.from(jsonDecode(args.first.toString()) as Map);
-                          final trs = (map['translations'] as List<dynamic>? ?? const [])
-                              .map((e) => Map<String, dynamic>.from(e as Map))
-                              .map((m) => <String, String>{
-                                    'id': m['id']?.toString() ?? '',
-                                    'name': m['name']?.toString() ?? '',
-                                    'index': m['index']?.toString() ?? '',
-                                  })
-                              .where((m) => (m['id'] ?? '').isNotEmpty && (m['name'] ?? '').isNotEmpty)
-                              .toList();
-                          final seasons = (map['seasons'] as List<dynamic>? ?? const [])
-                              .map((e) => Map<String, dynamic>.from(e as Map))
-                              .map((m) => <String, String>{
-                                    'title': m['title']?.toString() ?? '',
-                                    'url': m['url']?.toString() ?? '',
-                                  })
-                              .where((m) => (m['title'] ?? '').isNotEmpty && (m['url'] ?? '').isNotEmpty)
-                              .toList();
-                          final activeTranslationId = map['activeTranslationId']?.toString() ?? '';
-                          if (!mounted) return null;
-                          setState(() {
-                            _seasonvarTranslations = trs;
-                            _seasonvarSeasons = seasons;
-                            if (activeTranslationId.isNotEmpty) {
-                              _seasonvarTranslationId = activeTranslationId;
-                            }
-                          });
-                        } catch (_) {}
-                        return null;
-                      },
-                    );
-                    controller.addJavaScriptHandler(
-                      handlerName: 'seasonvarPlaylist',
-                      callback: (args) {
-                        _scanningSeasonvar = false;
-                        if (args.isEmpty) return null;
-                        try {
-                          final decoded = jsonDecode(args.first.toString()) as List<dynamic>;
-                          final episodes = decoded.map((e) {
-                            final m = Map<String, dynamic>.from(e as Map);
-                            return <String, String>{
-                              'index': m['index']?.toString() ?? '',
-                              'title': m['title']?.toString() ?? '',
-                              'translation': m['translation']?.toString() ?? '',
-                              'url': m['url']?.toString() ?? '',
-                            };
-                          }).where((e) => (e['url'] ?? '').isNotEmpty).toList();
 
-                          String selectedTranslationName = '';
-                          if (_seasonvarTranslationId.isNotEmpty) {
-                            final selectedTranslation = _seasonvarTranslations.firstWhere(
-                              (t) => (t['id'] ?? '') == _seasonvarTranslationId,
-                              orElse: () => const <String, String>{},
-                            );
-                            selectedTranslationName = selectedTranslation['name'] ?? '';
-                          }
-
-                          var activeEpisodes = episodes;
-                          if (selectedTranslationName.isNotEmpty) {
-                            final filtered = episodes
-                                .where((e) => (e['translation'] ?? '') == selectedTranslationName)
-                                .toList();
-                            if (filtered.isNotEmpty) {
-                              activeEpisodes = filtered;
-                            }
-                          }
-
+              // WebView — скрыт когда плеер сверху (экономия GPU)
+              Expanded(
+                child: Offstage(
+                  offstage: _showPlayer,
+                  child: Stack(
+                    children: [
+                      InAppWebView(
+                        key: ValueKey(
+                            'webview_${_webViewInstance}_${_webViewProxyEnabled ? 'proxy' : 'direct'}'),
+                        webViewEnvironment: _webViewEnvironment,
+                        initialUrlRequest:
+                            URLRequest(url: WebUri("about:blank")),
+                        initialSettings: InAppWebViewSettings(
+                          useShouldOverrideUrlLoading: true,
+                          useShouldInterceptRequest: true,
+                          useOnLoadResource: false,
+                          mediaPlaybackRequiresUserGesture: false,
+                          domStorageEnabled: true,
+                          databaseEnabled: true,
+                          cacheEnabled: true,
+                          javaScriptEnabled: true,
+                          transparentBackground: false,
+                          hardwareAcceleration: false,
+                          // Chrome UA — YouTube блокирует Edge/WebView2 UA
+                          userAgent:
+                              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                        ),
+                        onWebViewCreated: (controller) {
+                          webViewController = controller;
+                          final restoreUrl = _webViewRestoreUrl;
+                          _webViewRestoreUrl = null;
                           if (mounted) {
-                            var currentIndex = 0;
-                            final currentUrl = _interceptedUrl;
-                            final foundIndex = activeEpisodes.indexWhere((e) => (e['url'] ?? '') == currentUrl);
-                            if (foundIndex >= 0) currentIndex = foundIndex;
                             setState(() {
-                              _seasonvarEpisodes = activeEpisodes;
-                              _seasonvarIndex = currentIndex;
+                              _webViewReady = true;
+                              _pageLoading = restoreUrl != null &&
+                                  restoreUrl != 'about:blank';
                             });
-                            if (activeEpisodes.isNotEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Список серий готов: ${activeEpisodes.length}'), duration: const Duration(seconds: 2)),
-                              );
+                          }
+                          if (restoreUrl != null &&
+                              restoreUrl != 'about:blank') {
+                            controller.loadUrl(
+                                urlRequest:
+                                    URLRequest(url: WebUri(restoreUrl)));
+                          }
+                          controller.addJavaScriptHandler(
+                            handlerName: 'compressUrl',
+                            callback: (args) {
+                              if (args.isEmpty) return null;
+                              final raw = args.first?.toString() ?? '';
+                              if (raw.isEmpty) return null;
+                              _openCompressedUrl(raw,
+                                  referer: 'https://www.youtube.com/');
+                              return null;
+                            },
+                          );
+                          controller.addJavaScriptHandler(
+                            handlerName: 'seasonvarMeta',
+                            callback: (args) {
+                              if (args.isEmpty) return null;
+                              try {
+                                final map = Map<String, dynamic>.from(
+                                    jsonDecode(args.first.toString()) as Map);
+                                final trs = (map['translations']
+                                            as List<dynamic>? ??
+                                        const [])
+                                    .map((e) =>
+                                        Map<String, dynamic>.from(e as Map))
+                                    .map((m) => <String, String>{
+                                          'id': m['id']?.toString() ?? '',
+                                          'name': m['name']?.toString() ?? '',
+                                          'index': m['index']?.toString() ?? '',
+                                        })
+                                    .where((m) =>
+                                        (m['id'] ?? '').isNotEmpty &&
+                                        (m['name'] ?? '').isNotEmpty)
+                                    .toList();
+                                final seasons = (map['seasons']
+                                            as List<dynamic>? ??
+                                        const [])
+                                    .map((e) =>
+                                        Map<String, dynamic>.from(e as Map))
+                                    .map((m) => <String, String>{
+                                          'title': m['title']?.toString() ?? '',
+                                          'url': m['url']?.toString() ?? '',
+                                        })
+                                    .where((m) =>
+                                        (m['title'] ?? '').isNotEmpty &&
+                                        (m['url'] ?? '').isNotEmpty)
+                                    .toList();
+                                final activeTranslationId =
+                                    map['activeTranslationId']?.toString() ??
+                                        '';
+                                if (!mounted) return null;
+                                setState(() {
+                                  _seasonvarTranslations = trs;
+                                  _seasonvarSeasons = seasons;
+                                  if (activeTranslationId.isNotEmpty) {
+                                    _seasonvarTranslationId =
+                                        activeTranslationId;
+                                  }
+                                });
+                              } catch (_) {}
+                              return null;
+                            },
+                          );
+                          controller.addJavaScriptHandler(
+                            handlerName: 'seasonvarPlaylist',
+                            callback: (args) {
+                              _scanningSeasonvar = false;
+                              if (args.isEmpty) return null;
+                              try {
+                                final decoded =
+                                    jsonDecode(args.first.toString())
+                                        as List<dynamic>;
+                                final episodes = decoded
+                                    .map((e) {
+                                      final m =
+                                          Map<String, dynamic>.from(e as Map);
+                                      return <String, String>{
+                                        'index': m['index']?.toString() ?? '',
+                                        'title': m['title']?.toString() ?? '',
+                                        'translation':
+                                            m['translation']?.toString() ?? '',
+                                        'url': m['url']?.toString() ?? '',
+                                      };
+                                    })
+                                    .where((e) => (e['url'] ?? '').isNotEmpty)
+                                    .toList();
+
+                                String selectedTranslationName = '';
+                                if (_seasonvarTranslationId.isNotEmpty) {
+                                  final selectedTranslation =
+                                      _seasonvarTranslations.firstWhere(
+                                    (t) =>
+                                        (t['id'] ?? '') ==
+                                        _seasonvarTranslationId,
+                                    orElse: () => const <String, String>{},
+                                  );
+                                  selectedTranslationName =
+                                      selectedTranslation['name'] ?? '';
+                                }
+
+                                var activeEpisodes = episodes;
+                                if (selectedTranslationName.isNotEmpty) {
+                                  final filtered = episodes
+                                      .where((e) =>
+                                          (e['translation'] ?? '') ==
+                                          selectedTranslationName)
+                                      .toList();
+                                  if (filtered.isNotEmpty) {
+                                    activeEpisodes = filtered;
+                                  }
+                                }
+
+                                if (mounted) {
+                                  var currentIndex = 0;
+                                  final currentUrl = _interceptedUrl;
+                                  final foundIndex = activeEpisodes.indexWhere(
+                                      (e) => (e['url'] ?? '') == currentUrl);
+                                  if (foundIndex >= 0)
+                                    currentIndex = foundIndex;
+                                  setState(() {
+                                    _seasonvarEpisodes = activeEpisodes;
+                                    _seasonvarIndex = currentIndex;
+                                  });
+                                  if (activeEpisodes.isNotEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: Text(
+                                              'Список серий готов: ${activeEpisodes.length}'),
+                                          duration: const Duration(seconds: 2)),
+                                    );
+                                  }
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content:
+                                            Text('Ошибка скана Seasonvar: $e'),
+                                        duration: const Duration(seconds: 4)),
+                                  );
+                                }
+                              }
+                              return null;
+                            },
+                          );
+                          controller.addJavaScriptHandler(
+                            handlerName: 'filmixEpisodes',
+                            callback: (args) {
+                              if (args.isEmpty) return null;
+                              try {
+                                final decoded =
+                                    jsonDecode(args.first.toString())
+                                        as List<dynamic>;
+                                final episodes = decoded
+                                    .map((e) {
+                                      final m =
+                                          Map<String, dynamic>.from(e as Map);
+                                      return <String, String>{
+                                        'title': m['title']?.toString() ?? '',
+                                        'season': m['season']?.toString() ?? '',
+                                        'episode':
+                                            m['episode']?.toString() ?? '',
+                                        'translation':
+                                            m['translation']?.toString() ?? '',
+                                      };
+                                    })
+                                    .where((e) => (e['title'] ?? '').isNotEmpty)
+                                    .toList();
+                                if (!mounted) return null;
+                                final current = (_filmixIndex >= 0 &&
+                                        _filmixIndex < _filmixEpisodes.length)
+                                    ? _filmixEpisodes[_filmixIndex]
+                                    : null;
+                                setState(() {
+                                  _filmixEpisodes = episodes;
+                                  if (current == null ||
+                                      _filmixEpisodes.isEmpty) {
+                                    _filmixIndex = 0;
+                                  } else {
+                                    final idx = _findFilmixGlobalIndexByEpisode(
+                                        current);
+                                    _filmixIndex = idx >= 0 ? idx : 0;
+                                  }
+                                });
+                              } catch (_) {}
+                              return null;
+                            },
+                          );
+                          controller.addJavaScriptHandler(
+                            handlerName: 'filmixMeta',
+                            callback: (args) {
+                              if (args.isEmpty) return null;
+                              try {
+                                final map = Map<String, dynamic>.from(
+                                    jsonDecode(args.first.toString()) as Map);
+                                final translations = (map['translations']
+                                            as List<dynamic>? ??
+                                        const [])
+                                    .whereType<Map>()
+                                    .map((raw) {
+                                      final m = Map<String, dynamic>.from(raw);
+                                      final id = (m['id'] ?? m['name'] ?? '')
+                                          .toString()
+                                          .trim();
+                                      final name =
+                                          (m['name'] ?? id).toString().trim();
+                                      return <String, String>{
+                                        'id': id,
+                                        'name': name
+                                      };
+                                    })
+                                    .where((e) => (e['id'] ?? '').isNotEmpty)
+                                    .toList();
+                                final seasons = (map['seasons']
+                                            as List<dynamic>? ??
+                                        const [])
+                                    .whereType<Map>()
+                                    .map((raw) {
+                                      final m = Map<String, dynamic>.from(raw);
+                                      final id =
+                                          (m['id'] ?? '').toString().trim();
+                                      final name = (m['name'] ?? ('Сезон $id'))
+                                          .toString()
+                                          .trim();
+                                      return <String, String>{
+                                        'id': id,
+                                        'name': name
+                                      };
+                                    })
+                                    .where((e) => (e['id'] ?? '').isNotEmpty)
+                                    .toList();
+                                final activeTranslation =
+                                    (map['activeTranslation'] ?? '')
+                                        .toString()
+                                        .trim();
+                                final activeSeason = (map['activeSeason'] ?? '')
+                                    .toString()
+                                    .trim();
+                                if (!mounted) return null;
+                                setState(() {
+                                  _filmixTranslations = translations;
+                                  _filmixSeasons = seasons;
+                                  final hasCurrentTranslation =
+                                      _filmixTranslationId.isNotEmpty &&
+                                          _filmixTranslations.any((e) =>
+                                              (e['id'] ?? '') ==
+                                              _filmixTranslationId);
+                                  if (activeTranslation.isNotEmpty &&
+                                      !hasCurrentTranslation) {
+                                    _filmixTranslationId = activeTranslation;
+                                  }
+                                  final hasCurrentSeason = _filmixSeasonId
+                                          .isNotEmpty &&
+                                      _filmixSeasons.any((e) =>
+                                          (e['id'] ?? '') == _filmixSeasonId);
+                                  if (activeSeason.isNotEmpty &&
+                                      !hasCurrentSeason) {
+                                    _filmixSeasonId = activeSeason;
+                                  }
+                                });
+                              } catch (_) {}
+                              return null;
+                            },
+                          );
+                          controller.addJavaScriptHandler(
+                            handlerName: 'filmixEpisodeHint',
+                            callback: (args) {
+                              if (args.isEmpty) return null;
+                              try {
+                                final map = Map<String, dynamic>.from(
+                                    jsonDecode(args.first.toString()) as Map);
+                                final title = map['title']?.toString() ?? '';
+                                final season = map['season']?.toString() ?? '';
+                                final episode =
+                                    map['episode']?.toString() ?? '';
+                                final translation =
+                                    map['translation']?.toString() ?? '';
+                                if (season.isEmpty &&
+                                    episode.isEmpty &&
+                                    title.isEmpty &&
+                                    translation.isEmpty) return null;
+
+                                final hint = <String, String>{
+                                  'title': title.isNotEmpty
+                                      ? title
+                                      : 'S$season E$episode',
+                                  'season': season,
+                                  'episode': episode,
+                                  'translation': translation,
+                                };
+                                if (!mounted) return null;
+                                setState(() {
+                                  final existingIndex =
+                                      _filmixEpisodes.indexWhere((e) =>
+                                          (e['season'] ?? '') == season &&
+                                          (e['episode'] ?? '') == episode &&
+                                          (e['translation'] ?? '') ==
+                                              translation &&
+                                          season.isNotEmpty &&
+                                          episode.isNotEmpty);
+                                  if (existingIndex >= 0) {
+                                    _filmixIndex = existingIndex;
+                                  } else {
+                                    _filmixEpisodes = [
+                                      ..._filmixEpisodes,
+                                      hint
+                                    ];
+                                    _filmixIndex = _filmixEpisodes.length - 1;
+                                  }
+                                  if (translation.isNotEmpty &&
+                                      _filmixTranslationId.isEmpty) {
+                                    _filmixTranslationId = translation;
+                                  }
+                                  if (season.isNotEmpty &&
+                                      _filmixSeasonId.isEmpty) {
+                                    _filmixSeasonId = season;
+                                  }
+                                });
+                              } catch (_) {}
+                              return null;
+                            },
+                          );
+                          controller.addJavaScriptHandler(
+                            handlerName: 'filmixDebug',
+                            callback: (args) {
+                              // Только для диагностики через консольный probe-скрипт.
+                              return null;
+                            },
+                          );
+                          controller.addJavaScriptHandler(
+                            handlerName: 'filmixMediaUrl',
+                            callback: (args) {
+                              if (args.isEmpty) return null;
+                              final mediaUrl =
+                                  args.first?.toString().trim() ?? '';
+                              if (mediaUrl.isEmpty) return null;
+                              if (mediaUrl == _lastFilmixMediaUrl) return null;
+                              _lastFilmixMediaUrl = mediaUrl;
+
+                              if (_showPlayer || _isLoading) return null;
+
+                              final canAutostart = _waitingForNextEpisode ||
+                                  (!_showInterceptor && !_interceptedAlready);
+                              if (!canAutostart) return null;
+                              final realUrl = urlController.text.toLowerCase();
+                              final isFilmixDetailsPage =
+                                  realUrl.contains('/seria/') ||
+                                      realUrl.contains('/film/');
+                              if (!_waitingForNextEpisode &&
+                                  !isFilmixDetailsPage) return null;
+
+                              if (_waitingForNextEpisode)
+                                _waitingForNextEpisode = false;
+                              _interceptedAlready = true;
+                              _interceptedUrl = mediaUrl;
+                              _currentReferer = urlController.text;
+                              _selectedQuality = '240p';
+
+                              Future.microtask(() {
+                                if (!mounted) return;
+                                setState(() => _showHome = false);
+                                _startMagic();
+                              });
+                              return null;
+                            },
+                          );
+                        },
+                        onLoadStart: (controller, url) {
+                          if (mounted)
+                            setState(() {
+                              _pageLoading = true;
+                            });
+                          // При переходе на другой сайт сбрасываем кнопки серий Seasonvar
+                          if (url != null &&
+                              !url.toString().contains('seasonvar') &&
+                              (_seasonvarEpisodes.isNotEmpty ||
+                                  _seasonvarTranslations.isNotEmpty ||
+                                  _seasonvarSeasons.isNotEmpty)) {
+                            setState(() {
+                              _seasonvarEpisodes = [];
+                              _seasonvarIndex = 0;
+                              _seasonvarTranslations = [];
+                              _seasonvarTranslationId = '';
+                              _seasonvarSeasons = [];
+                            });
+                          }
+                          if (url != null &&
+                              !url.toString().contains('filmix') &&
+                              (_filmixEpisodes.isNotEmpty ||
+                                  _filmixTranslations.isNotEmpty ||
+                                  _filmixSeasons.isNotEmpty)) {
+                            setState(() {
+                              _filmixEpisodes = [];
+                              _filmixIndex = 0;
+                              _filmixTranslations = [];
+                              _filmixTranslationId = '';
+                              _filmixSeasons = [];
+                              _filmixSeasonId = '';
+                            });
+                          }
+                        },
+                        onLoadStop: (controller, url) async {
+                          if (mounted)
+                            setState(() {
+                              _pageLoading = false;
+                            });
+                          if (url != null) {
+                            if (url.path == '/lite' &&
+                                url.queryParameters['url'] != null) {
+                              urlController.text = url.queryParameters['url']!;
+                              _currentRealUrl = url.queryParameters['url']!;
+                            } else {
+                              urlController.text = url.toString();
+                              if (url.toString() != 'about:blank')
+                                _currentRealUrl = url.toString();
+                            }
+                            if (_currentRealUrl.isNotEmpty &&
+                                _currentRealUrl != 'about:blank') {
+                              _rememberUrl(_currentRealUrl);
+                            }
+                            if (url.toString() != 'about:blank' && _showHome) {
+                              setState(() => _showHome = false);
+                            }
+
+                            // Seasonvar: трекер кликов (плейлист грузится через plist.txt ~3с)
+                            if (url.host.contains('seasonvar')) {
+                              Future.delayed(const Duration(seconds: 4), () {
+                                if (mounted) {
+                                  controller.evaluateJavascript(
+                                      source: "(function(){"
+                                          "if(window.__vt)return 'ok';"
+                                          "window.__vt=true;window.__vakh_idx=-1;"
+                                          "var pl=document.querySelector('#htmlPlayer_playlist');"
+                                          "if(!pl)return 'no-pl';"
+                                          "var its=Array.from(pl.querySelectorAll('li,a'));"
+                                          "its.forEach(function(it,i){it.addEventListener('click',function(){window.__vakh_idx=i;},true);});"
+                                          "for(var i=0;i<its.length;i++){"
+                                          "var d=its[i].querySelector('span[style]');"
+                                          "var c=its[i].className||'';"
+                                          "if(d||c.includes('active')||c.includes('current')){window.__vakh_idx=i;break;}"
+                                          "}"
+                                          "return 'ok:'+its.length+'/'+window.__vakh_idx;"
+                                          "})();");
+                                }
+                              });
+                            }
+
+                            // Filmix: автологин
+                            if (url.host.contains('filmix')) {
+                              await FilmixAuth.injectCookies(controller, url);
+                              controller.evaluateJavascript(
+                                  source: FilmixAuth.getInjectionScript());
+                              controller.evaluateJavascript(
+                                  source: FilmixDom.getInjectionJS());
+                              Future.delayed(
+                                  const Duration(milliseconds: 700),
+                                  () => controller.evaluateJavascript(
+                                      source: FilmixAuth.getInjectionScript()));
+                              Future.delayed(
+                                  const Duration(milliseconds: 900),
+                                  () => controller.evaluateJavascript(
+                                      source: FilmixDom.getInjectionJS()));
+                              Future.delayed(
+                                  const Duration(seconds: 2),
+                                  () => controller.evaluateJavascript(
+                                      source: FilmixAuth.getInjectionScript()));
+                              Future.delayed(const Duration(seconds: 2),
+                                  () => _scanFilmixEpisodes(silent: true));
+                              Future.delayed(
+                                  const Duration(seconds: 4),
+                                  () => controller.evaluateJavascript(
+                                      source: FilmixAuth.getInjectionScript()));
+                              Future.delayed(
+                                  const Duration(seconds: 7),
+                                  () => controller.evaluateJavascript(
+                                      source: FilmixAuth.getInjectionScript()));
+                              Future.delayed(const Duration(seconds: 3),
+                                  () => FilmixAuth.persistCookies(url));
+                              Future.delayed(const Duration(seconds: 8),
+                                  () => FilmixAuth.persistCookies(url));
+                            }
+
+                            // YouTube: ховер-кнопки
+                            if (url.host.contains('youtube.com')) {
+                              controller.evaluateJavascript(
+                                  source: YouTubeHover.getInjectionJS());
+                            }
+
+                            // YouTube /watch — fallback: если страница всё-таки открылась, глушим и сразу запускаем 240p
+                            if (url.host.contains('youtube.com') &&
+                                (url.path.contains('/watch') ||
+                                    url.path.contains('/shorts/')) &&
+                                !_showInterceptor &&
+                                !_showPlayer) {
+                              controller.evaluateJavascript(
+                                  source:
+                                      "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
+                              _selectedQuality = '240p';
+                              _openCompressedUrl(url.toString(),
+                                  referer: 'https://www.youtube.com/');
+                            }
+                            _updateYouTubeState(url);
+                          }
+                        },
+                        onReceivedError: (controller, request, error) {
+                          final isMainFrame = request.isForMainFrame == true;
+                          if (!isMainFrame) return;
+                          if (!_gostActive || !_webViewProxyEnabled) return;
+
+                          final failedUri =
+                              Uri.tryParse(request.url.toString());
+                          final description = (error.description).toString();
+                          if (_isRecoverableWebError(description)) {
+                            unawaited(_recoverProxyIfNeeded(
+                              failedUrl: failedUri,
+                              reason: description,
+                            ));
+                          }
+                        },
+                        onReceivedHttpError:
+                            (controller, request, errorResponse) {
+                          final isMainFrame = request.isForMainFrame == true;
+                          if (!isMainFrame) return;
+                          if (!_gostActive || !_webViewProxyEnabled) return;
+
+                          final code =
+                              int.tryParse('${errorResponse.statusCode}') ?? 0;
+                          if (_isRecoverableHttpCode(code)) {
+                            unawaited(_recoverProxyIfNeeded(
+                              failedUrl: Uri.tryParse(request.url.toString()),
+                              reason: 'HTTP $code',
+                            ));
+                          }
+                        },
+                        onUpdateVisitedHistory: (controller, url, isReload) {
+                          // YouTube: ловим pushState-навигацию (YouTube SPA)
+                          if (url != null) {
+                            if (url.path == '/lite' &&
+                                url.queryParameters['url'] != null) {
+                              urlController.text = url.queryParameters['url']!;
+                              _currentRealUrl = url.queryParameters['url']!;
+                            } else {
+                              urlController.text = url.toString();
+                              if (url.toString() != 'about:blank')
+                                _currentRealUrl = url.toString();
+                            }
+                            if (_currentRealUrl.isNotEmpty &&
+                                _currentRealUrl != 'about:blank') {
+                              _rememberUrl(_currentRealUrl);
+                            }
+                            _updateYouTubeState(url);
+                            if (url.host.contains('filmix')) {
+                              controller.evaluateJavascript(
+                                  source: FilmixDom.getInjectionJS());
+                            }
+                            if (url.host.contains('youtube.com') &&
+                                (url.path.contains('/watch') ||
+                                    url.path.contains('/shorts/')) &&
+                                !_showInterceptor &&
+                                !_showPlayer) {
+                              controller.evaluateJavascript(
+                                  source:
+                                      "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
+                              _selectedQuality = '240p';
+                              _openCompressedUrl(url.toString(),
+                                  referer: 'https://www.youtube.com/');
                             }
                           }
-                        } catch (e) {
-                          if (mounted) {
+                        },
+                        shouldOverrideUrlLoading:
+                            (controller, navigationAction) async {
+                          var url = navigationAction.request.url;
+                          if (url == null) return NavigationActionPolicy.ALLOW;
+
+                          if (url.host.contains('filmix') &&
+                              (url.path.contains('profile') ||
+                                  url.path.contains('user') ||
+                                  url.path.contains('login'))) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Ошибка скана Seasonvar: $e'), duration: const Duration(seconds: 4)),
+                              const SnackBar(
+                                  content: Text(
+                                      'Профиль Filmix заблокирован в приложении'),
+                                  duration: Duration(seconds: 2)),
+                            );
+                            return NavigationActionPolicy.CANCEL;
+                          }
+
+                          if (_economyLevel == EconomyLevel.text &&
+                              url.path != '/lite' &&
+                              !url.toString().startsWith('about:')) {
+                            final wrapped = ApiService.liteUrl(url.toString());
+                            controller.loadUrl(
+                                urlRequest: URLRequest(url: WebUri(wrapped)));
+                            return NavigationActionPolicy.CANCEL;
+                          }
+
+                          // YouTube: не грузим страницу — грузим about:blank и показываем шторку
+                          if (url.host.contains('youtube.com') &&
+                              (url.path.contains('/watch') ||
+                                  url.path.contains('/shorts/')) &&
+                              !_showInterceptor &&
+                              !_showPlayer) {
+                            Future.microtask(() {
+                              if (mounted) {
+                                _selectedQuality = '240p';
+                                _openCompressedUrl(url.toString(),
+                                    referer: 'https://www.youtube.com/');
+                              }
+                            });
+                            // Возвращаем ALLOW но тут же редиректим на blank чтобы не грузить ютуб
+                            controller.loadUrl(
+                                urlRequest:
+                                    URLRequest(url: WebUri("about:blank")));
+                            return NavigationActionPolicy.CANCEL;
+                          }
+                          return NavigationActionPolicy.ALLOW;
+                        },
+                        shouldInterceptRequest: (controller, request) async {
+                          var uri = request.url.toString().toLowerCase();
+                          var method = request.method ?? "GET";
+
+                          // 1. Исключаем мусор, скрипты, картинки и статику
+                          if (uri.contains('.js') ||
+                              uri.contains('.css') ||
+                              uri.contains('.jpg') ||
+                              uri.contains('.png') ||
+                              uri.contains('.gif') ||
+                              uri.contains('.webp') ||
+                              uri.contains('.woff') ||
+                              uri.contains('.ttf') ||
+                              uri.contains('.svg')) {
+                            return null;
+                          }
+
+                          // 2. Ищем признаки медиа, исключая превьюшки и рекламу
+                          bool isMedia = false;
+                          if (uri.contains('.mp4') ||
+                              uri.contains('.m3u8') ||
+                              uri.contains('playlist.m3u8') ||
+                              uri.contains('.mkv') ||
+                              uri.contains('.webm') ||
+                              uri.contains('.3gp') ||
+                              uri.contains('.avi') ||
+                              uri.contains('.flv')) {
+                            if (!uri.contains('trailer') &&
+                                !uri.contains('preview') &&
+                                !uri.contains('banner') &&
+                                !uri.contains('ad.mp4') &&
+                                !uri.contains('promo')) {
+                              isMedia = true;
+                            }
+                          }
+
+                          final isMediaPlatformRelated =
+                              uri.contains('filmix') ||
+                                  uri.contains('kodik') ||
+                                  uri.contains('videocdn') ||
+                                  uri.contains('hdrezka') ||
+                                  uri.contains('rezka') ||
+                                  uri.contains('zona');
+                          if (!isMedia && isMediaPlatformRelated) {
+                            if (uri.contains('manifest') ||
+                                uri.contains('/hls/') ||
+                                uri.contains('master.m3u8') ||
+                                uri.contains('playlist') ||
+                                uri.contains('/stream/') ||
+                                uri.contains('/vod/') ||
+                                uri.contains('/cdn/') ||
+                                uri.contains('/video/')) {
+                              isMedia = true;
+                            }
+                          }
+
+                          // Исключаем чанки YouTube — серверу нужна ссылка на страницу, не на кусочек
+                          if (uri.contains('googlevideo.com')) isMedia = false;
+
+                          // Во время фонового скана Seasonvar берём URL, но не даём сайту качать видео
+                          if (_scanningSeasonvar && isMedia) {
+                            return WebResourceResponse(
+                              contentType: "text/plain",
+                              data: Uint8List.fromList([]),
+                              statusCode: 200,
                             );
                           }
-                        }
-                        return null;
-                      },
-                    );
-                    controller.addJavaScriptHandler(
-                      handlerName: 'filmixEpisodes',
-                      callback: (args) {
-                        if (args.isEmpty) return null;
-                        try {
-                          final decoded = jsonDecode(args.first.toString()) as List<dynamic>;
-                          final episodes = decoded.map((e) {
-                            final m = Map<String, dynamic>.from(e as Map);
-                            return <String, String>{
-                              'title': m['title']?.toString() ?? '',
-                              'season': m['season']?.toString() ?? '',
-                              'episode': m['episode']?.toString() ?? '',
-                              'translation': m['translation']?.toString() ?? '',
-                            };
-                          }).where((e) => (e['title'] ?? '').isNotEmpty).toList();
-                          if (!mounted) return null;
-                          final current = (_filmixIndex >= 0 && _filmixIndex < _filmixEpisodes.length)
-                              ? _filmixEpisodes[_filmixIndex]
-                              : null;
-                          setState(() {
-                            _filmixEpisodes = episodes;
-                            if (current == null || _filmixEpisodes.isEmpty) {
-                              _filmixIndex = 0;
-                            } else {
-                              final idx = _findFilmixGlobalIndexByEpisode(current);
-                              _filmixIndex = idx >= 0 ? idx : 0;
+
+                          // Перехват медиа-запросов
+                          if (method.toUpperCase() == "GET" && isMedia) {
+                            // Режим авто-переключения серий: сразу сжимаем без шторки
+                            if (_waitingForNextEpisode) {
+                              _waitingForNextEpisode = false;
+                              _interceptedAlready = false;
+                              Future.microtask(() {
+                                if (mounted) {
+                                  _interceptedUrl = request.url.toString();
+                                  _currentReferer = urlController.text;
+                                  _startMagic();
+                                }
+                              });
+                              return WebResourceResponse(
+                                  contentType: "text/plain",
+                                  data: Uint8List.fromList([]),
+                                  statusCode: 200);
                             }
-                          });
-                        } catch (_) {}
-                        return null;
-                      },
-                    );
-                    controller.addJavaScriptHandler(
-                      handlerName: 'filmixMeta',
-                      callback: (args) {
-                        if (args.isEmpty) return null;
-                        try {
-                          final map = Map<String, dynamic>.from(jsonDecode(args.first.toString()) as Map);
-                          final translations = (map['translations'] as List<dynamic>? ?? const [])
-                              .whereType<Map>()
-                              .map((raw) {
-                                final m = Map<String, dynamic>.from(raw);
-                                final id = (m['id'] ?? m['name'] ?? '').toString().trim();
-                                final name = (m['name'] ?? id).toString().trim();
-                                return <String, String>{'id': id, 'name': name};
-                              })
-                              .where((e) => (e['id'] ?? '').isNotEmpty)
-                              .toList();
-                          final seasons = (map['seasons'] as List<dynamic>? ?? const [])
-                              .whereType<Map>()
-                              .map((raw) {
-                                final m = Map<String, dynamic>.from(raw);
-                                final id = (m['id'] ?? '').toString().trim();
-                                final name = (m['name'] ?? ('Сезон $id')).toString().trim();
-                                return <String, String>{'id': id, 'name': name};
-                              })
-                              .where((e) => (e['id'] ?? '').isNotEmpty)
-                              .toList();
-                          final activeTranslation = (map['activeTranslation'] ?? '').toString().trim();
-                          final activeSeason = (map['activeSeason'] ?? '').toString().trim();
-                          if (!mounted) return null;
-                          setState(() {
-                            _filmixTranslations = translations;
-                            _filmixSeasons = seasons;
-                            final hasCurrentTranslation = _filmixTranslationId.isNotEmpty &&
-                                _filmixTranslations.any((e) => (e['id'] ?? '') == _filmixTranslationId);
-                            if (activeTranslation.isNotEmpty && !hasCurrentTranslation) {
-                              _filmixTranslationId = activeTranslation;
+
+                            // Обычный режим: без шторки, сразу стартуем в качестве по умолчанию (240p)
+                            if (!_showInterceptor &&
+                                !_showPlayer &&
+                                !_interceptedAlready) {
+                              _interceptedAlready = true;
+                              Future.microtask(() {
+                                if (mounted) {
+                                  _interceptedUrl = request.url.toString();
+                                  _currentReferer = urlController.text;
+                                  _selectedQuality = '240p';
+                                  _startMagic();
+                                }
+                              });
                             }
-                            final hasCurrentSeason = _filmixSeasonId.isNotEmpty &&
-                                _filmixSeasons.any((e) => (e['id'] ?? '') == _filmixSeasonId);
-                            if (activeSeason.isNotEmpty && !hasCurrentSeason) {
-                              _filmixSeasonId = activeSeason;
-                            }
-                          });
-                        } catch (_) {}
-                        return null;
-                      },
-                    );
-                    controller.addJavaScriptHandler(
-                      handlerName: 'filmixEpisodeHint',
-                      callback: (args) {
-                        if (args.isEmpty) return null;
-                        try {
-                          final map = Map<String, dynamic>.from(jsonDecode(args.first.toString()) as Map);
-                          final title = map['title']?.toString() ?? '';
-                          final season = map['season']?.toString() ?? '';
-                          final episode = map['episode']?.toString() ?? '';
-                          final translation = map['translation']?.toString() ?? '';
-                          if (season.isEmpty && episode.isEmpty && title.isEmpty && translation.isEmpty) return null;
 
-                          final hint = <String, String>{
-                            'title': title.isNotEmpty ? title : 'S$season E$episode',
-                            'season': season,
-                            'episode': episode,
-                            'translation': translation,
-                          };
-                          if (!mounted) return null;
-                          setState(() {
-                            final existingIndex = _filmixEpisodes.indexWhere((e) =>
-                                (e['season'] ?? '') == season &&
-                                (e['episode'] ?? '') == episode &&
-                                (e['translation'] ?? '') == translation &&
-                                season.isNotEmpty &&
-                                episode.isNotEmpty);
-                            if (existingIndex >= 0) {
-                              _filmixIndex = existingIndex;
-                            } else {
-                              _filmixEpisodes = [..._filmixEpisodes, hint];
-                              _filmixIndex = _filmixEpisodes.length - 1;
-                            }
-                            if (translation.isNotEmpty && _filmixTranslationId.isEmpty) {
-                              _filmixTranslationId = translation;
-                            }
-                            if (season.isNotEmpty && _filmixSeasonId.isEmpty) {
-                              _filmixSeasonId = season;
-                            }
-                          });
-                        } catch (_) {}
-                        return null;
-                      },
-                    );
-                    controller.addJavaScriptHandler(
-                      handlerName: 'filmixDebug',
-                      callback: (args) {
-                        // Только для диагностики через консольный probe-скрипт.
-                        return null;
-                      },
-                    );
-                    controller.addJavaScriptHandler(
-                      handlerName: 'filmixMediaUrl',
-                      callback: (args) {
-                        if (args.isEmpty) return null;
-                        final mediaUrl = args.first?.toString().trim() ?? '';
-                        if (mediaUrl.isEmpty) return null;
-                        if (mediaUrl == _lastFilmixMediaUrl) return null;
-                        _lastFilmixMediaUrl = mediaUrl;
-
-                        if (_showPlayer || _isLoading) return null;
-
-                        final canAutostart = _waitingForNextEpisode || (!_showInterceptor && !_interceptedAlready);
-                        if (!canAutostart) return null;
-                        final realUrl = urlController.text.toLowerCase();
-                        final isFilmixDetailsPage = realUrl.contains('/seria/') || realUrl.contains('/film/');
-                        if (!_waitingForNextEpisode && !isFilmixDetailsPage) return null;
-
-                        if (_waitingForNextEpisode) _waitingForNextEpisode = false;
-                        _interceptedAlready = true;
-                        _interceptedUrl = mediaUrl;
-                        _currentReferer = urlController.text;
-                        _selectedQuality = '240p';
-
-                        Future.microtask(() {
-                          if (!mounted) return;
-                          setState(() => _showHome = false);
-                          _startMagic();
-                        });
-                        return null;
-                      },
-                    );
-                  },
-                  onLoadStart: (controller, url) {
-                    if (mounted) setState(() { _pageLoading = true; });
-                    // При переходе на другой сайт сбрасываем кнопки серий Seasonvar
-                    if (url != null &&
-                        !url.toString().contains('seasonvar') &&
-                        (_seasonvarEpisodes.isNotEmpty ||
-                            _seasonvarTranslations.isNotEmpty ||
-                            _seasonvarSeasons.isNotEmpty)) {
-                      setState(() {
-                        _seasonvarEpisodes = [];
-                        _seasonvarIndex = 0;
-                        _seasonvarTranslations = [];
-                        _seasonvarTranslationId = '';
-                        _seasonvarSeasons = [];
-                      });
-                    }
-                    if (url != null &&
-                        !url.toString().contains('filmix') &&
-                        (_filmixEpisodes.isNotEmpty ||
-                            _filmixTranslations.isNotEmpty ||
-                            _filmixSeasons.isNotEmpty)) {
-                      setState(() {
-                        _filmixEpisodes = [];
-                        _filmixIndex = 0;
-                        _filmixTranslations = [];
-                        _filmixTranslationId = '';
-                        _filmixSeasons = [];
-                        _filmixSeasonId = '';
-                      });
-                    }
-                  },
-                  onLoadStop: (controller, url) {
-                    if (mounted) setState(() { _pageLoading = false; });
-                    if (url != null) {
-                      if (url.path == '/lite' && url.queryParameters['url'] != null) {
-                        urlController.text = url.queryParameters['url']!;
-                        _currentRealUrl = url.queryParameters['url']!;
-                      } else {
-                        urlController.text = url.toString();
-                        if (url.toString() != 'about:blank') _currentRealUrl = url.toString();
-                      }
-                      if (_currentRealUrl.isNotEmpty && _currentRealUrl != 'about:blank') {
-                        _rememberUrl(_currentRealUrl);
-                      }
-                      if (url.toString() != 'about:blank' && _showHome) {
-                        setState(() => _showHome = false);
-                      }
-
-                       // Seasonvar: трекер кликов (плейлист грузится через plist.txt ~3с)
-                       if (url.host.contains('seasonvar')) {
-                         Future.delayed(const Duration(seconds: 4), () {
-                           if (mounted) {
-                             controller.evaluateJavascript(source:
-                               "(function(){"
-                               "if(window.__vt)return 'ok';"
-                               "window.__vt=true;window.__vakh_idx=-1;"
-                               "var pl=document.querySelector('#htmlPlayer_playlist');"
-                               "if(!pl)return 'no-pl';"
-                               "var its=Array.from(pl.querySelectorAll('li,a'));"
-                               "its.forEach(function(it,i){it.addEventListener('click',function(){window.__vakh_idx=i;},true);});"
-                               "for(var i=0;i<its.length;i++){"
-                               "var d=its[i].querySelector('span[style]');"
-                               "var c=its[i].className||'';"
-                               "if(d||c.includes('active')||c.includes('current')){window.__vakh_idx=i;break;}"
-                               "}"
-                               "return 'ok:'+its.length+'/'+window.__vakh_idx;"
-                               "})();"
-                             );
-                           }
-                         });
-                       }
-
-                       // Filmix: автологин
-                       if (url.host.contains('filmix')) {
-                          controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
-                          controller.evaluateJavascript(source: FilmixDom.getInjectionJS());
-                          Future.delayed(const Duration(milliseconds: 700), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
-                          Future.delayed(const Duration(milliseconds: 900), () => controller.evaluateJavascript(source: FilmixDom.getInjectionJS()));
-                          Future.delayed(const Duration(seconds: 2), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
-                          Future.delayed(const Duration(seconds: 2), () => _scanFilmixEpisodes(silent: true));
-                          Future.delayed(const Duration(seconds: 4), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
-                          Future.delayed(const Duration(seconds: 7), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
-                        }
-
-                       // YouTube: ховер-кнопки
-                       if (url.host.contains('youtube.com')) {
-                         controller.evaluateJavascript(source: YouTubeHover.getInjectionJS());
-                       }
-
-                      // YouTube /watch — fallback: если страница всё-таки открылась, глушим и сразу запускаем 240p
-                      if (url.host.contains('youtube.com') && (url.path.contains('/watch') || url.path.contains('/shorts/')) && !_showInterceptor && !_showPlayer) {
-                        controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
-                        _selectedQuality = '240p';
-                        _openCompressedUrl(url.toString(), referer: 'https://www.youtube.com/');
-                      }
-                       _updateYouTubeState(url);
-                     }
-                  },
-                  onReceivedError: (controller, request, error) {
-                    final isMainFrame = request.isForMainFrame == true;
-                    if (!isMainFrame) return;
-                    if (!_gostActive || !_webViewProxyEnabled) return;
-
-                    final failedUri = Uri.tryParse(request.url.toString());
-                    final description = (error.description).toString();
-                    if (_isRecoverableWebError(description)) {
-                      unawaited(_recoverProxyIfNeeded(
-                        failedUrl: failedUri,
-                        reason: description,
-                      ));
-                    }
-                  },
-                  onReceivedHttpError: (controller, request, errorResponse) {
-                    final isMainFrame = request.isForMainFrame == true;
-                    if (!isMainFrame) return;
-                    if (!_gostActive || !_webViewProxyEnabled) return;
-
-                    final code = int.tryParse('${errorResponse.statusCode}') ?? 0;
-                    if (_isRecoverableHttpCode(code)) {
-                      unawaited(_recoverProxyIfNeeded(
-                        failedUrl: Uri.tryParse(request.url.toString()),
-                        reason: 'HTTP $code',
-                      ));
-                    }
-                  },
-                  onUpdateVisitedHistory: (controller, url, isReload) {
-                    // YouTube: ловим pushState-навигацию (YouTube SPA)
-                    if (url != null) {
-                      if (url.path == '/lite' && url.queryParameters['url'] != null) {
-                        urlController.text = url.queryParameters['url']!;
-                        _currentRealUrl = url.queryParameters['url']!;
-                      } else {
-                        urlController.text = url.toString();
-                        if (url.toString() != 'about:blank') _currentRealUrl = url.toString();
-                      }
-                      if (_currentRealUrl.isNotEmpty && _currentRealUrl != 'about:blank') {
-                        _rememberUrl(_currentRealUrl);
-                      }
-                      _updateYouTubeState(url);
-                      if (url.host.contains('filmix')) {
-                        controller.evaluateJavascript(source: FilmixDom.getInjectionJS());
-                      }
-                      if (url.host.contains('youtube.com') && (url.path.contains('/watch') || url.path.contains('/shorts/')) && !_showInterceptor && !_showPlayer) {
-                        controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
-                        _selectedQuality = '240p';
-                        _openCompressedUrl(url.toString(), referer: 'https://www.youtube.com/');
-                      }
-                    }
-                  },
-                  shouldOverrideUrlLoading: (controller, navigationAction) async {
-                    var url = navigationAction.request.url;
-                    if (url == null) return NavigationActionPolicy.ALLOW;
-
-                    if (url.host.contains('filmix') && (url.path.contains('profile') || url.path.contains('user') || url.path.contains('login'))) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Профиль Filmix заблокирован в приложении'), duration: Duration(seconds: 2)),
-                      );
-                      return NavigationActionPolicy.CANCEL;
-                    }
-
-                    if (_economyLevel == EconomyLevel.text && url.path != '/lite' && !url.toString().startsWith('about:')) {
-                      final wrapped = ApiService.liteUrl(url.toString());
-                      controller.loadUrl(urlRequest: URLRequest(url: WebUri(wrapped)));
-                      return NavigationActionPolicy.CANCEL;
-                    }
-                    
-                    // YouTube: не грузим страницу — грузим about:blank и показываем шторку
-                    if (url.host.contains('youtube.com') && (url.path.contains('/watch') || url.path.contains('/shorts/')) && !_showInterceptor && !_showPlayer) {
-                      Future.microtask(() {
-                        if (mounted) {
-                          _selectedQuality = '240p';
-                          _openCompressedUrl(url.toString(), referer: 'https://www.youtube.com/');
-                        }
-                      });
-                      // Возвращаем ALLOW но тут же редиректим на blank чтобы не грузить ютуб
-                      controller.loadUrl(urlRequest: URLRequest(url: WebUri("about:blank")));
-                      return NavigationActionPolicy.CANCEL;
-                    }
-                    return NavigationActionPolicy.ALLOW;
-                  },
-                  shouldInterceptRequest: (controller, request) async {
-                    var uri = request.url.toString().toLowerCase();
-                    var method = request.method ?? "GET";
-                    
-                    // 1. Исключаем мусор, скрипты, картинки и статику
-                    if (uri.contains('.js') || uri.contains('.css') || uri.contains('.jpg') || 
-                        uri.contains('.png') || uri.contains('.gif') || uri.contains('.webp') || 
-                        uri.contains('.woff') || uri.contains('.ttf') || uri.contains('.svg')) {
-                      return null;
-                    }
-
-                    // 2. Ищем признаки медиа, исключая превьюшки и рекламу
-                    bool isMedia = false;
-                    if (uri.contains('.mp4') || uri.contains('.m3u8') || uri.contains('playlist.m3u8') || 
-                        uri.contains('.mkv') || uri.contains('.webm') || uri.contains('.3gp') || 
-                        uri.contains('.avi') || uri.contains('.flv')) {
-                      if (!uri.contains('trailer') && !uri.contains('preview') && 
-                          !uri.contains('banner') && !uri.contains('ad.mp4') && !uri.contains('promo')) {
-                        isMedia = true;
-                      }
-                    }
-
-                    final isMediaPlatformRelated = uri.contains('filmix') ||
-                        uri.contains('kodik') ||
-                        uri.contains('videocdn') ||
-                        uri.contains('hdrezka') ||
-                        uri.contains('rezka') ||
-                        uri.contains('zona');
-                    if (!isMedia && isMediaPlatformRelated) {
-                      if (uri.contains('manifest') ||
-                          uri.contains('/hls/') ||
-                          uri.contains('master.m3u8') ||
-                          uri.contains('playlist') ||
-                          uri.contains('/stream/') ||
-                          uri.contains('/vod/') ||
-                          uri.contains('/cdn/') ||
-                          uri.contains('/video/')) {
-                        isMedia = true;
-                      }
-                    }
-
-                    // Исключаем чанки YouTube — серверу нужна ссылка на страницу, не на кусочек
-                    if (uri.contains('googlevideo.com')) isMedia = false;
-
-                    // Во время фонового скана Seasonvar берём URL, но не даём сайту качать видео
-                    if (_scanningSeasonvar && isMedia) {
-                      return WebResourceResponse(
-                        contentType: "text/plain",
-                        data: Uint8List.fromList([]),
-                        statusCode: 200,
-                      );
-                    }
-
-                    // Перехват медиа-запросов
-                    if (method.toUpperCase() == "GET" && isMedia) {
-                      
-                      // Режим авто-переключения серий: сразу сжимаем без шторки
-                      if (_waitingForNextEpisode) {
-                        _waitingForNextEpisode = false;
-                        _interceptedAlready = false;
-                        Future.microtask(() {
-                          if (mounted) {
-                            _interceptedUrl = request.url.toString();
-                            _currentReferer = urlController.text;
-                            _startMagic();
+                            // Пустой ответ — чужой плеер не начинает жрать трафик
+                            return WebResourceResponse(
+                                contentType: "text/plain",
+                                data: Uint8List.fromList([]),
+                                statusCode: 200);
                           }
-                        });
-                        return WebResourceResponse(
-                          contentType: "text/plain",
-                          data: Uint8List.fromList([]),
-                          statusCode: 200
-                        );
-                      }
-                      
-                      // Обычный режим: без шторки, сразу стартуем в качестве по умолчанию (240p)
-                      if (!_showInterceptor && !_showPlayer && !_interceptedAlready) {
-                        _interceptedAlready = true;
-                        Future.microtask(() {
-                          if (mounted) {
-                            _interceptedUrl = request.url.toString();
-                            _currentReferer = urlController.text;
-                            _selectedQuality = '240p';
-                            _startMagic();
-                          }
-                        });
-                      }
-                      
-                      // Пустой ответ — чужой плеер не начинает жрать трафик
-                      return WebResourceResponse(
-                        contentType: "text/plain",
-                        data: Uint8List.fromList([]),
-                        statusCode: 200
-                      );
-                    }
-                    return null;
-                  },
+                          return null;
+                        },
+                      ),
+                      if (!_webViewReady)
+                        Container(
+                          color: Colors.black,
+                          child: const Center(
+                            child:
+                                CircularProgressIndicator(color: Colors.orange),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-                       if (!_webViewReady)
-                         Container(
-                           color: Colors.black,
-                           child: const Center(
-                             child: CircularProgressIndicator(color: Colors.orange),
-                           ),
-                         ),
-                     ],
-                   ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
 
           if (_showHome && !_showPlayer)
             Positioned.fill(
@@ -2020,20 +2377,46 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Плеер Вахтовика', style: TextStyle(color: Colors.orange, fontSize: 24, fontWeight: FontWeight.bold)),
+                    const Text('Плеер Вахтовика',
+                        style: TextStyle(
+                            color: Colors.orange,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    const Text('Выбери сайт или введи свой адрес сверху', style: TextStyle(color: Colors.white70)),
+                    const Text('Выбери сайт или введи свой адрес сверху',
+                        style: TextStyle(color: Colors.white70)),
                     const SizedBox(height: 20),
                     Wrap(
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        _HomeSiteButton(label: 'Seasonvar', icon: Icons.tv, onTap: () => _openSite('https://seasonvar.ru/')),
-                        _HomeSiteButton(label: 'Filmix', icon: Icons.movie, onTap: () => _openSite('https://filmix.my/')),
-                        _HomeSiteButton(label: 'HDRezka', icon: Icons.live_tv, onTap: () => _openSite('https://hdrezka.ag/')),
-                        _HomeSiteButton(label: 'Zona', icon: Icons.movie_creation_outlined, onTap: () => _openSite('https://zona.plus/')),
-                        _HomeSiteButton(label: 'YouTube', icon: Icons.play_circle, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const YouTubeSearchScreen()))),
-                         _HomeSiteButton(label: 'Свой сайт', icon: Icons.add_link, onTap: _showCustomSiteDialog),
+                        _HomeSiteButton(
+                            label: 'Seasonvar',
+                            icon: Icons.tv,
+                            onTap: () => _openSite('https://seasonvar.ru/')),
+                        _HomeSiteButton(
+                            label: 'Filmix',
+                            icon: Icons.movie,
+                            onTap: () => _openSite('https://filmix.my/')),
+                        _HomeSiteButton(
+                            label: 'HDRezka',
+                            icon: Icons.live_tv,
+                            onTap: () => _openSite('https://hdrezka.ag/')),
+                        _HomeSiteButton(
+                            label: 'Zona',
+                            icon: Icons.movie_creation_outlined,
+                            onTap: () => _openSite('https://zona.plus/')),
+                        _HomeSiteButton(
+                            label: 'YouTube',
+                            icon: Icons.play_circle,
+                            onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                        const YouTubeSearchScreen()))),
+                        _HomeSiteButton(
+                            label: 'Свой сайт',
+                            icon: Icons.add_link,
+                            onTap: _showCustomSiteDialog),
                       ],
                     ),
                   ],
@@ -2041,7 +2424,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
               ),
             ),
 
-           // Эпизоды Seasonvar/Filmix — кнопки поверх браузера
+          // Эпизоды Seasonvar/Filmix — кнопки поверх браузера
           if (_hasEpisodeList)
             Positioned(
               top: 92,
@@ -2049,7 +2432,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
               right: 0,
               child: Container(
                 color: Colors.black87,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -2062,25 +2446,36 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             final id = tr['id'] ?? '';
                             final trIndex = tr['index'] ?? '';
                             final name = tr['name'] ?? 'Озвучка';
-                            final active = id.isNotEmpty && id == _seasonvarTranslationId;
+                            final active =
+                                id.isNotEmpty && id == _seasonvarTranslationId;
                             return Padding(
                               padding: const EdgeInsets.only(right: 6),
                               child: OutlinedButton(
-                                onPressed: () => _selectSeasonvarTranslation(id, fallbackIndex: trIndex),
+                                onPressed: () => _selectSeasonvarTranslation(id,
+                                    fallbackIndex: trIndex),
                                 style: OutlinedButton.styleFrom(
-                                  backgroundColor: active ? Colors.greenAccent : Colors.transparent,
-                                  foregroundColor: active ? Colors.black : Colors.white,
-                                  side: BorderSide(color: active ? Colors.greenAccent : Colors.white38),
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  backgroundColor: active
+                                      ? Colors.greenAccent
+                                      : Colors.transparent,
+                                  foregroundColor:
+                                      active ? Colors.black : Colors.white,
+                                  side: BorderSide(
+                                      color: active
+                                          ? Colors.greenAccent
+                                          : Colors.white38),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
                                   minimumSize: Size.zero,
                                 ),
-                                child: Text(name, style: const TextStyle(fontSize: 11)),
+                                child: Text(name,
+                                    style: const TextStyle(fontSize: 11)),
                               ),
                             );
                           }).toList(),
                         ),
                       ),
-                    if (_seasonvarTranslations.isEmpty && _filmixTranslations.isNotEmpty)
+                    if (_seasonvarTranslations.isEmpty &&
+                        _filmixTranslations.isNotEmpty)
                       SizedBox(
                         height: 34,
                         child: ListView(
@@ -2088,19 +2483,28 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           children: _filmixTranslations.map((tr) {
                             final id = tr['id'] ?? '';
                             final name = tr['name'] ?? id;
-                            final active = id.isNotEmpty && id == _filmixTranslationId;
+                            final active =
+                                id.isNotEmpty && id == _filmixTranslationId;
                             return Padding(
                               padding: const EdgeInsets.only(right: 6),
                               child: OutlinedButton(
                                 onPressed: () => _selectFilmixTranslation(id),
                                 style: OutlinedButton.styleFrom(
-                                  backgroundColor: active ? Colors.greenAccent : Colors.transparent,
-                                  foregroundColor: active ? Colors.black : Colors.white,
-                                  side: BorderSide(color: active ? Colors.greenAccent : Colors.white38),
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  backgroundColor: active
+                                      ? Colors.greenAccent
+                                      : Colors.transparent,
+                                  foregroundColor:
+                                      active ? Colors.black : Colors.white,
+                                  side: BorderSide(
+                                      color: active
+                                          ? Colors.greenAccent
+                                          : Colors.white38),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
                                   minimumSize: Size.zero,
                                 ),
-                                child: Text(name, style: const TextStyle(fontSize: 11)),
+                                child: Text(name,
+                                    style: const TextStyle(fontSize: 11)),
                               ),
                             );
                           }).toList(),
@@ -2117,14 +2521,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             return Padding(
                               padding: const EdgeInsets.only(right: 6),
                               child: OutlinedButton(
-                                onPressed: () => _openSeasonvarSeason(seasonUrl),
+                                onPressed: () =>
+                                    _openSeasonvarSeason(seasonUrl),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: Colors.white,
                                   side: const BorderSide(color: Colors.white38),
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
                                   minimumSize: Size.zero,
                                 ),
-                                child: Text(title, style: const TextStyle(fontSize: 11)),
+                                child: Text(title,
+                                    style: const TextStyle(fontSize: 11)),
                               ),
                             );
                           }).toList(),
@@ -2137,20 +2544,30 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           scrollDirection: Axis.horizontal,
                           children: _filmixSeasons.map((s) {
                             final id = s['id'] ?? '';
-                            final name = s['name'] ?? (id.isNotEmpty ? 'Сезон $id' : 'Сезон');
-                            final active = id.isNotEmpty && id == _filmixSeasonId;
+                            final name = s['name'] ??
+                                (id.isNotEmpty ? 'Сезон $id' : 'Сезон');
+                            final active =
+                                id.isNotEmpty && id == _filmixSeasonId;
                             return Padding(
                               padding: const EdgeInsets.only(right: 6),
                               child: OutlinedButton(
                                 onPressed: () => _selectFilmixSeason(id),
                                 style: OutlinedButton.styleFrom(
-                                  backgroundColor: active ? Colors.greenAccent : Colors.transparent,
-                                  foregroundColor: active ? Colors.black : Colors.white,
-                                  side: BorderSide(color: active ? Colors.greenAccent : Colors.white38),
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  backgroundColor: active
+                                      ? Colors.greenAccent
+                                      : Colors.transparent,
+                                  foregroundColor:
+                                      active ? Colors.black : Colors.white,
+                                  side: BorderSide(
+                                      color: active
+                                          ? Colors.greenAccent
+                                          : Colors.white38),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
                                   minimumSize: Size.zero,
                                 ),
-                                child: Text(name, style: const TextStyle(fontSize: 11)),
+                                child: Text(name,
+                                    style: const TextStyle(fontSize: 11)),
                               ),
                             );
                           }).toList(),
@@ -2165,16 +2582,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                     _seasonvarTranslations.isNotEmpty ||
                                     _seasonvarSeasons.isNotEmpty)
                                 ? 'Seasonvar: '
-                                : (_filmixSeasonId.isNotEmpty || _filmixTranslationId.isNotEmpty)
+                                : (_filmixSeasonId.isNotEmpty ||
+                                        _filmixTranslationId.isNotEmpty)
                                     ? 'Filmix ${_filmixSeasonId.isNotEmpty ? "S${_filmixSeasonId}" : ""}${_filmixTranslationId.isNotEmpty ? " · $_filmixTranslationId" : ""}: '
                                     : 'Filmix: ',
-                            style: const TextStyle(color: Colors.orange, fontSize: 13),
+                            style: const TextStyle(
+                                color: Colors.orange, fontSize: 13),
                           ),
                           ...List.generate(_activeEpisodes.length, (index) {
                             final active = index == _activeEpisodeIndex;
-                            final rawTitle = _activeEpisodes[index]['title'] ?? '';
-                            final season = _activeEpisodes[index]['season'] ?? '';
-                            final episode = _activeEpisodes[index]['episode'] ?? '';
+                            final rawTitle =
+                                _activeEpisodes[index]['title'] ?? '';
+                            final season =
+                                _activeEpisodes[index]['season'] ?? '';
+                            final episode =
+                                _activeEpisodes[index]['episode'] ?? '';
                             final btnLabel = _seasonvarEpisodes.isNotEmpty
                                 ? '${index + 1}'
                                 : (season.isNotEmpty || episode.isNotEmpty)
@@ -2183,15 +2605,27 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             return Padding(
                               padding: const EdgeInsets.only(right: 6),
                               child: OutlinedButton(
-                                onPressed: () => _playEpisodeFromActiveList(index),
+                                onPressed: () =>
+                                    _playEpisodeFromActiveList(index),
                                 style: OutlinedButton.styleFrom(
-                                  backgroundColor: active ? Colors.orange : Colors.transparent,
-                                  foregroundColor: active ? Colors.black : Colors.white,
-                                  side: BorderSide(color: active ? Colors.orange : Colors.white38),
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  backgroundColor: active
+                                      ? Colors.orange
+                                      : Colors.transparent,
+                                  foregroundColor:
+                                      active ? Colors.black : Colors.white,
+                                  side: BorderSide(
+                                      color: active
+                                          ? Colors.orange
+                                          : Colors.white38),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 4),
                                   minimumSize: Size.zero,
                                 ),
-                                child: Text(btnLabel.isEmpty ? '${index + 1}' : btnLabel, style: const TextStyle(fontSize: 12)),
+                                child: Text(
+                                    btnLabel.isEmpty
+                                        ? '${index + 1}'
+                                        : btnLabel,
+                                    style: const TextStyle(fontSize: 12)),
                               ),
                             );
                           }),
@@ -2216,16 +2650,25 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 decoration: const BoxDecoration(
                   color: Color(0xFF1E1E1E),
                   borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                  boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 10, offset: Offset(0, -5))],
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black54,
+                        blurRadius: 10,
+                        offset: Offset(0, -5))
+                  ],
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('✨ Видеопоток перехвачен!', style: TextStyle(color: Colors.orange, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text('✨ Видеопоток перехвачен!',
+                        style: TextStyle(
+                            color: Colors.orange,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
-                    const Text('Выберите качество сжатия:', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                    const Text('Выберите качество сжатия:',
+                        style: TextStyle(color: Colors.grey, fontSize: 14)),
                     const SizedBox(height: 15),
-                    
                     if (_presets.isEmpty)
                       const CircularProgressIndicator()
                     else
@@ -2235,22 +2678,32 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           children: _presets.map((preset) {
                             final isActive = _selectedQuality == preset.id;
                             return GestureDetector(
-                              onTap: () => setState(() => _selectedQuality = preset.id),
+                              onTap: () =>
+                                  setState(() => _selectedQuality = preset.id),
                               child: Container(
                                 margin: const EdgeInsets.only(right: 10),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: isActive ? Colors.orange.withOpacity(0.2) : const Color(0xFF2A2A2A),
-                                  border: Border.all(color: isActive ? Colors.orange : const Color(0xFF555555), width: 2),
+                                  color: isActive
+                                      ? Colors.orange.withOpacity(0.2)
+                                      : const Color(0xFF2A2A2A),
+                                  border: Border.all(
+                                      color: isActive
+                                          ? Colors.orange
+                                          : const Color(0xFF555555),
+                                      width: 2),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Text(preset.label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                child: Text(preset.label,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold)),
                               ),
                             );
                           }).toList(),
                         ),
                       ),
-                      
                     const SizedBox(height: 20),
                     Row(
                       children: [
@@ -2263,10 +2716,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                 _interceptedAlready = false;
                               });
                               // Возвращаем звук WebView — пользователь выбрал оригинал
-                              webViewController?.evaluateJavascript(source:
-                                "document.querySelectorAll('video,audio').forEach(function(e){e.muted=false;});");
+                              webViewController?.evaluateJavascript(
+                                  source:
+                                      "document.querySelectorAll('video,audio').forEach(function(e){e.muted=false;});");
                             },
-                            style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.grey)),
+                            style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(color: Colors.grey)),
                             child: const Text('Оригинал'),
                           ),
                         ),
@@ -2275,8 +2731,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           flex: 2,
                           child: ElevatedButton(
                             onPressed: _isLoading ? null : _startMagic,
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.black),
-                            child: _isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2)) : const Text('Сжать и смотреть ▶', style: TextStyle(fontWeight: FontWeight.bold)),
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange,
+                                foregroundColor: Colors.black),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        color: Colors.black, strokeWidth: 2))
+                                : const Text('Сжать и смотреть ▶',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.bold)),
                           ),
                         ),
                       ],
@@ -2286,7 +2752,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
               ),
             ),
 
-           // Загрузка плеера — оверлей пока идёт инициализация
+          // Загрузка плеера — оверлей пока идёт инициализация
           if (_isLoading && !_showPlayer)
             Positioned.fill(
               child: Container(
@@ -2294,13 +2760,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 child: Center(
                   child: Container(
                     padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(color: const Color(0xCC1A0F08), borderRadius: BorderRadius.circular(16)),
+                    decoration: BoxDecoration(
+                        color: const Color(0xCC1A0F08),
+                        borderRadius: BorderRadius.circular(16)),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const CircularProgressIndicator(color: Colors.orange),
                         const SizedBox(height: 14),
-                        Text('Запускаю $_selectedQuality...', style: const TextStyle(color: Colors.white, fontSize: 16)),
+                        Text('Запускаю $_selectedQuality...',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 16)),
                       ],
                     ),
                   ),
@@ -2308,7 +2778,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
               ),
             ),
 
-           // Native Player Screen
+          // Native Player Screen
           if (_showPlayer)
             Positioned.fill(
               child: Container(
@@ -2319,7 +2789,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     Column(
                       children: [
                         Container(
-                          padding: const EdgeInsets.only(top: 40, left: 10, right: 10, bottom: 10),
+                          padding: const EdgeInsets.only(
+                              top: 40, left: 10, right: 10, bottom: 10),
                           color: Colors.black87,
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
@@ -2327,19 +2798,23 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               Row(
                                 children: [
                                   IconButton(
-                                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                                    icon: const Icon(Icons.arrow_back,
+                                        color: Colors.white),
                                     onPressed: _stopPlayer,
                                   ),
                                   Text(
                                     _hasEpisodeList
                                         ? 'Серия ${_activeEpisodeIndex + 1} / ${_activeEpisodes.length} · $_selectedQuality'
                                         : 'Стриминг: $_selectedQuality',
-                                    style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+                                    style: const TextStyle(
+                                        color: Colors.orange,
+                                        fontWeight: FontWeight.bold),
                                   ),
                                   const Spacer(),
                                   PopupMenuButton<String>(
                                     tooltip: 'Качество',
-                                    icon: const Icon(Icons.settings, color: Colors.orange),
+                                    icon: const Icon(Icons.settings,
+                                        color: Colors.orange),
                                     color: const Color(0xFF1E1E1E),
                                     initialValue: _selectedQuality,
                                     onSelected: (q) {
@@ -2347,16 +2822,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                       _startMagic();
                                     },
                                     itemBuilder: (context) => const [
-                                      PopupMenuItem(value: '144p', child: Text('144p')),
-                                      PopupMenuItem(value: '240p', child: Text('240p')),
-                                      PopupMenuItem(value: '360p', child: Text('360p')),
-                                      PopupMenuItem(value: '480p', child: Text('480p')),
+                                      PopupMenuItem(
+                                          value: '144p', child: Text('144p')),
+                                      PopupMenuItem(
+                                          value: '240p', child: Text('240p')),
+                                      PopupMenuItem(
+                                          value: '360p', child: Text('360p')),
+                                      PopupMenuItem(
+                                          value: '480p', child: Text('480p')),
                                     ],
                                   ),
                                   TextButton.icon(
                                     onPressed: _playNextEpisode,
-                                    icon: const Icon(Icons.skip_next, color: Colors.orange),
-                                    label: const Text('След. серия', style: TextStyle(color: Colors.orange)),
+                                    icon: const Icon(Icons.skip_next,
+                                        color: Colors.orange),
+                                    label: const Text('След. серия',
+                                        style: TextStyle(color: Colors.orange)),
                                   ),
                                 ],
                               ),
@@ -2367,20 +2848,37 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                     scrollDirection: Axis.horizontal,
                                     itemCount: _activeEpisodes.length,
                                     itemBuilder: (context, index) {
-                                      final active = index == _activeEpisodeIndex;
+                                      final active =
+                                          index == _activeEpisodeIndex;
                                       return Padding(
-                                        padding: const EdgeInsets.only(right: 6),
+                                        padding:
+                                            const EdgeInsets.only(right: 6),
                                         child: OutlinedButton(
-                                          onPressed: () => _playEpisodeFromActiveList(index),
+                                          onPressed: () =>
+                                              _playEpisodeFromActiveList(index),
                                           style: OutlinedButton.styleFrom(
-                                            backgroundColor: active ? Colors.orange : Colors.transparent,
-                                            foregroundColor: active ? Colors.black : Colors.white,
-                                            side: BorderSide(color: active ? Colors.orange : Colors.white38),
-                                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                                            backgroundColor: active
+                                                ? Colors.orange
+                                                : Colors.transparent,
+                                            foregroundColor: active
+                                                ? Colors.black
+                                                : Colors.white,
+                                            side: BorderSide(
+                                                color: active
+                                                    ? Colors.orange
+                                                    : Colors.white38),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 12),
                                           ),
-                                          child: Text(_seasonvarEpisodes.isNotEmpty
-                                              ? '${index + 1}'
-                                              : (_activeEpisodes[index]['title'] ?? '${index + 1}').split(' ').take(2).join(' ')),
+                                          child: Text(
+                                              _seasonvarEpisodes.isNotEmpty
+                                                  ? '${index + 1}'
+                                                  : (_activeEpisodes[index]
+                                                              ['title'] ??
+                                                          '${index + 1}')
+                                                      .split(' ')
+                                                      .take(2)
+                                                      .join(' ')),
                                         ),
                                       );
                                     },
@@ -2390,9 +2888,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           ),
                         ),
                         Expanded(
-                          child: _chewieController != null && _videoController != null && _videoController!.value.isInitialized
+                          child: _chewieController != null &&
+                                  _videoController != null &&
+                                  _videoController!.value.isInitialized
                               ? Chewie(controller: _chewieController!)
-                              : const Center(child: CircularProgressIndicator(color: Colors.orange)),
+                              : const Center(
+                                  child: CircularProgressIndicator(
+                                      color: Colors.orange)),
                         ),
                       ],
                     ),
@@ -2407,7 +2909,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 }
 
-class _MiniProgressOverlay extends StatefulWidget { // оставлен для совместимости на случай отката
+class _MiniProgressOverlay extends StatefulWidget {
+  // оставлен для совместимости на случай отката
   final VideoPlayerController controller;
   const _MiniProgressOverlay({required this.controller});
 
@@ -2447,8 +2950,8 @@ class _MiniProgressOverlayState extends State<_MiniProgressOverlay> {
   @override
   Widget build(BuildContext context) {
     final pos = widget.controller.value.position;
-    final buf = widget.controller.value.buffered.isNotEmpty 
-        ? widget.controller.value.buffered.last.end - pos 
+    final buf = widget.controller.value.buffered.isNotEmpty
+        ? widget.controller.value.buffered.last.end - pos
         : Duration.zero;
     final buffering = widget.controller.value.isBuffering;
 
@@ -2466,13 +2969,16 @@ class _MiniProgressOverlayState extends State<_MiniProgressOverlay> {
           const SizedBox(width: 6),
           Text(
             _fmt(pos),
-            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+                color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
           ),
           if (buffering) ...[
             const SizedBox(width: 8),
             const SizedBox(
-              width: 14, height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Colors.orange),
             ),
           ],
           const SizedBox(width: 8),
@@ -2491,7 +2997,8 @@ class _HomeSiteButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
 
-  const _HomeSiteButton({required this.label, required this.icon, required this.onTap});
+  const _HomeSiteButton(
+      {required this.label, required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -2511,7 +3018,9 @@ class _HomeSiteButton extends StatelessWidget {
           children: [
             Icon(icon, color: Colors.orange, size: 30),
             const SizedBox(height: 8),
-            Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            Text(label,
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold)),
           ],
         ),
       ),

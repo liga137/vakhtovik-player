@@ -3,15 +3,16 @@ import 'package:video_player_win/video_player_win.dart';
 import 'package:window_manager/window_manager.dart';
 import 'dart:io' show Platform;
 import 'screens/browser_screen.dart';
+import 'services/api_service.dart';
 import 'services/hysteria_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiService.initLocalState();
   if (Platform.isWindows) {
     WindowsVideoPlayer.registerWith();
     await windowManager.ensureInitialized();
     windowManager.setMinimumSize(const Size(400, 300));
-    HysteriaService.start();
     windowManager.addListener(_HysteriaCleanup());
   }
   runApp(const VakhtovikApp());

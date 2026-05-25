@@ -2,6 +2,8 @@ class YouTubeVideo {
   final String id;
   final String title;
   final String channel;
+  final String viewsText;
+  final String publishedText;
   final int duration;
   final String thumbnail;
   final String url;
@@ -10,6 +12,8 @@ class YouTubeVideo {
     required this.id,
     required this.title,
     required this.channel,
+    this.viewsText = '',
+    this.publishedText = '',
     required this.duration,
     required this.thumbnail,
     required this.url,
@@ -38,8 +42,30 @@ class YouTubeVideo {
       _readString(json, 'author'),
       _readString(json, 'uploader'),
       _readString(json, 'channel_name'),
+      _readString(json, 'ownerText'),
       _readNestedString(json, 'snippet', 'channelTitle'),
       _readNestedString(json, 'entry', 'author'),
+      _readNestedString(json, 'metadata', 'channel'),
+    ]));
+    final viewsText = _cleanText(_firstNonEmpty([
+      _readString(json, 'views'),
+      _readString(json, 'views_text'),
+      _readString(json, 'view_count_text'),
+      _readString(json, 'short_view_count'),
+      _readString(json, 'viewCountText'),
+      _readString(json, 'shortViewCountText'),
+      _readNestedString(json, 'snippet', 'viewCountText'),
+      _readNestedString(json, 'metadata', 'views'),
+    ]));
+    final publishedText = _cleanText(_firstNonEmpty([
+      _readString(json, 'published'),
+      _readString(json, 'published_text'),
+      _readString(json, 'published_time'),
+      _readString(json, 'publishedTimeText'),
+      _readNestedString(json, 'snippet', 'publishedAt'),
+      _readNestedString(json, 'snippet', 'publishedTimeText'),
+      _readNestedString(json, 'metadata', 'published'),
+      _readNestedString(json, 'metadata', 'published_at'),
     ]));
     final thumbnail = _extractThumbnail(json);
     final url = _cleanText(_firstNonEmpty([
@@ -59,6 +85,8 @@ class YouTubeVideo {
               url: url,
             ),
       channel: channel,
+      viewsText: viewsText,
+      publishedText: publishedText,
       duration: _toInt(json['duration']),
       thumbnail: thumbnail,
       url: url,
@@ -72,16 +100,51 @@ class YouTubeVideo {
   }
 
   static String _readString(Map<String, dynamic> json, String key) {
-    final value = json[key];
-    if (value == null) return '';
-    return value.toString().trim();
+    return _extractTextValue(json[key]);
   }
 
-  static String _readNestedString(Map<String, dynamic> json, String parent, String key) {
+  static String _readNestedString(
+      Map<String, dynamic> json, String parent, String key) {
     final parentValue = json[parent];
     if (parentValue is! Map) return '';
-    final value = parentValue[key];
+    return _extractTextValue(parentValue[key]);
+  }
+
+  static String _extractTextValue(dynamic value) {
     if (value == null) return '';
+    if (value is String) return value.trim();
+    if (value is num || value is bool) return value.toString().trim();
+    if (value is Map) {
+      final simple = _extractTextValue(value['simpleText']);
+      if (simple.isNotEmpty) return simple;
+      final text = _extractTextValue(value['text']);
+      if (text.isNotEmpty) return text;
+      final content = _extractTextValue(value['content']);
+      if (content.isNotEmpty) return content;
+      final title = _extractTextValue(value['title']);
+      if (title.isNotEmpty) return title;
+      final label = _extractTextValue(value['label']);
+      if (label.isNotEmpty) return label;
+      final runs = value['runs'];
+      if (runs is List) {
+        final chunks = <String>[];
+        for (final it in runs) {
+          if (it is Map) {
+            final chunk = _extractTextValue(it['text']);
+            if (chunk.isNotEmpty) chunks.add(chunk);
+          }
+        }
+        if (chunks.isNotEmpty) return chunks.join();
+      }
+      return '';
+    }
+    if (value is List) {
+      for (final it in value) {
+        final t = _extractTextValue(it);
+        if (t.isNotEmpty) return t;
+      }
+      return '';
+    }
     return value.toString().trim();
   }
 
@@ -112,7 +175,8 @@ class YouTubeVideo {
     if (v.isNotEmpty) return v;
     final parts = uri.pathSegments;
     if (parts.length >= 2 && parts.first == 'shorts') return parts[1].trim();
-    if (parts.isNotEmpty && parts.first == 'watch') return (uri.queryParameters['v'] ?? '').trim();
+    if (parts.isNotEmpty && parts.first == 'watch')
+      return (uri.queryParameters['v'] ?? '').trim();
     return '';
   }
 
@@ -135,6 +199,8 @@ class YouTubeVideo {
   static String _extractThumbnail(Map<String, dynamic> json) {
     final direct = _readString(json, 'thumbnail');
     if (direct.isNotEmpty) return direct;
+    final thumbSingle = _readString(json, 'thumbnail_url');
+    if (thumbSingle.isNotEmpty) return thumbSingle;
 
     final thumbs = json['thumbnails'];
     if (thumbs is List) {

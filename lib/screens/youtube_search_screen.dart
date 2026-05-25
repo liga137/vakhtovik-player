@@ -18,10 +18,12 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   final _subController = TextEditingController();
   late final TabController _tabController;
   List<YouTubeVideo> _searchResults = const [];
+  List<YouTubeVideo> _fresh = const [];
   List<YouTubeVideo> _feed = const [];
   List<YouTubeVideo> _popular = const [];
   List<YouTubeVideo> _shorts = const [];
   List<Map<String, dynamic>> _subs = const [];
+  bool _loadingFresh = false;
   bool _loadingSearch = false;
   bool _loadingFeed = false;
   bool _loadingPopular = false;
@@ -31,6 +33,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   bool _googleImporting = false;
   Timer? _googlePollTimer;
   String _quality = '240p';
+  bool _freshAutoRequested = false;
   bool _feedAutoRequested = false;
 
   static const _quickSearches = [
@@ -54,11 +57,21 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _tabController.addListener(_onTabChanged);
+    unawaited(ApiService.initLocalState().then((_) async {
+      if (!mounted) return;
+      setState(() {});
+      _ensureFreshLoadedIfPossible();
+      _ensureFeedLoadedIfPossible();
+      if (ApiService.isYouTubeLoggedIn) {
+        await _loadSubs();
+      }
+    }));
     _loadPopular();
     _loadShorts();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureFreshLoadedIfPossible();
       _ensureFeedLoadedIfPossible();
     });
   }
@@ -66,8 +79,27 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   void _onTabChanged() {
     if (!mounted || _tabController.indexIsChanging) return;
     if (_tabController.index == 0) {
+      _ensureFreshLoadedIfPossible();
+    }
+    if (_tabController.index == 1) {
       _ensureFeedLoadedIfPossible();
     }
+  }
+
+  void _ensureFreshLoadedIfPossible() {
+    if (_fresh.isNotEmpty || _freshAutoRequested) return;
+    if (_loadingFresh) {
+      Future.delayed(const Duration(milliseconds: 700), () {
+        if (mounted) _ensureFreshLoadedIfPossible();
+      });
+      return;
+    }
+    _freshAutoRequested = true;
+    unawaited(_loadFresh().whenComplete(() {
+      if (mounted && _fresh.isEmpty) {
+        _freshAutoRequested = false;
+      }
+    }));
   }
 
   void _ensureFeedLoadedIfPossible() {
@@ -85,6 +117,19 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
         _feedAutoRequested = false;
       }
     }));
+  }
+
+  Future<void> _loadFresh() async {
+    if (_loadingFresh) return;
+    setState(() => _loadingFresh = true);
+    try {
+      final items = await ApiService.youtubeFresh(limit: 48);
+      if (mounted) setState(() => _fresh = items);
+    } catch (e) {
+      if (mounted) _snack('Ошибка "Новое": $e');
+    } finally {
+      if (mounted) setState(() => _loadingFresh = false);
+    }
   }
 
   Future<void> _search([String? query]) async {
@@ -215,13 +260,15 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
           if (ticks > 120) {
             timer.cancel();
             if (mounted) setState(() => _googleImporting = false);
-            _snack('Импорт не завершён. Проверь OAuth Production в Google Console.');
+            _snack(
+                'Импорт не завершён. Проверь OAuth Production в Google Console.');
           }
         } catch (_) {}
       });
     } catch (e) {
       if (mounted) setState(() => _googleImporting = false);
-      _snack('Ошибка: $e. Если видишь "app not verified", переведи OAuth в Production.');
+      _snack(
+          'Ошибка: $e. Если видишь "app not verified", переведи OAuth в Production.');
     }
   }
 
@@ -329,7 +376,9 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     user.dispose();
     pass.dispose();
     if (mounted) setState(() {});
+    _ensureFreshLoadedIfPossible();
     _ensureFeedLoadedIfPossible();
+    unawaited(_loadSubs());
     return result;
   }
 
@@ -337,6 +386,9 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_starting) return;
     setState(() => _starting = true);
     try {
+      if (video.channel.trim().isNotEmpty) {
+        unawaited(ApiService.youtubeRememberWatchedChannel(video.channel));
+      }
       final targetUrl = video.url.isNotEmpty
           ? video.url
           : 'https://www.youtube.com/watch?v=${video.id}';
@@ -402,7 +454,11 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   Widget _loginButton() {
     if (ApiService.isYouTubeLoggedIn) {
       return TextButton.icon(
-        onPressed: () => setState(ApiService.youtubeLogout),
+        onPressed: () => setState(() {
+          ApiService.youtubeLogout();
+          _feed = const [];
+          _subs = const [];
+        }),
         icon: const Icon(Icons.logout, color: Colors.orange),
         label: Text(ApiService.youtubeUsername ?? 'Выйти',
             style: const TextStyle(color: Colors.white)),
@@ -443,7 +499,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     );
   }
 
-  Widget _videoGrid(List<YouTubeVideo> items, {Widget? empty, bool loading = false}) {
+  Widget _videoGrid(List<YouTubeVideo> items,
+      {Widget? empty, bool loading = false}) {
     if (loading) {
       return const Center(
           child: CircularProgressIndicator(color: Colors.orange));
@@ -464,8 +521,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
         crossAxisCount = 2;
       }
       final aspectRatio = crossAxisCount >= 4
-          ? 1.65
-          : (crossAxisCount == 3 ? 1.6 : (crossAxisCount == 2 ? 1.52 : 1.9));
+          ? 1.03
+          : (crossAxisCount == 3 ? 0.98 : (crossAxisCount == 2 ? 0.93 : 1.42));
 
       return GridView.builder(
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
@@ -483,6 +540,9 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
 
   Widget _videoCard(YouTubeVideo v) {
     final dur = _formatDuration(v.duration);
+    final meta = [v.viewsText, v.publishedText, if (dur.isNotEmpty) dur]
+        .where((e) => e.trim().isNotEmpty)
+        .join(' • ');
     return InkWell(
       onTap: () => _play(v),
       child: Container(
@@ -491,50 +551,87 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: Colors.white12)),
         clipBehavior: Clip.antiAlias,
-        child: Row(children: [
-          AspectRatio(
-              aspectRatio: 16 / 9,
-              child: v.thumbnail.isEmpty
-                  ? Container(
-                      color: Colors.black26,
-                      child:
-                          const Icon(Icons.play_circle, color: Colors.orange))
-                  : Image.network(v.thumbnail,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          Container(color: Colors.black26))),
-          Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+                aspectRatio: 16 / 9,
+                child: v.thumbnail.isEmpty
+                    ? Container(
+                        color: Colors.black26,
+                        child:
+                            const Icon(Icons.play_circle, color: Colors.orange))
+                    : Image.network(v.thumbnail,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            Container(color: Colors.black26))),
+            Expanded(
               child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(v.title,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            )),
-                        const Spacer(),
-                        Text(
-                            [v.channel, dur]
-                                .where((e) => e.isNotEmpty)
-                                .join(' · '),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: Colors.white60, fontSize: 12)),
-                      ]))),
-        ]),
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(v.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        )),
+                    const SizedBox(height: 4),
+                    Text(
+                      v.channel.isNotEmpty ? v.channel : 'YouTube',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      meta.isNotEmpty ? meta : (dur.isNotEmpty ? dur : ' '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          const TextStyle(color: Colors.white60, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  Widget _freshTab() {
+    return Column(children: [
+      Padding(
+          padding: const EdgeInsets.all(8),
+          child: Row(children: [
+            const Expanded(
+                child: Text('Новое по просмотренным каналам',
+                    style: TextStyle(color: Colors.white70))),
+            FilledButton.icon(
+                onPressed: _loadFresh,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Обновить')),
+          ])),
+      Expanded(
+          child: _videoGrid(_fresh,
+              loading: _loadingFresh,
+              empty: const Center(
+                  child: Text(
+                      'Пока пусто. Открой несколько видео, и здесь появятся новинки.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white70))))),
+    ]);
   }
 
   Widget _feedTab() {
     if (ApiService.isYouTubeLoggedIn && _feed.isEmpty && !_loadingFeed) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _tabController.index == 0) {
+        if (mounted && _tabController.index == 1) {
           _ensureFeedLoadedIfPossible();
         }
       });
@@ -585,12 +682,18 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12))),
           )),
-      Expanded(child: _videoGrid(_searchResults, loading: _loadingSearch, empty: _emptySearch())),
+      Expanded(
+          child: _videoGrid(_searchResults,
+              loading: _loadingSearch, empty: _emptySearch())),
     ]);
   }
 
   Widget _popularTab() {
-    return _videoGrid(_popular, loading: _loadingPopular, empty: const Center(child: Text('Загрузка...', style: TextStyle(color: Colors.white70))));
+    return _videoGrid(_popular,
+        loading: _loadingPopular,
+        empty: const Center(
+            child:
+                Text('Загрузка...', style: TextStyle(color: Colors.white70))));
   }
 
   Widget _shortsTab() {
@@ -601,7 +704,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
           child: Row(
             children: [
               const Expanded(
-                child: Text('YouTube Shorts', style: TextStyle(color: Colors.white70)),
+                child: Text('YouTube Shorts',
+                    style: TextStyle(color: Colors.white70)),
               ),
               FilledButton.icon(
                 onPressed: _loadShorts,
@@ -615,7 +719,9 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
           child: _videoGrid(
             _shorts,
             loading: _loadingShorts,
-            empty: const Center(child: Text('Shorts пока пусто', style: TextStyle(color: Colors.white70))),
+            empty: const Center(
+                child: Text('Shorts пока пусто',
+                    style: TextStyle(color: Colors.white70))),
           ),
         ),
       ],
@@ -632,7 +738,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
             children: [
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: _googleImporting ? null : _importGoogleSubscriptions,
+                  onPressed:
+                      _googleImporting ? null : _importGoogleSubscriptions,
                   icon: _googleImporting
                       ? const SizedBox(
                           width: 16,
@@ -707,6 +814,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
         foregroundColor: Colors.white,
         actions: [_qualityButton(), _loginButton()],
         bottom: TabBar(controller: _tabController, tabs: const [
+          Tab(icon: Icon(Icons.auto_awesome), text: 'Новое'),
           Tab(icon: Icon(Icons.home), text: 'Лента'),
           Tab(icon: Icon(Icons.search), text: 'Поиск'),
           Tab(icon: Icon(Icons.trending_up), text: 'Популярное'),
@@ -717,7 +825,14 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       body: Stack(children: [
         TabBarView(
           controller: _tabController,
-          children: [_feedTab(), _searchTab(), _popularTab(), _shortsTab(), _subsTab()],
+          children: [
+            _freshTab(),
+            _feedTab(),
+            _searchTab(),
+            _popularTab(),
+            _shortsTab(),
+            _subsTab()
+          ],
         ),
         if (_starting)
           Container(
@@ -725,13 +840,17 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
             child: Center(
               child: Container(
                 padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(color: const Color(0xCC1A0F08), borderRadius: BorderRadius.circular(16)),
+                decoration: BoxDecoration(
+                    color: const Color(0xCC1A0F08),
+                    borderRadius: BorderRadius.circular(16)),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const CircularProgressIndicator(color: Colors.orange),
                     const SizedBox(height: 14),
-                    Text('Запускаю $_quality...', style: const TextStyle(color: Colors.white, fontSize: 16)),
+                    Text('Запускаю $_quality...',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 16)),
                   ],
                 ),
               ),
