@@ -232,6 +232,66 @@ class FilmixDom {
     return out.length;
   }
 
+  function emitEpisodesFromPlaylist(playlist) {
+    if (!playlist || typeof playlist !== 'object') return 0;
+    var out = [];
+    var seen = {};
+
+    function pushEpisode(season, episode, translation, title) {
+      var s = String(season || '');
+      var e = String(episode || '');
+      var t = normText(title || '');
+      var tr = normText(translation || '');
+      if (!s && !e && !t) return;
+      if (!t) t = 'S' + (s || '?') + ' E' + (e || '?');
+      if (tr) t = t + ' [' + tr + ']';
+      addEpisode(out, seen, t, s, e);
+    }
+
+    var seasonKeys = Object.keys(playlist);
+    for (var si = 0; si < seasonKeys.length; si++) {
+      var seasonKey = seasonKeys[si];
+      var seasonTranslations = playlist[seasonKey];
+      if (!seasonTranslations || typeof seasonTranslations !== 'object') continue;
+      var translationKeys = Object.keys(seasonTranslations);
+      for (var ti = 0; ti < translationKeys.length; ti++) {
+        var translationKey = translationKeys[ti];
+        var translationData = seasonTranslations[translationKey];
+        if (!translationData) continue;
+
+        if (Array.isArray(translationData)) {
+          for (var ei = 0; ei < translationData.length; ei++) {
+            var epData = translationData[ei];
+            var epNum = (epData && (epData.episode || epData.e || epData.id)) || (ei + 1);
+            var epTitle = (epData && (epData.title || epData.name || epData.label)) || ('Episode ' + epNum);
+            var epLink = epData && epData.link;
+            if (epLink) emitMedia(epLink);
+            pushEpisode(seasonKey, epNum, translationKey, epTitle);
+          }
+          continue;
+        }
+
+        if (typeof translationData === 'object') {
+          var episodeKeys = Object.keys(translationData);
+          for (var ek = 0; ek < episodeKeys.length; ek++) {
+            var episodeKey = episodeKeys[ek];
+            var epObj = translationData[episodeKey];
+            var epTitle2 = (epObj && (epObj.title || epObj.name || epObj.label)) || ('Episode ' + episodeKey);
+            var epLink2 = epObj && epObj.link;
+            if (epLink2) emitMedia(epLink2);
+            pushEpisode(seasonKey, episodeKey, translationKey, epTitle2);
+          }
+        }
+      }
+    }
+
+    if (out.length > 0) {
+      sortEpisodes(out);
+      safeCall('filmixEpisodes', JSON.stringify(out.slice(0, 250)));
+    }
+    return out.length;
+  }
+
   function attachVideoListeners(doc) {
     var videos = [];
     try { videos = doc.querySelectorAll('video, pjsdiv video, .pjsdiv video'); } catch (_) { videos = []; }
@@ -421,6 +481,15 @@ class FilmixDom {
         var textDump = '';
         try { textDump = JSON.stringify(data); } catch (_) {}
         if (textDump) extractMediaFromText(textDump);
+
+        var playlist =
+          (data.player_links && data.player_links.playlist) ||
+          (data.data && data.data.player_links && data.data.player_links.playlist) ||
+          (data.post && data.post.player_links && data.post.player_links.playlist) ||
+          data.playlist;
+        if (playlist && typeof playlist === 'object') {
+          emitEpisodesFromPlaylist(playlist);
+        }
 
         var pi = data.player_info || (data.data && data.data.player_info) || data;
         var season = String((pi && (pi.season || pi.s || pi.num_season)) || '');
