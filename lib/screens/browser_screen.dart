@@ -1,14 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Directory, File, Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:window_manager/window_manager.dart';
 import '../services/api_service.dart';
 import '../services/hysteria_service.dart';
 import '../services/filmix_auth.dart';
+import '../services/filmix_dom.dart';
+import '../services/update_service.dart';
 import '../services/youtube_hover.dart';
 import '../models/preset.dart';
 import 'youtube_search_screen.dart';
@@ -24,8 +28,12 @@ class BrowserScreen extends StatefulWidget {
 }
 
 class _BrowserScreenState extends State<BrowserScreen> {
-  final GlobalKey webViewKey = GlobalKey();
   InAppWebViewController? webViewController;
+  WebViewEnvironment? _webViewEnvironment;
+  bool _webViewReady = !Platform.isWindows;
+  bool _webViewProxyEnabled = false;
+  int _webViewInstance = 0;
+  String? _webViewRestoreUrl;
   String url = "https://seasonvar.ru/";
   String _currentRealUrl = "https://seasonvar.ru/";
   final urlController = TextEditingController(text: "https://seasonvar.ru/");
@@ -55,21 +63,130 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _scanningSeasonvar = false;
   List<Map<String, String>> _seasonvarEpisodes = [];
   int _seasonvarIndex = 0;
+  List<Map<String, String>> _filmixEpisodes = [];
+  int _filmixIndex = 0;
+  String _lastFilmixMediaUrl = '';
+  List<String> _recentLinks = [];
+  bool _checkingUpdates = false;
 
   @override
   void initState() {
     super.initState();
     _loadPresets();
+    _loadRecentLinks();
+    _initWindowsWebViewEnvironment();
     _checkGostLater();
+    Future.delayed(const Duration(seconds: 6), () {
+      if (mounted) _checkForUpdates(silent: true);
+    });
   }
 
   void _checkGostLater() {
     Future.delayed(const Duration(seconds: 15), () async {
       if (mounted) {
         final ok = await HysteriaService.check();
-        if (mounted) setState(() => _gostActive = ok);
+        if (mounted) {
+          setState(() => _gostActive = ok);
+          await _switchWindowsWebViewProxy(useProxy: ok, preservePage: true);
+        }
       }
     });
+  }
+
+  Future<void> _initWindowsWebViewEnvironment() async {
+    if (!Platform.isWindows) return;
+    await _switchWindowsWebViewProxy(useProxy: false, preservePage: false);
+  }
+
+  String _normalizeRestoreUrl(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty || t == 'about:blank') return 'about:blank';
+    if (t.startsWith('http://') || t.startsWith('https://')) return t;
+    return _currentRealUrl;
+  }
+
+  Future<WebViewEnvironment?> _createWindowsEnvironment({required bool useProxy}) async {
+    if (!Platform.isWindows) return null;
+    final availableVersion = await WebViewEnvironment.getAvailableVersion();
+    if (availableVersion == null) return null;
+
+    final localAppData = Platform.environment['LOCALAPPDATA'] ?? Directory.current.path;
+    final baseDir = Directory('$localAppData/VakhtovikPlayer/webview2');
+    if (!await baseDir.exists()) {
+      await baseDir.create(recursive: true);
+    }
+
+    final profileDir = useProxy ? 'proxy' : 'direct';
+    final proxyArg = '--proxy-server=http://${HysteriaService.proxyHost}:${HysteriaService.proxyPort}';
+
+    return WebViewEnvironment.create(
+      settings: WebViewEnvironmentSettings(
+        userDataFolder: '${baseDir.path}/$profileDir',
+        additionalBrowserArguments: useProxy ? proxyArg : null,
+      ),
+    );
+  }
+
+  Future<void> _switchWindowsWebViewProxy({
+    required bool useProxy,
+    required bool preservePage,
+  }) async {
+    if (!Platform.isWindows) return;
+    if (_webViewReady && _webViewEnvironment != null && _webViewProxyEnabled == useProxy) {
+      return;
+    }
+
+    String restoreUrl = 'about:blank';
+    if (preservePage) {
+      try {
+        final current = await webViewController?.getUrl();
+        if (current != null) {
+          restoreUrl = _normalizeRestoreUrl(current.toString());
+        } else if (urlController.text.trim().isNotEmpty) {
+          restoreUrl = _normalizeRestoreUrl(urlController.text);
+        } else {
+          restoreUrl = _normalizeRestoreUrl(_currentRealUrl);
+        }
+      } catch (_) {
+        restoreUrl = _normalizeRestoreUrl(_currentRealUrl);
+      }
+    }
+
+    final oldEnvironment = _webViewEnvironment;
+
+    if (mounted) {
+      setState(() {
+        _pageLoading = true;
+        _webViewReady = false;
+      });
+    }
+
+    try {
+      final environment = await _createWindowsEnvironment(useProxy: useProxy);
+      if (!mounted) {
+        await environment?.dispose();
+        return;
+      }
+      await oldEnvironment?.dispose();
+      setState(() {
+        _webViewEnvironment = environment;
+        _webViewProxyEnabled = useProxy;
+        _webViewRestoreUrl = preservePage ? restoreUrl : null;
+        _webViewInstance++;
+        webViewController = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _webViewEnvironment = oldEnvironment;
+        _webViewProxyEnabled = false;
+        _webViewReady = true;
+        _pageLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка WebView2 proxy: $e'), duration: const Duration(seconds: 4)),
+      );
+    }
   }
 
   Future<void> _loadPresets() async {
@@ -98,10 +215,130 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
+  Future<File> _recentLinksFile() async {
+    if (Platform.isWindows) {
+      final localAppData = Platform.environment['LOCALAPPDATA'] ?? Directory.current.path;
+      final appDir = Directory('$localAppData/VakhtovikPlayer');
+      if (!await appDir.exists()) await appDir.create(recursive: true);
+      return File('${appDir.path}/recent_links.json');
+    }
+    final appDir = Directory('${Directory.systemTemp.path}/vakhtovik_player');
+    if (!await appDir.exists()) await appDir.create(recursive: true);
+    return File('${appDir.path}/recent_links.json');
+  }
+
+  Future<void> _loadRecentLinks() async {
+    try {
+      final file = await _recentLinksFile();
+      if (!await file.exists()) return;
+      final data = jsonDecode(await file.readAsString()) as List<dynamic>;
+      final links = data.map((e) => e.toString()).where((e) => e.startsWith('http://') || e.startsWith('https://')).toList();
+      if (mounted) {
+        setState(() {
+          _recentLinks = links.take(30).toList();
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveRecentLinks() async {
+    try {
+      final file = await _recentLinksFile();
+      await file.writeAsString(jsonEncode(_recentLinks.take(30).toList()));
+    } catch (_) {}
+  }
+
+  void _rememberUrl(String rawUrl) {
+    final t = rawUrl.trim();
+    if (t.isEmpty || t == 'about:blank') return;
+    if (!t.startsWith('http://') && !t.startsWith('https://')) return;
+    if (_recentLinks.isNotEmpty && _recentLinks.first == t) return;
+    setState(() {
+      _recentLinks.removeWhere((x) => x == t);
+      _recentLinks.insert(0, t);
+      if (_recentLinks.length > 30) _recentLinks = _recentLinks.take(30).toList();
+    });
+    _saveRecentLinks();
+  }
+
+  void _clearRecentLinks() {
+    setState(() => _recentLinks = []);
+    _saveRecentLinks();
+  }
+
+  Future<void> _openExternalUrl(String url) async {
+    if (url.isEmpty) return;
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _checkForUpdates({bool silent = false}) async {
+    if (_checkingUpdates) return;
+    setState(() => _checkingUpdates = true);
+    try {
+      final info = await UpdateService.checkLatest();
+      if (!mounted) return;
+      if (!info.hasUpdate) {
+        if (!silent) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Обновлений нет (${info.currentVersion})')),
+          );
+        }
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Доступно обновление'),
+          content: Text(
+            'Текущая версия: ${info.currentVersion}\n'
+            'Новая версия: ${info.latestVersion}\n\n'
+            'Открыть страницу релиза?',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Позже')),
+            if (info.windowsAssetUrl.isNotEmpty)
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _openExternalUrl(info.windowsAssetUrl);
+                },
+                child: const Text('Windows'),
+              ),
+            if (info.androidAssetUrl.isNotEmpty)
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _openExternalUrl(info.androidAssetUrl);
+                },
+                child: const Text('Android APK'),
+              ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _openExternalUrl(info.htmlUrl);
+              },
+              child: const Text('Релиз'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!silent && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось проверить обновления: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _checkingUpdates = false);
+    }
+  }
+
   @override
   void dispose() {
     _videoController?.dispose();
     _chewieController?.dispose();
+    unawaited(_webViewEnvironment?.dispose() ?? Future<void>.value());
     super.dispose();
   }
 
@@ -120,6 +357,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
         SnackBar(content: Text('Серия ${_seasonvarIndex + 1}: ${ep['title'] ?? ''}'), duration: const Duration(seconds: 2)),
       );
       _startMagic();
+      return;
+    }
+
+    if (_filmixEpisodes.isNotEmpty && _filmixIndex + 1 < _filmixEpisodes.length) {
+      _playFilmixEpisode(_filmixIndex + 1);
       return;
     }
     
@@ -266,7 +508,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   // Сжатие YouTube: показывает шторку выбора качества (как обычный перехват)
   void _compressYouTube() {
     final ytUrl = urlController.text;
-    if (!ytUrl.contains('youtube.com/watch')) return;
+    if (!(ytUrl.contains('youtube.com/watch') || ytUrl.contains('youtube.com/shorts/'))) return;
 
     _openCompressedUrl(ytUrl, referer: 'https://www.youtube.com/');
   }
@@ -284,6 +526,60 @@ class _BrowserScreenState extends State<BrowserScreen> {
       SnackBar(content: Text('Запускаю серию ${index + 1}'), duration: const Duration(seconds: 1)),
     );
     _startMagic();
+  }
+
+  String _jsString(String value) {
+    return value.replaceAll('\\', '\\\\').replaceAll("'", r"\'").replaceAll('\n', ' ');
+  }
+
+  void _playFilmixEpisode(int index) async {
+    if (index < 0 || index >= _filmixEpisodes.length) return;
+    if (webViewController == null) return;
+
+    final ep = _filmixEpisodes[index];
+    final season = ep['season'] ?? '';
+    final episode = ep['episode'] ?? '';
+    final title = ep['title'] ?? '';
+
+    setState(() => _filmixIndex = index);
+    _waitingForNextEpisode = true;
+    _interceptedAlready = false;
+    _lastFilmixMediaUrl = '';
+
+    await webViewController!.evaluateJavascript(source: FilmixDom.getInjectionJS());
+    final clickResult = await webViewController!.evaluateJavascript(source: """
+      (function() {
+        var season = '${_jsString(season)}';
+        var episode = '${_jsString(episode)}';
+        var title = '${_jsString(title)}';
+        if (window.__vakhFilmixClickEpisode) {
+          return window.__vakhFilmixClickEpisode(season, episode, title);
+        }
+        return 'helper-missing';
+      })();
+    """);
+
+    final resultText = (clickResult ?? '').toString();
+    if (mounted && (resultText.contains('not-found') || resultText.contains('helper-missing'))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Filmix: не нашёл кнопку серии в iframe ($resultText)'), duration: const Duration(seconds: 3)),
+      );
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Filmix: серия ${index + 1}'), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  void _scanFilmixEpisodes({bool silent = false}) {
+    if (webViewController == null) return;
+    if (!silent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сканирую серии Filmix...'), duration: Duration(seconds: 2)),
+      );
+    }
+    webViewController!.evaluateJavascript(source: FilmixDom.getInjectionJS());
   }
 
   void _openCompressedUrl(String url, {String? referer}) {
@@ -350,6 +646,28 @@ class _BrowserScreenState extends State<BrowserScreen> {
     ''');
   }
 
+  bool get _hasEpisodeList => _seasonvarEpisodes.isNotEmpty || _filmixEpisodes.isNotEmpty;
+
+  List<Map<String, String>> get _activeEpisodes {
+    if (_seasonvarEpisodes.isNotEmpty) return _seasonvarEpisodes;
+    return _filmixEpisodes;
+  }
+
+  int get _activeEpisodeIndex {
+    if (_seasonvarEpisodes.isNotEmpty) return _seasonvarIndex;
+    return _filmixIndex;
+  }
+
+  void _playEpisodeFromActiveList(int index) {
+    if (_seasonvarEpisodes.isNotEmpty) {
+      _playSeasonvarEpisode(index);
+      return;
+    }
+    if (_filmixEpisodes.isNotEmpty) {
+      _playFilmixEpisode(index);
+    }
+  }
+
   void _updateYouTubeState(Uri url) {
     final onYT = url.host.contains('youtube.com');
     if (onYT != _onYouTube) setState(() => _onYouTube = onYT);
@@ -364,6 +682,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _openSite(String siteUrl) {
     setState(() { _showHome = false; _pageLoading = true; });
     _currentRealUrl = siteUrl;
+    _rememberUrl(siteUrl);
     final loadUrl = _liteMode ? ApiService.liteUrl(siteUrl) : siteUrl;
     urlController.text = loadUrl;
     webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
@@ -383,6 +702,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (!Uri.parse(target).hasScheme) target = "https://$target";
     setState(() { _showHome = false; _pageLoading = true; });
     _currentRealUrl = target;
+    _rememberUrl(target);
     final loadUrl = _liteMode ? ApiService.liteUrl(target) : target;
     urlController.text = loadUrl;
     webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
@@ -478,6 +798,43 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       tooltip: 'Обновить',
                       onPressed: () => webViewController?.reload(),
                     ),
+                    PopupMenuButton<String>(
+                      tooltip: 'Недавние ссылки',
+                      icon: const Icon(Icons.history, color: Colors.white),
+                      onSelected: (value) {
+                        if (value == '__clear__') {
+                          _clearRecentLinks();
+                          return;
+                        }
+                        _loadAddress(value);
+                      },
+                      itemBuilder: (_) {
+                        if (_recentLinks.isEmpty) {
+                          return const [
+                            PopupMenuItem<String>(
+                              value: '__empty__',
+                              enabled: false,
+                              child: Text('История пуста'),
+                            ),
+                          ];
+                        }
+                        final items = <PopupMenuEntry<String>>[
+                          ..._recentLinks.take(12).map((link) => PopupMenuItem<String>(
+                                value: link,
+                                child: SizedBox(
+                                  width: 340,
+                                  child: Text(link, overflow: TextOverflow.ellipsis),
+                                ),
+                              )),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem<String>(
+                            value: '__clear__',
+                            child: Text('Очистить историю'),
+                          ),
+                        ];
+                        return items;
+                      },
+                    ),
                     IconButton(
                       icon: const Icon(Icons.home, color: Colors.white),
                       onPressed: () {
@@ -512,14 +869,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       },
                     ),
                     IconButton(
-                      icon: const Icon(Icons.person, color: Colors.orange),
-                      onPressed: () {},
+                      icon: _checkingUpdates
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+                            )
+                          : const Icon(Icons.system_update, color: Colors.orange),
+                      tooltip: 'Проверить обновления',
+                      onPressed: _checkingUpdates ? null : () => _checkForUpdates(silent: false),
                     ),
                     GestureDetector(
                       onTap: _gostConnecting ? null : () async {
                         if (_gostActive) {
                           HysteriaService.stop();
                           setState(() => _gostActive = false);
+                          await _switchWindowsWebViewProxy(useProxy: false, preservePage: true);
                         } else {
                           setState(() => _gostConnecting = true);
                           await HysteriaService.start();
@@ -528,7 +893,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             await Future.delayed(const Duration(seconds: 3));
                             final ok = await HysteriaService.check();
                             if (ok) {
-                              if (mounted) setState(() { _gostActive = true; _gostConnecting = false; });
+                              if (mounted) {
+                                setState(() {
+                                  _gostActive = true;
+                                  _gostConnecting = false;
+                                });
+                                await _switchWindowsWebViewProxy(useProxy: true, preservePage: true);
+                              }
                               return;
                             }
                           }
@@ -626,8 +997,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                Expanded(
                  child: Offstage(
                    offstage: _showPlayer,
-                   child: InAppWebView(
-                  key: webViewKey,
+                   child: Stack(
+                     children: [
+                       InAppWebView(
+                  key: ValueKey('webview_${_webViewInstance}_${_webViewProxyEnabled ? 'proxy' : 'direct'}'),
+                  webViewEnvironment: _webViewEnvironment,
                   initialUrlRequest: URLRequest(url: WebUri("about:blank")),
                   initialSettings: InAppWebViewSettings(
                     useShouldOverrideUrlLoading: true,
@@ -645,6 +1019,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   ),
                   onWebViewCreated: (controller) {
                     webViewController = controller;
+                    final restoreUrl = _webViewRestoreUrl;
+                    _webViewRestoreUrl = null;
+                    if (mounted) {
+                      setState(() {
+                        _webViewReady = true;
+                        _pageLoading = restoreUrl != null && restoreUrl != 'about:blank';
+                      });
+                    }
+                    if (restoreUrl != null && restoreUrl != 'about:blank') {
+                      controller.loadUrl(urlRequest: URLRequest(url: WebUri(restoreUrl)));
+                    }
                     controller.addJavaScriptHandler(
                       handlerName: 'compressUrl',
                       callback: (args) {
@@ -695,6 +1080,94 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         return null;
                       },
                     );
+                    controller.addJavaScriptHandler(
+                      handlerName: 'filmixEpisodes',
+                      callback: (args) {
+                        if (args.isEmpty) return null;
+                        try {
+                          final decoded = jsonDecode(args.first.toString()) as List<dynamic>;
+                          final episodes = decoded.map((e) {
+                            final m = Map<String, dynamic>.from(e as Map);
+                            return <String, String>{
+                              'title': m['title']?.toString() ?? '',
+                              'season': m['season']?.toString() ?? '',
+                              'episode': m['episode']?.toString() ?? '',
+                            };
+                          }).where((e) => (e['title'] ?? '').isNotEmpty).toList();
+                          if (!mounted) return null;
+                          setState(() {
+                            _filmixEpisodes = episodes;
+                            if (_filmixIndex >= _filmixEpisodes.length) _filmixIndex = 0;
+                          });
+                        } catch (_) {}
+                        return null;
+                      },
+                    );
+                    controller.addJavaScriptHandler(
+                      handlerName: 'filmixEpisodeHint',
+                      callback: (args) {
+                        if (args.isEmpty) return null;
+                        try {
+                          final map = Map<String, dynamic>.from(jsonDecode(args.first.toString()) as Map);
+                          final title = map['title']?.toString() ?? '';
+                          final season = map['season']?.toString() ?? '';
+                          final episode = map['episode']?.toString() ?? '';
+                          if (season.isEmpty && episode.isEmpty && title.isEmpty) return null;
+
+                          final hint = <String, String>{
+                            'title': title.isNotEmpty ? title : 'S$season E$episode',
+                            'season': season,
+                            'episode': episode,
+                          };
+                          if (!mounted) return null;
+                          setState(() {
+                            final existingIndex = _filmixEpisodes.indexWhere((e) =>
+                                (e['season'] ?? '') == season &&
+                                (e['episode'] ?? '') == episode &&
+                                season.isNotEmpty &&
+                                episode.isNotEmpty);
+                            if (existingIndex >= 0) {
+                              _filmixIndex = existingIndex;
+                            } else {
+                              _filmixEpisodes = [..._filmixEpisodes, hint];
+                              _filmixIndex = _filmixEpisodes.length - 1;
+                            }
+                          });
+                        } catch (_) {}
+                        return null;
+                      },
+                    );
+                    controller.addJavaScriptHandler(
+                      handlerName: 'filmixMediaUrl',
+                      callback: (args) {
+                        if (args.isEmpty) return null;
+                        final mediaUrl = args.first?.toString().trim() ?? '';
+                        if (mediaUrl.isEmpty) return null;
+                        if (mediaUrl == _lastFilmixMediaUrl) return null;
+                        _lastFilmixMediaUrl = mediaUrl;
+
+                        if (_showPlayer || _isLoading) return null;
+
+                        final canAutostart = _waitingForNextEpisode || (!_showInterceptor && !_interceptedAlready);
+                        if (!canAutostart) return null;
+                        final realUrl = urlController.text.toLowerCase();
+                        final isFilmixDetailsPage = realUrl.contains('/seria/') || realUrl.contains('/film/');
+                        if (!_waitingForNextEpisode && !isFilmixDetailsPage) return null;
+
+                        if (_waitingForNextEpisode) _waitingForNextEpisode = false;
+                        _interceptedAlready = true;
+                        _interceptedUrl = mediaUrl;
+                        _currentReferer = urlController.text;
+                        _selectedQuality = '240p';
+
+                        Future.microtask(() {
+                          if (!mounted) return;
+                          setState(() => _showHome = false);
+                          _startMagic();
+                        });
+                        return null;
+                      },
+                    );
                   },
                   onLoadStart: (controller, url) {
                     if (mounted) setState(() { _pageLoading = true; });
@@ -702,14 +1175,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     if (url != null && !url.toString().contains('seasonvar') && _seasonvarEpisodes.isNotEmpty) {
                       setState(() { _seasonvarEpisodes = []; _seasonvarIndex = 0; });
                     }
+                    if (url != null && !url.toString().contains('filmix') && _filmixEpisodes.isNotEmpty) {
+                      setState(() { _filmixEpisodes = []; _filmixIndex = 0; });
+                    }
                   },
                   onLoadStop: (controller, url) {
                     if (mounted) setState(() { _pageLoading = false; });
                     if (url != null) {
                       if (url.path == '/lite' && url.queryParameters['url'] != null) {
                         urlController.text = url.queryParameters['url']!;
+                        _currentRealUrl = url.queryParameters['url']!;
                       } else {
                         urlController.text = url.toString();
+                        if (url.toString() != 'about:blank') _currentRealUrl = url.toString();
+                      }
+                      if (_currentRealUrl.isNotEmpty && _currentRealUrl != 'about:blank') {
+                        _rememberUrl(_currentRealUrl);
                       }
                       if (url.toString() != 'about:blank' && _showHome) {
                         setState(() => _showHome = false);
@@ -740,10 +1221,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
                        }
 
                        // Filmix: автологин
-                        if (url.host.contains('filmix')) {
+                       if (url.host.contains('filmix')) {
                           controller.evaluateJavascript(source: FilmixAuth.getInjectionScript());
+                          controller.evaluateJavascript(source: FilmixDom.getInjectionJS());
                           Future.delayed(const Duration(milliseconds: 700), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
+                          Future.delayed(const Duration(milliseconds: 900), () => controller.evaluateJavascript(source: FilmixDom.getInjectionJS()));
                           Future.delayed(const Duration(seconds: 2), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
+                          Future.delayed(const Duration(seconds: 2), () => _scanFilmixEpisodes(silent: true));
                           Future.delayed(const Duration(seconds: 4), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
                           Future.delayed(const Duration(seconds: 7), () => controller.evaluateJavascript(source: FilmixAuth.getInjectionScript()));
                         }
@@ -754,7 +1238,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                        }
 
                       // YouTube /watch — fallback: если страница всё-таки открылась, глушим и сразу запускаем 240p
-                      if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
+                      if (url.host.contains('youtube.com') && (url.path.contains('/watch') || url.path.contains('/shorts/')) && !_showInterceptor && !_showPlayer) {
                         controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
                         _selectedQuality = '240p';
                         _openCompressedUrl(url.toString(), referer: 'https://www.youtube.com/');
@@ -767,11 +1251,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     if (url != null) {
                       if (url.path == '/lite' && url.queryParameters['url'] != null) {
                         urlController.text = url.queryParameters['url']!;
+                        _currentRealUrl = url.queryParameters['url']!;
                       } else {
                         urlController.text = url.toString();
+                        if (url.toString() != 'about:blank') _currentRealUrl = url.toString();
+                      }
+                      if (_currentRealUrl.isNotEmpty && _currentRealUrl != 'about:blank') {
+                        _rememberUrl(_currentRealUrl);
                       }
                       _updateYouTubeState(url);
-                      if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
+                      if (url.host.contains('filmix')) {
+                        controller.evaluateJavascript(source: FilmixDom.getInjectionJS());
+                      }
+                      if (url.host.contains('youtube.com') && (url.path.contains('/watch') || url.path.contains('/shorts/')) && !_showInterceptor && !_showPlayer) {
                         controller.evaluateJavascript(source: "document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.pause();});");
                         _selectedQuality = '240p';
                         _openCompressedUrl(url.toString(), referer: 'https://www.youtube.com/');
@@ -796,7 +1288,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     }
                     
                     // YouTube: не грузим страницу — грузим about:blank и показываем шторку
-                    if (url.host.contains('youtube.com') && url.path.contains('/watch') && !_showInterceptor && !_showPlayer) {
+                    if (url.host.contains('youtube.com') && (url.path.contains('/watch') || url.path.contains('/shorts/')) && !_showInterceptor && !_showPlayer) {
                       Future.microtask(() {
                         if (mounted) {
                           _selectedQuality = '240p';
@@ -827,6 +1319,25 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         uri.contains('.avi') || uri.contains('.flv')) {
                       if (!uri.contains('trailer') && !uri.contains('preview') && 
                           !uri.contains('banner') && !uri.contains('ad.mp4') && !uri.contains('promo')) {
+                        isMedia = true;
+                      }
+                    }
+
+                    final isMediaPlatformRelated = uri.contains('filmix') ||
+                        uri.contains('kodik') ||
+                        uri.contains('videocdn') ||
+                        uri.contains('hdrezka') ||
+                        uri.contains('rezka') ||
+                        uri.contains('zona');
+                    if (!isMedia && isMediaPlatformRelated) {
+                      if (uri.contains('manifest') ||
+                          uri.contains('/hls/') ||
+                          uri.contains('master.m3u8') ||
+                          uri.contains('playlist') ||
+                          uri.contains('/stream/') ||
+                          uri.contains('/vod/') ||
+                          uri.contains('/cdn/') ||
+                          uri.contains('/video/')) {
                         isMedia = true;
                       }
                     }
@@ -887,6 +1398,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     return null;
                   },
                 ),
+                       if (!_webViewReady)
+                         Container(
+                           color: Colors.black,
+                           child: const Center(
+                             child: CircularProgressIndicator(color: Colors.orange),
+                           ),
+                         ),
+                     ],
+                   ),
               ),
             ),
           ],
@@ -911,6 +1431,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       children: [
                         _HomeSiteButton(label: 'Seasonvar', icon: Icons.tv, onTap: () => _openSite('https://seasonvar.ru/')),
                         _HomeSiteButton(label: 'Filmix', icon: Icons.movie, onTap: () => _openSite('https://filmix.my/')),
+                        _HomeSiteButton(label: 'HDRezka', icon: Icons.live_tv, onTap: () => _openSite('https://hdrezka.ag/')),
+                        _HomeSiteButton(label: 'Zona', icon: Icons.movie_creation_outlined, onTap: () => _openSite('https://zona.plus/')),
                         _HomeSiteButton(label: 'YouTube', icon: Icons.play_circle, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const YouTubeSearchScreen()))),
                          _HomeSiteButton(label: 'Свой сайт', icon: Icons.add_link, onTap: _showCustomSiteDialog),
                       ],
@@ -920,8 +1442,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
               ),
             ),
 
-           // Эпизоды Seasonvar — кнопки поверх браузера
-          if (_seasonvarEpisodes.isNotEmpty)
+           // Эпизоды Seasonvar/Filmix — кнопки поверх браузера
+          if (_hasEpisodeList)
             Positioned(
               top: 92,
               left: 0,
@@ -933,13 +1455,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      const Text('Серии: ', style: TextStyle(color: Colors.orange, fontSize: 13)),
-                      ...List.generate(_seasonvarEpisodes.length, (index) {
-                        final active = index == _seasonvarIndex;
+                      Text(
+                        _seasonvarEpisodes.isNotEmpty ? 'Seasonvar: ' : 'Filmix: ',
+                        style: const TextStyle(color: Colors.orange, fontSize: 13),
+                      ),
+                      ...List.generate(_activeEpisodes.length, (index) {
+                        final active = index == _activeEpisodeIndex;
+                        final rawTitle = _activeEpisodes[index]['title'] ?? '';
+                        final btnLabel = _seasonvarEpisodes.isNotEmpty ? '${index + 1}' : rawTitle.split(' ').take(2).join(' ');
                         return Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: OutlinedButton(
-                            onPressed: () => _playSeasonvarEpisode(index),
+                            onPressed: () => _playEpisodeFromActiveList(index),
                             style: OutlinedButton.styleFrom(
                               backgroundColor: active ? Colors.orange : Colors.transparent,
                               foregroundColor: active ? Colors.black : Colors.white,
@@ -947,7 +1474,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               minimumSize: Size.zero,
                             ),
-                            child: Text('${index + 1}', style: const TextStyle(fontSize: 12)),
+                            child: Text(btnLabel.isEmpty ? '${index + 1}' : btnLabel, style: const TextStyle(fontSize: 12)),
                           ),
                         );
                       }),
@@ -1085,8 +1612,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                     onPressed: _stopPlayer,
                                   ),
                                   Text(
-                                    _seasonvarEpisodes.isNotEmpty
-                                        ? 'Серия ${_seasonvarIndex + 1} / ${_seasonvarEpisodes.length} · $_selectedQuality'
+                                    _hasEpisodeList
+                                        ? 'Серия ${_activeEpisodeIndex + 1} / ${_activeEpisodes.length} · $_selectedQuality'
                                         : 'Стриминг: $_selectedQuality',
                                     style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
                                   ),
@@ -1114,25 +1641,27 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                   ),
                                 ],
                               ),
-                              if (_seasonvarEpisodes.isNotEmpty)
+                              if (_hasEpisodeList)
                                 SizedBox(
                                   height: 38,
                                   child: ListView.builder(
                                     scrollDirection: Axis.horizontal,
-                                    itemCount: _seasonvarEpisodes.length,
+                                    itemCount: _activeEpisodes.length,
                                     itemBuilder: (context, index) {
-                                      final active = index == _seasonvarIndex;
+                                      final active = index == _activeEpisodeIndex;
                                       return Padding(
                                         padding: const EdgeInsets.only(right: 6),
                                         child: OutlinedButton(
-                                          onPressed: () => _playSeasonvarEpisode(index),
+                                          onPressed: () => _playEpisodeFromActiveList(index),
                                           style: OutlinedButton.styleFrom(
                                             backgroundColor: active ? Colors.orange : Colors.transparent,
                                             foregroundColor: active ? Colors.black : Colors.white,
                                             side: BorderSide(color: active ? Colors.orange : Colors.white38),
                                             padding: const EdgeInsets.symmetric(horizontal: 12),
                                           ),
-                                          child: Text('${index + 1}'),
+                                          child: Text(_seasonvarEpisodes.isNotEmpty
+                                              ? '${index + 1}'
+                                              : (_activeEpisodes[index]['title'] ?? '${index + 1}').split(' ').take(2).join(' ')),
                                         ),
                                       );
                                     },

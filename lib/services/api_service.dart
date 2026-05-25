@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import '../models/preset.dart';
@@ -66,6 +67,25 @@ class ApiService {
   /// Остановить и очистить сессию
   static Future<void> stopSession(String sessionId) async {
     await _client.post(Uri.parse('$_baseUrl/stop/$sessionId'));
+  }
+
+  /// Скачать транскодированный mp4 на диск
+  static Future<void> downloadSessionMp4({
+    required String sessionId,
+    required String outputPath,
+  }) async {
+    final request = http.Request('GET', Uri.parse('$_baseUrl/download/$sessionId'));
+    final response = await _client.send(request);
+    if (response.statusCode != 200) {
+      final body = await response.stream.bytesToString();
+      throw Exception('Ошибка скачивания: ${response.statusCode} $body');
+    }
+
+    final outFile = File(outputPath);
+    await outFile.parent.create(recursive: true);
+    final sink = outFile.openWrite();
+    await response.stream.pipe(sink);
+    await sink.close();
   }
 
   /// Полный URL для HLS плейлиста

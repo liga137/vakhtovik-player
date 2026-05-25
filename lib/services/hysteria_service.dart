@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'dart:convert';
+import 'android_vpn_bridge.dart';
 
 /// Запускает родной Hysteria2 клиент как HTTP-прокси к серверу Финляндии
 class HysteriaService {
@@ -31,6 +31,14 @@ class HysteriaService {
   }
 
   static Future<void> start() async {
+    if (Platform.isAndroid) {
+      _started = await AndroidVpnBridge.start(
+        server: _server,
+        password: _password,
+        localHttpProxyPort: _port,
+      );
+      return;
+    }
     if (!Platform.isWindows) return;
     stop();
     try {
@@ -75,6 +83,9 @@ class HysteriaService {
   }
 
   static void stop() {
+    if (Platform.isAndroid) {
+      AndroidVpnBridge.stop();
+    }
     _process?.kill();
     _process = null;
     _started = false;
@@ -83,7 +94,9 @@ class HysteriaService {
   static Future<bool> check() async {
     try {
       final client = HttpClient();
-      client.findProxy = (uri) => 'PROXY $proxyHost:$proxyPort';
+      if (_started && Platform.isWindows) {
+        client.findProxy = (uri) => 'PROXY $proxyHost:$proxyPort';
+      }
       client.connectionTimeout = const Duration(seconds: 30);
       final req = await client.getUrl(Uri.parse('https://195.226.92.151.nip.io:8008/presets'));
       final resp = await req.close().timeout(const Duration(seconds: 40));
@@ -96,7 +109,7 @@ class HysteriaService {
 
   static HttpClient createProxyClient() {
     final client = HttpClient();
-    if (_started) {
+    if (_started && Platform.isWindows) {
       client.findProxy = (uri) => 'PROXY $proxyHost:$proxyPort';
       client.connectionTimeout = const Duration(seconds: 10);
     }

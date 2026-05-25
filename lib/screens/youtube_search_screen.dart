@@ -18,6 +18,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
   List<YouTubeVideo> _searchResults = const [];
   List<YouTubeVideo> _feed = const [];
   List<YouTubeVideo> _popular = const [];
+  List<YouTubeVideo> _shorts = const [];
   List<Map<String, dynamic>> _subs = const [];
   bool _loading = false;
   bool _starting = false;
@@ -46,6 +47,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
   void initState() {
     super.initState();
     _loadPopular();
+    _loadShorts();
   }
 
   Future<void> _search([String? query]) async {
@@ -83,6 +85,31 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
       if (mounted) setState(() => _popular = items);
     } catch (e) {
       if (mounted) _snack('Ошибка популярного: $e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadShorts() async {
+    setState(() => _loading = true);
+    try {
+      final items = await ApiService.searchYouTube('youtube shorts', limit: 30);
+      final normalized = items.map((v) {
+        if (v.id.isNotEmpty) {
+          return YouTubeVideo(
+            id: v.id,
+            title: v.title,
+            channel: v.channel,
+            duration: v.duration,
+            thumbnail: v.thumbnail,
+            url: 'https://www.youtube.com/shorts/${v.id}',
+          );
+        }
+        return v;
+      }).toList();
+      if (mounted) setState(() => _shorts = normalized);
+    } catch (e) {
+      if (mounted) _snack('Ошибка Shorts: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -147,14 +174,38 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
           if (ticks > 120) {
             timer.cancel();
             if (mounted) setState(() => _googleImporting = false);
-            _snack('Импорт не завершён. Попробуй ещё раз.');
+            _snack('Импорт не завершён. Проверь OAuth Production в Google Console.');
           }
         } catch (_) {}
       });
     } catch (e) {
       if (mounted) setState(() => _googleImporting = false);
-      _snack('Ошибка: $e');
+      _snack('Ошибка: $e. Если видишь "app not verified", переведи OAuth в Production.');
     }
+  }
+
+  void _showOAuthProductionHelp() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Google OAuth Production'),
+        content: const SingleChildScrollView(
+          child: Text(
+            '1. Google Cloud Console → OAuth consent screen → Publish app.\n'
+            '2. Добавь домен сервера в Authorized domains.\n'
+            '3. Проверь Redirect URI сервера (эндпоинт /yt/google/start использует серверный callback).\n'
+            '4. Добавь тестовые/боевые YouTube scope и отправь на верификацию, если требуется.\n'
+            '5. После публикации перепроверь импорт подписок из этого экрана.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Закрыть'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<bool> _ensureLogin() async {
@@ -474,23 +525,63 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
     return _videoGrid(_popular, empty: const Center(child: Text('Загрузка...', style: TextStyle(color: Colors.white70))));
   }
 
+  Widget _shortsTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text('YouTube Shorts', style: TextStyle(color: Colors.white70)),
+              ),
+              FilledButton.icon(
+                onPressed: _loadShorts,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Обновить'),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _videoGrid(
+            _shorts,
+            empty: const Center(child: Text('Shorts пока пусто', style: TextStyle(color: Colors.white70))),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _subsTab() {
     return Column(children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
         child: SizedBox(
           width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: _googleImporting ? null : _importGoogleSubscriptions,
-            icon: _googleImporting
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.cloud_download),
-            label: Text(_googleImporting
-                ? 'Жду вход Google...'
-                : 'Импортировать подписки из Google'),
+          child: Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _googleImporting ? null : _importGoogleSubscriptions,
+                  icon: _googleImporting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.cloud_download),
+                  label: Text(_googleImporting
+                      ? 'Жду вход Google...'
+                      : 'Импортировать подписки из Google'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: _showOAuthProductionHelp,
+                tooltip: 'Как вывести OAuth в Production',
+                icon: const Icon(Icons.info_outline, color: Colors.orange),
+              ),
+            ],
           ),
         ),
       ),
@@ -540,7 +631,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         backgroundColor: const Color(0xFF111111),
         appBar: AppBar(
@@ -552,11 +643,12 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
             Tab(icon: Icon(Icons.home), text: 'Лента'),
             Tab(icon: Icon(Icons.search), text: 'Поиск'),
             Tab(icon: Icon(Icons.trending_up), text: 'Популярное'),
+            Tab(icon: Icon(Icons.smart_display), text: 'Shorts'),
             Tab(icon: Icon(Icons.subscriptions), text: 'Подписки')
           ]),
         ),
         body: Stack(children: [
-          TabBarView(children: [_feedTab(), _searchTab(), _popularTab(), _subsTab()]),
+          TabBarView(children: [_feedTab(), _searchTab(), _popularTab(), _shortsTab(), _subsTab()]),
           if (_starting)
             Container(
               color: Colors.black54,

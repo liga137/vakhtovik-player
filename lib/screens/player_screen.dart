@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'dart:io';
 import '../services/api_service.dart';
 
 /// Экран плеера: мультиплатформенный HLS стриминг
@@ -30,6 +31,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   VideoPlayerController? _controller;
   ChewieController? _chewieController;
   bool _isInitialized = false;
+  bool _isDownloading = false;
 
   @override
   void initState() {
@@ -91,6 +93,46 @@ class _PlayerScreenState extends State<PlayerScreen> {
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 
+  Future<Directory> _resolveDownloadDirectory() async {
+    if (Platform.isWindows) {
+      final userProfile = Platform.environment['USERPROFILE'];
+      if (userProfile != null && userProfile.isNotEmpty) {
+        final d = Directory('$userProfile\\Downloads');
+        if (await d.exists()) return d;
+      }
+    }
+    if (Platform.isAndroid) {
+      final d = Directory('/storage/emulated/0/Download');
+      if (await d.exists()) return d;
+    }
+    return Directory.systemTemp;
+  }
+
+  Future<void> _downloadCurrentSession() async {
+    if (_isDownloading) return;
+    setState(() => _isDownloading = true);
+    try {
+      final dir = await _resolveDownloadDirectory();
+      final filename = 'vakhtovik_${widget.sessionId}_${widget.quality}.mp4';
+      final outputPath = '${dir.path}${Platform.pathSeparator}$filename';
+      await ApiService.downloadSessionMp4(
+        sessionId: widget.sessionId,
+        outputPath: outputPath,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Скачано: $outputPath'), duration: const Duration(seconds: 4)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка скачивания: $e'), duration: const Duration(seconds: 4)),
+      );
+    } finally {
+      if (mounted) setState(() => _isDownloading = false);
+    }
+  }
+
   @override
   void dispose() {
     ApiService.stopSession(widget.sessionId).catchError((_) {});
@@ -122,6 +164,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 PopupMenuItem(value: '480p', child: Text('480p')),
               ],
             ),
+          IconButton(
+            icon: _isDownloading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange),
+                  )
+                : const Icon(Icons.download),
+            tooltip: 'Скачать mp4',
+            onPressed: _isDownloading ? null : _downloadCurrentSession,
+          ),
           IconButton(
             icon: const Icon(Icons.stop),
             tooltip: 'Остановить транскодирование',
