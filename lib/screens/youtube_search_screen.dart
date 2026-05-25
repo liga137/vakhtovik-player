@@ -22,7 +22,11 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   List<YouTubeVideo> _popular = const [];
   List<YouTubeVideo> _shorts = const [];
   List<Map<String, dynamic>> _subs = const [];
-  bool _loading = false;
+  bool _loadingSearch = false;
+  bool _loadingFeed = false;
+  bool _loadingPopular = false;
+  bool _loadingShorts = false;
+  bool _loadingSubs = false;
   bool _starting = false;
   bool _googleImporting = false;
   Timer? _googlePollTimer;
@@ -69,7 +73,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   void _ensureFeedLoadedIfPossible() {
     if (!ApiService.isYouTubeLoggedIn) return;
     if (_feed.isNotEmpty || _feedAutoRequested) return;
-    if (_loading) {
+    if (_loadingFeed) {
       Future.delayed(const Duration(milliseconds: 700), () {
         if (mounted) _ensureFeedLoadedIfPossible();
       });
@@ -86,45 +90,48 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   Future<void> _search([String? query]) async {
     if (query != null) _searchController.text = query;
     final q = _searchController.text.trim();
-    if (q.isEmpty || _loading) return;
-    setState(() => _loading = true);
+    if (q.isEmpty || _loadingSearch) return;
+    setState(() => _loadingSearch = true);
     try {
       final items = await ApiService.searchYouTube(q, limit: 12);
       if (mounted) setState(() => _searchResults = items);
     } catch (e) {
       if (mounted) _snack('Ошибка поиска: $e');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _loadingSearch = false);
     }
   }
 
   Future<void> _loadFeed() async {
+    if (_loadingFeed) return;
     if (!await _ensureLogin()) return;
-    setState(() => _loading = true);
+    setState(() => _loadingFeed = true);
     try {
       final items = await ApiService.youtubeFeed(limit: 40);
       if (mounted) setState(() => _feed = items);
     } catch (e) {
       if (mounted) _snack('Ошибка ленты: $e');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _loadingFeed = false);
     }
   }
 
   Future<void> _loadPopular() async {
-    setState(() => _loading = true);
+    if (_loadingPopular) return;
+    setState(() => _loadingPopular = true);
     try {
       final items = await ApiService.youtubePopular(limit: 24);
       if (mounted) setState(() => _popular = items);
     } catch (e) {
       if (mounted) _snack('Ошибка популярного: $e');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _loadingPopular = false);
     }
   }
 
   Future<void> _loadShorts() async {
-    setState(() => _loading = true);
+    if (_loadingShorts) return;
+    setState(() => _loadingShorts = true);
     try {
       final items = await ApiService.searchYouTube('youtube shorts', limit: 30);
       final normalized = items.map((v) {
@@ -144,20 +151,21 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     } catch (e) {
       if (mounted) _snack('Ошибка Shorts: $e');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _loadingShorts = false);
     }
   }
 
   Future<void> _loadSubs() async {
+    if (_loadingSubs) return;
     if (!await _ensureLogin()) return;
-    setState(() => _loading = true);
+    setState(() => _loadingSubs = true);
     try {
       final items = await ApiService.youtubeSubscriptions();
       if (mounted) setState(() => _subs = items);
     } catch (e) {
       if (mounted) _snack('Ошибка подписок: $e');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _loadingSubs = false);
     }
   }
 
@@ -435,8 +443,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     );
   }
 
-  Widget _videoGrid(List<YouTubeVideo> items, {Widget? empty}) {
-    if (_loading) {
+  Widget _videoGrid(List<YouTubeVideo> items, {Widget? empty, bool loading = false}) {
+    if (loading) {
       return const Center(
           child: CircularProgressIndicator(color: Colors.orange));
     }
@@ -448,11 +456,11 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     return LayoutBuilder(builder: (context, constraints) {
       final width = constraints.maxWidth;
       var crossAxisCount = 1;
-      if (width >= 1540) {
+      if (width >= 1280) {
         crossAxisCount = 4;
-      } else if (width >= 1120) {
+      } else if (width >= 960) {
         crossAxisCount = 3;
-      } else if (width >= 680) {
+      } else if (width >= 620) {
         crossAxisCount = 2;
       }
       final aspectRatio = crossAxisCount >= 4
@@ -524,7 +532,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   }
 
   Widget _feedTab() {
-    if (ApiService.isYouTubeLoggedIn && _feed.isEmpty && !_loading) {
+    if (ApiService.isYouTubeLoggedIn && _feed.isEmpty && !_loadingFeed) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _tabController.index == 0) {
           _ensureFeedLoadedIfPossible();
@@ -548,6 +556,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
           ])),
       Expanded(
           child: _videoGrid(_feed,
+              loading: _loadingFeed,
               empty: Center(
                   child: Text(
                       ApiService.isYouTubeLoggedIn
@@ -576,12 +585,12 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12))),
           )),
-      Expanded(child: _videoGrid(_searchResults, empty: _emptySearch())),
+      Expanded(child: _videoGrid(_searchResults, loading: _loadingSearch, empty: _emptySearch())),
     ]);
   }
 
   Widget _popularTab() {
-    return _videoGrid(_popular, empty: const Center(child: Text('Загрузка...', style: TextStyle(color: Colors.white70))));
+    return _videoGrid(_popular, loading: _loadingPopular, empty: const Center(child: Text('Загрузка...', style: TextStyle(color: Colors.white70))));
   }
 
   Widget _shortsTab() {
@@ -605,6 +614,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
         Expanded(
           child: _videoGrid(
             _shorts,
+            loading: _loadingShorts,
             empty: const Center(child: Text('Shorts пока пусто', style: TextStyle(color: Colors.white70))),
           ),
         ),
@@ -662,7 +672,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
                 icon: const Icon(Icons.refresh, color: Colors.white)),
           ])),
       Expanded(
-          child: _loading
+          child: _loadingSubs
               ? const Center(
                   child: CircularProgressIndicator(color: Colors.orange))
               : _subs.isEmpty

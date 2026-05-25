@@ -16,33 +16,48 @@ class YouTubeVideo {
   });
 
   factory YouTubeVideo.fromJson(Map<String, dynamic> json) {
-    final id = _firstNonEmpty([
+    final id = _cleanText(_firstNonEmpty([
       _readString(json, 'id'),
       _readString(json, 'video_id'),
       _readString(json, 'videoId'),
       _readString(json, 'ytid'),
-    ]);
-    final title = _firstNonEmpty([
+      _readNestedString(json, 'entry', 'id'),
+    ]));
+    final rawTitle = _firstNonEmpty([
       _readString(json, 'title'),
       _readString(json, 'name'),
       _readString(json, 'video_title'),
+      _readString(json, 'fulltitle'),
+      _readString(json, 'original_title'),
+      _readNestedString(json, 'videoDetails', 'title'),
+      _readNestedString(json, 'entry', 'title'),
       _readNestedString(json, 'snippet', 'title'),
     ]);
-    final channel = _firstNonEmpty([
+    final channel = _cleanText(_firstNonEmpty([
       _readString(json, 'channel'),
       _readString(json, 'author'),
       _readString(json, 'uploader'),
+      _readString(json, 'channel_name'),
       _readNestedString(json, 'snippet', 'channelTitle'),
-    ]);
+      _readNestedString(json, 'entry', 'author'),
+    ]));
     final thumbnail = _extractThumbnail(json);
-    final url = _firstNonEmpty([
+    final url = _cleanText(_firstNonEmpty([
       _readString(json, 'url'),
       id.isNotEmpty ? 'https://www.youtube.com/watch?v=$id' : '',
-    ]);
+    ]));
+    final normalizedId = id.isNotEmpty ? id : _extractVideoIdFromUrl(url);
+    final title = _cleanText(rawTitle);
 
     return YouTubeVideo(
-      id: id,
-      title: title.isNotEmpty ? title : 'Без названия',
+      id: normalizedId,
+      title: title.isNotEmpty
+          ? title
+          : _fallbackTitle(
+              id: normalizedId,
+              channel: channel,
+              url: url,
+            ),
       channel: channel,
       duration: _toInt(json['duration']),
       thumbnail: thumbnail,
@@ -72,10 +87,49 @@ class YouTubeVideo {
 
   static String _firstNonEmpty(List<String> values) {
     for (final v in values) {
-      final t = v.trim();
+      final t = _cleanText(v);
       if (t.isNotEmpty) return t;
     }
     return '';
+  }
+
+  static String _cleanText(String input) {
+    final t = input.trim();
+    if (t.isEmpty) return '';
+    final bad = t.toLowerCase();
+    if (bad == 'null' || bad == 'none' || bad == 'undefined' || bad == 'nan') {
+      return '';
+    }
+    if (t == '{}' || t == '[]') return '';
+    return t;
+  }
+
+  static String _extractVideoIdFromUrl(String url) {
+    if (url.isEmpty) return '';
+    final uri = Uri.tryParse(url);
+    if (uri == null) return '';
+    final v = (uri.queryParameters['v'] ?? '').trim();
+    if (v.isNotEmpty) return v;
+    final parts = uri.pathSegments;
+    if (parts.length >= 2 && parts.first == 'shorts') return parts[1].trim();
+    if (parts.isNotEmpty && parts.first == 'watch') return (uri.queryParameters['v'] ?? '').trim();
+    return '';
+  }
+
+  static String _fallbackTitle({
+    required String id,
+    required String channel,
+    required String url,
+  }) {
+    if (channel.isNotEmpty && id.isNotEmpty) return '$channel · $id';
+    if (id.isNotEmpty) return 'Видео $id';
+    if (url.isNotEmpty) {
+      final uri = Uri.tryParse(url);
+      if (uri != null && uri.host.isNotEmpty) {
+        return 'Видео с ${uri.host}';
+      }
+    }
+    return 'Без названия';
   }
 
   static String _extractThumbnail(Map<String, dynamic> json) {

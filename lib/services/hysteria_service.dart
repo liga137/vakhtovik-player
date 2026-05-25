@@ -14,6 +14,7 @@ class HysteriaService {
   static const _exeName = 'hysteria.exe';
   static const _probeApiUrl = 'https://195.226.92.151.nip.io:8008/presets';
   static const _probeWebUrl = 'https://seasonvar.ru/';
+  static const _probeWebFallbackUrl = 'https://www.youtube.com/';
 
   static bool get isRunning => _started && _process != null;
   static String get proxyHost => '127.0.0.1';
@@ -97,7 +98,8 @@ class HysteriaService {
 
   static Future<bool> check() async {
     if (!_started) return false;
-    return _probe(_probeApiUrl, throughProxy: true, timeout: const Duration(seconds: 40));
+    final code = await _probeStatus(_probeApiUrl, throughProxy: true, timeout: const Duration(seconds: 40));
+    return code == 200;
   }
 
   static HttpClient createProxyClient() {
@@ -111,25 +113,50 @@ class HysteriaService {
 
   static Future<bool> checkWebProxy() async {
     if (!_started) return false;
-    final apiOk = await _probe(_probeApiUrl, throughProxy: true, timeout: const Duration(seconds: 40));
+    final apiCode = await _probeStatus(_probeApiUrl, throughProxy: true, timeout: const Duration(seconds: 40));
+    final apiOk = apiCode == 200;
     if (!apiOk) return false;
-    final webOk = await _probe(_probeWebUrl, throughProxy: true, timeout: const Duration(seconds: 40));
-    return webOk;
+    final primaryCode =
+        await _probeStatus(_probeWebUrl, throughProxy: true, timeout: const Duration(seconds: 40));
+    if (_isSuccessWebStatus(primaryCode)) return true;
+
+    // Резервный тест: иногда сезонвар режет датацентр, но прокси в целом рабочий.
+    final fallbackCode =
+        await _probeStatus(_probeWebFallbackUrl, throughProxy: true, timeout: const Duration(seconds: 40));
+    return _isSuccessWebStatus(fallbackCode);
+  }
+
+  static Future<bool> checkUrlViaProxy(String url) async {
+    if (!_started || !Platform.isWindows) return false;
+    final code = await _probeStatus(url, throughProxy: true, timeout: const Duration(seconds: 40));
+    return _isSuccessWebStatus(code);
   }
 
   static Future<bool> _waitUntilProxyReady() async {
     for (var i = 0; i < 30; i++) {
       await Future.delayed(const Duration(seconds: 2));
       if (_process == null) return false;
-      final apiOk = await _probe(_probeApiUrl, throughProxy: true, timeout: const Duration(seconds: 15));
+      final apiCode = await _probeStatus(_probeApiUrl, throughProxy: true, timeout: const Duration(seconds: 15));
+      final apiOk = apiCode == 200;
       if (!apiOk) continue;
-      final webOk = await _probe(_probeWebUrl, throughProxy: true, timeout: const Duration(seconds: 20));
+      final webCode = await _probeStatus(_probeWebUrl, throughProxy: true, timeout: const Duration(seconds: 20));
+      final webOk = _isSuccessWebStatus(webCode);
       if (webOk) return true;
+      final fallbackWebCode =
+          await _probeStatus(_probeWebFallbackUrl, throughProxy: true, timeout: const Duration(seconds: 20));
+      if (_isSuccessWebStatus(fallbackWebCode)) return true;
     }
     return false;
   }
 
-  static Future<bool> _probe(String target, {required bool throughProxy, required Duration timeout}) async {
+  static bool _isSuccessWebStatus(int? code) {
+    if (code == null) return false;
+    // Разрешаем 2xx/3xx/401/403: сайт ответил, значит туннель жив.
+    if (code >= 200 && code <= 399) return true;
+    return code == 401 || code == 403;
+  }
+
+  static Future<int?> _probeStatus(String target, {required bool throughProxy, required Duration timeout}) async {
     final client = HttpClient();
     client.connectionTimeout = timeout;
     client.badCertificateCallback = (_, __, ___) => true;
@@ -139,10 +166,9 @@ class HysteriaService {
     try {
       final req = await client.getUrl(Uri.parse(target));
       final resp = await req.close().timeout(timeout);
-      // Любой HTTP-ответ подтверждает, что соединение состоялось (даже 403/404).
-      return resp.statusCode >= 100 && resp.statusCode <= 599;
+      return resp.statusCode;
     } catch (_) {
-      return false;
+      return null;
     } finally {
       client.close(force: true);
     }

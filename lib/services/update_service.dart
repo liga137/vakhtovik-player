@@ -36,7 +36,13 @@ class UpdateService {
     final pkg = await PackageInfo.fromPlatform();
     final current = pkg.version;
     final map = await _fetchLatestRelease();
-    final rawTag = map != null ? (map['tag_name'] ?? '').toString().trim() : await _fetchLatestTag();
+    var rawTag = map != null ? (map['tag_name'] ?? '').toString().trim() : '';
+    if (rawTag.isEmpty) {
+      rawTag = await _fetchLatestTag();
+    }
+    if (rawTag.isEmpty) {
+      rawTag = current;
+    }
     final latest = _normalizeVersion(rawTag);
     final currentNorm = _normalizeVersion(current);
     final hasUpdate = _compareVersion(currentNorm, latest) < 0;
@@ -79,7 +85,7 @@ class UpdateService {
     if (latestResp.statusCode == 200) {
       return jsonDecode(latestResp.body) as Map<String, dynamic>;
     }
-    if (latestResp.statusCode != 404) {
+    if (latestResp.statusCode != 404 && latestResp.statusCode != 403) {
       throw Exception('GitHub API releases/latest: ${latestResp.statusCode}');
     }
 
@@ -91,7 +97,7 @@ class UpdateService {
       }
       return null;
     }
-    if (releasesResp.statusCode == 404) return null;
+    if (releasesResp.statusCode == 404 || releasesResp.statusCode == 403) return null;
     throw Exception('GitHub API releases: ${releasesResp.statusCode}');
   }
 
@@ -100,6 +106,9 @@ class UpdateService {
       Uri.parse(_repoTagsUrl),
       headers: {'Accept': 'application/vnd.github+json', 'User-Agent': 'vakhtovik-player'},
     );
+    if (resp.statusCode == 404 || resp.statusCode == 403) {
+      return '';
+    }
     if (resp.statusCode != 200) {
       throw Exception('GitHub API tags: ${resp.statusCode}');
     }

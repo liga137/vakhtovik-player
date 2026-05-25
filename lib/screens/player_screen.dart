@@ -52,6 +52,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       autoPlay: true,
       looping: false,
       aspectRatio: ar,
+      isLive: widget.duration <= 0,
       allowFullScreen: true,
       allowMuting: true,
       showControls: true,
@@ -194,7 +195,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   Positioned(
                     left: 12,
                     right: 12,
-                    bottom: 10,
+                    top: 10,
                     child: IgnorePointer(
                       child: _PlaybackStatusOverlay(
                         controller: _controller!,
@@ -309,7 +310,7 @@ class _PlaybackStatusOverlayState extends State<_PlaybackStatusOverlay> {
               const Icon(Icons.schedule, color: Colors.orange, size: 14),
               const SizedBox(width: 6),
               Text(
-                '${_fmt(position)} / ${totalMs > 0 ? _fmt(duration) : '--:--'}',
+                '${_fmt(position)} / ${totalMs > 0 ? _fmt(duration) : 'длит. не определена'}',
                 style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
               ),
               const Spacer(),

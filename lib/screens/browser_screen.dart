@@ -68,9 +68,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
   List<Map<String, String>> _seasonvarSeasons = [];
   List<Map<String, String>> _filmixEpisodes = [];
   int _filmixIndex = 0;
+  List<Map<String, String>> _filmixTranslations = [];
+  String _filmixTranslationId = '';
+  List<Map<String, String>> _filmixSeasons = [];
+  String _filmixSeasonId = '';
   String _lastFilmixMediaUrl = '';
   List<String> _recentLinks = [];
   bool _checkingUpdates = false;
+  bool _proxyRecovering = false;
 
   @override
   void initState() {
@@ -94,6 +99,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
         }
       }
     });
+  }
+
+  String _proxyCheckTargetUrl() {
+    final current = _realUrlFromAddress().trim();
+    if (current.startsWith('http://') || current.startsWith('https://')) {
+      return current;
+    }
+    return 'https://seasonvar.ru/';
   }
 
   Future<void> _initWindowsWebViewEnvironment() async {
@@ -121,9 +134,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
     final profileDir = useProxy ? 'proxy' : 'direct';
     final proxyArg =
-        '--proxy-server=${HysteriaService.proxyHost}:${HysteriaService.proxyPort} '
+        '--proxy-server="http://${HysteriaService.proxyHost}:${HysteriaService.proxyPort}" '
         '--proxy-bypass-list=<-loopback> '
-        '--disable-quic';
+        '--disable-quic '
+        '--disable-features=UseDnsHttpsSvcb,AsyncDns';
 
     return WebViewEnvironment.create(
       settings: WebViewEnvironmentSettings(
@@ -193,6 +207,73 @@ class _BrowserScreenState extends State<BrowserScreen> {
         SnackBar(content: Text('Ошибка WebView2 proxy: $e'), duration: const Duration(seconds: 4)),
       );
     }
+  }
+
+  Future<void> _recoverProxyIfNeeded({Uri? failedUrl, String reason = ''}) async {
+    if (!Platform.isWindows) return;
+    if (!_webViewProxyEnabled || !_gostActive) return;
+    if (_proxyRecovering) return;
+
+    final url = (failedUrl?.toString() ?? '').trim();
+    final target = (url.startsWith('http://') || url.startsWith('https://'))
+        ? url
+        : _proxyCheckTargetUrl();
+    if (!(target.startsWith('http://') || target.startsWith('https://'))) return;
+
+    _proxyRecovering = true;
+    try {
+      final ok = await HysteriaService.checkUrlViaProxy(target);
+      if (ok) return;
+
+      HysteriaService.stop();
+      if (!mounted) return;
+      setState(() {
+        _gostActive = false;
+        _gostConnecting = false;
+      });
+      await _switchWindowsWebViewProxy(useProxy: false, preservePage: true);
+      if (!mounted) return;
+
+      final host = Uri.tryParse(target)?.host ?? target;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Встроенный VPN не открыл $host. Переключил браузер в прямой режим.',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } finally {
+      _proxyRecovering = false;
+    }
+  }
+
+  bool _isRecoverableWebError(String rawDescription) {
+    final d = rawDescription.toUpperCase();
+    if (d.isEmpty) return false;
+    return d.contains('ERR_PROXY_CONNECTION_FAILED') ||
+        d.contains('ERR_TUNNEL_CONNECTION_FAILED') ||
+        d.contains('ERR_CONNECTION_TIMED_OUT') ||
+        d.contains('ERR_CONNECTION_RESET') ||
+        d.contains('ERR_CONNECTION_CLOSED') ||
+        d.contains('ERR_CONNECTION_ABORTED') ||
+        d.contains('ERR_NAME_NOT_RESOLVED') ||
+        d.contains('ERR_INTERNET_DISCONNECTED') ||
+        d.contains('ERR_NETWORK_CHANGED');
+  }
+
+  bool _isRecoverableHttpCode(int code) {
+    return code == 407 ||
+        code == 429 ||
+        code == 500 ||
+        code == 502 ||
+        code == 503 ||
+        code == 504 ||
+        code == 520 ||
+        code == 521 ||
+        code == 522 ||
+        code == 523 ||
+        code == 524;
   }
 
   Future<void> _loadPresets() async {
@@ -366,9 +447,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
       return;
     }
 
-    if (_filmixEpisodes.isNotEmpty && _filmixIndex + 1 < _filmixEpisodes.length) {
-      _playFilmixEpisode(_filmixIndex + 1);
-      return;
+    if (_filmixEpisodes.isNotEmpty) {
+      final nextIndex = _nextFilmixEpisodeGlobalIndex();
+      if (nextIndex >= 0) {
+        _playFilmixEpisode(nextIndex);
+        return;
+      }
     }
     
     // Ставим флаг: следующие перехваченные URL обрабатываем автоматически
@@ -538,6 +622,80 @@ class _BrowserScreenState extends State<BrowserScreen> {
     return value.replaceAll('\\', '\\\\').replaceAll("'", r"\'").replaceAll('\n', ' ');
   }
 
+  bool _sameFilmixEpisode(Map<String, String> a, Map<String, String> b) {
+    return (a['season'] ?? '') == (b['season'] ?? '') &&
+        (a['episode'] ?? '') == (b['episode'] ?? '') &&
+        (a['translation'] ?? '') == (b['translation'] ?? '') &&
+        (a['title'] ?? '') == (b['title'] ?? '');
+  }
+
+  List<Map<String, String>> _filteredFilmixEpisodes() {
+    if (_filmixEpisodes.isEmpty) return const [];
+    final filtered = _filmixEpisodes.where((e) {
+      final season = (e['season'] ?? '').trim();
+      final tr = (e['translation'] ?? '').trim();
+      final seasonOk = _filmixSeasonId.isEmpty || _filmixSeasonId == season;
+      final trOk = _filmixTranslationId.isEmpty || _filmixTranslationId == tr;
+      return seasonOk && trOk;
+    }).toList();
+    return filtered.isEmpty ? _filmixEpisodes : filtered;
+  }
+
+  int _findFilmixGlobalIndexByEpisode(Map<String, String> target) {
+    final idx = _filmixEpisodes.indexWhere((e) => _sameFilmixEpisode(e, target));
+    if (idx >= 0) return idx;
+    return _filmixEpisodes.indexWhere((e) =>
+        (e['season'] ?? '') == (target['season'] ?? '') &&
+        (e['episode'] ?? '') == (target['episode'] ?? ''));
+  }
+
+  int _nextFilmixEpisodeGlobalIndex() {
+    final filtered = _filteredFilmixEpisodes();
+    if (filtered.isEmpty) return -1;
+
+    Map<String, String>? current;
+    if (_filmixIndex >= 0 && _filmixIndex < _filmixEpisodes.length) {
+      current = _filmixEpisodes[_filmixIndex];
+    }
+
+    var filteredIndex = -1;
+    final cur = current;
+    if (cur != null) {
+      filteredIndex = filtered.indexWhere((e) => _sameFilmixEpisode(e, cur));
+      if (filteredIndex < 0) {
+        filteredIndex = filtered.indexWhere((e) =>
+            (e['season'] ?? '') == (cur['season'] ?? '') &&
+            (e['episode'] ?? '') == (cur['episode'] ?? ''));
+      }
+    }
+
+    final nextFiltered = filteredIndex + 1;
+    if (nextFiltered < 0 || nextFiltered >= filtered.length) return -1;
+    return _findFilmixGlobalIndexByEpisode(filtered[nextFiltered]);
+  }
+
+  Future<void> _selectFilmixTranslation(String translationId) async {
+    if (translationId.trim().isEmpty || webViewController == null) return;
+    await webViewController!.evaluateJavascript(source: FilmixDom.getInjectionJS());
+    if (!mounted) return;
+    setState(() {
+      _filmixTranslationId = translationId.trim();
+      _filmixIndex = 0;
+    });
+    _scanFilmixEpisodes(silent: true);
+  }
+
+  Future<void> _selectFilmixSeason(String seasonId) async {
+    if (seasonId.trim().isEmpty || webViewController == null) return;
+    await webViewController!.evaluateJavascript(source: FilmixDom.getInjectionJS());
+    if (!mounted) return;
+    setState(() {
+      _filmixSeasonId = seasonId.trim();
+      _filmixIndex = 0;
+    });
+    _scanFilmixEpisodes(silent: true);
+  }
+
   void _playFilmixEpisode(int index) async {
     if (index < 0 || index >= _filmixEpisodes.length) return;
     if (webViewController == null) return;
@@ -546,6 +704,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final season = ep['season'] ?? '';
     final episode = ep['episode'] ?? '';
     final title = ep['title'] ?? '';
+    final translation = ep['translation'] ?? '';
 
     setState(() => _filmixIndex = index);
     _waitingForNextEpisode = true;
@@ -558,8 +717,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
         var season = '${_jsString(season)}';
         var episode = '${_jsString(episode)}';
         var title = '${_jsString(title)}';
+        var translation = '${_jsString(translation)}';
         if (window.__vakhFilmixClickEpisode) {
-          return window.__vakhFilmixClickEpisode(season, episode, title);
+          return window.__vakhFilmixClickEpisode(season, episode, title, translation);
         }
         return 'helper-missing';
       })();
@@ -574,7 +734,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Filmix: серия ${index + 1}'), duration: const Duration(seconds: 2)),
+      SnackBar(
+        content: Text(
+          'Filmix: S${season.isNotEmpty ? season : "?"} E${episode.isNotEmpty ? episode : "?"}${translation.isNotEmpty ? " [$translation]" : ""}',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 
@@ -835,16 +1000,27 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _seasonvarEpisodes.isNotEmpty ||
       _seasonvarTranslations.isNotEmpty ||
       _seasonvarSeasons.isNotEmpty ||
-      _filmixEpisodes.isNotEmpty;
+      _filmixEpisodes.isNotEmpty ||
+      _filmixTranslations.isNotEmpty ||
+      _filmixSeasons.isNotEmpty;
 
   List<Map<String, String>> get _activeEpisodes {
     if (_seasonvarEpisodes.isNotEmpty) return _seasonvarEpisodes;
-    return _filmixEpisodes;
+    return _filteredFilmixEpisodes();
   }
 
   int get _activeEpisodeIndex {
     if (_seasonvarEpisodes.isNotEmpty) return _seasonvarIndex;
-    return _filmixIndex;
+    final active = _filteredFilmixEpisodes();
+    if (active.isEmpty) return 0;
+    if (_filmixIndex < 0 || _filmixIndex >= _filmixEpisodes.length) return 0;
+    final current = _filmixEpisodes[_filmixIndex];
+    final idx = active.indexWhere((e) => _sameFilmixEpisode(e, current));
+    if (idx >= 0) return idx;
+    final fallback = active.indexWhere((e) =>
+        (e['season'] ?? '') == (current['season'] ?? '') &&
+        (e['episode'] ?? '') == (current['episode'] ?? ''));
+    return fallback >= 0 ? fallback : 0;
   }
 
   void _playEpisodeFromActiveList(int index) {
@@ -853,7 +1029,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
       return;
     }
     if (_filmixEpisodes.isNotEmpty) {
-      _playFilmixEpisode(index);
+      final active = _filteredFilmixEpisodes();
+      if (index < 0 || index >= active.length) return;
+      final globalIndex = _findFilmixGlobalIndexByEpisode(active[index]);
+      if (globalIndex >= 0) _playFilmixEpisode(globalIndex);
     }
   }
 
@@ -1392,12 +1571,68 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               'title': m['title']?.toString() ?? '',
                               'season': m['season']?.toString() ?? '',
                               'episode': m['episode']?.toString() ?? '',
+                              'translation': m['translation']?.toString() ?? '',
                             };
                           }).where((e) => (e['title'] ?? '').isNotEmpty).toList();
                           if (!mounted) return null;
+                          final current = (_filmixIndex >= 0 && _filmixIndex < _filmixEpisodes.length)
+                              ? _filmixEpisodes[_filmixIndex]
+                              : null;
                           setState(() {
                             _filmixEpisodes = episodes;
-                            if (_filmixIndex >= _filmixEpisodes.length) _filmixIndex = 0;
+                            if (current == null || _filmixEpisodes.isEmpty) {
+                              _filmixIndex = 0;
+                            } else {
+                              final idx = _findFilmixGlobalIndexByEpisode(current);
+                              _filmixIndex = idx >= 0 ? idx : 0;
+                            }
+                          });
+                        } catch (_) {}
+                        return null;
+                      },
+                    );
+                    controller.addJavaScriptHandler(
+                      handlerName: 'filmixMeta',
+                      callback: (args) {
+                        if (args.isEmpty) return null;
+                        try {
+                          final map = Map<String, dynamic>.from(jsonDecode(args.first.toString()) as Map);
+                          final translations = (map['translations'] as List<dynamic>? ?? const [])
+                              .whereType<Map>()
+                              .map((raw) {
+                                final m = Map<String, dynamic>.from(raw);
+                                final id = (m['id'] ?? m['name'] ?? '').toString().trim();
+                                final name = (m['name'] ?? id).toString().trim();
+                                return <String, String>{'id': id, 'name': name};
+                              })
+                              .where((e) => (e['id'] ?? '').isNotEmpty)
+                              .toList();
+                          final seasons = (map['seasons'] as List<dynamic>? ?? const [])
+                              .whereType<Map>()
+                              .map((raw) {
+                                final m = Map<String, dynamic>.from(raw);
+                                final id = (m['id'] ?? '').toString().trim();
+                                final name = (m['name'] ?? ('Сезон $id')).toString().trim();
+                                return <String, String>{'id': id, 'name': name};
+                              })
+                              .where((e) => (e['id'] ?? '').isNotEmpty)
+                              .toList();
+                          final activeTranslation = (map['activeTranslation'] ?? '').toString().trim();
+                          final activeSeason = (map['activeSeason'] ?? '').toString().trim();
+                          if (!mounted) return null;
+                          setState(() {
+                            _filmixTranslations = translations;
+                            _filmixSeasons = seasons;
+                            final hasCurrentTranslation = _filmixTranslationId.isNotEmpty &&
+                                _filmixTranslations.any((e) => (e['id'] ?? '') == _filmixTranslationId);
+                            if (activeTranslation.isNotEmpty && !hasCurrentTranslation) {
+                              _filmixTranslationId = activeTranslation;
+                            }
+                            final hasCurrentSeason = _filmixSeasonId.isNotEmpty &&
+                                _filmixSeasons.any((e) => (e['id'] ?? '') == _filmixSeasonId);
+                            if (activeSeason.isNotEmpty && !hasCurrentSeason) {
+                              _filmixSeasonId = activeSeason;
+                            }
                           });
                         } catch (_) {}
                         return null;
@@ -1412,18 +1647,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           final title = map['title']?.toString() ?? '';
                           final season = map['season']?.toString() ?? '';
                           final episode = map['episode']?.toString() ?? '';
-                          if (season.isEmpty && episode.isEmpty && title.isEmpty) return null;
+                          final translation = map['translation']?.toString() ?? '';
+                          if (season.isEmpty && episode.isEmpty && title.isEmpty && translation.isEmpty) return null;
 
                           final hint = <String, String>{
                             'title': title.isNotEmpty ? title : 'S$season E$episode',
                             'season': season,
                             'episode': episode,
+                            'translation': translation,
                           };
                           if (!mounted) return null;
                           setState(() {
                             final existingIndex = _filmixEpisodes.indexWhere((e) =>
                                 (e['season'] ?? '') == season &&
                                 (e['episode'] ?? '') == episode &&
+                                (e['translation'] ?? '') == translation &&
                                 season.isNotEmpty &&
                                 episode.isNotEmpty);
                             if (existingIndex >= 0) {
@@ -1432,8 +1670,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               _filmixEpisodes = [..._filmixEpisodes, hint];
                               _filmixIndex = _filmixEpisodes.length - 1;
                             }
+                            if (translation.isNotEmpty && _filmixTranslationId.isEmpty) {
+                              _filmixTranslationId = translation;
+                            }
+                            if (season.isNotEmpty && _filmixSeasonId.isEmpty) {
+                              _filmixSeasonId = season;
+                            }
                           });
                         } catch (_) {}
+                        return null;
+                      },
+                    );
+                    controller.addJavaScriptHandler(
+                      handlerName: 'filmixDebug',
+                      callback: (args) {
+                        // Только для диагностики через консольный probe-скрипт.
                         return null;
                       },
                     );
@@ -1485,8 +1736,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         _seasonvarSeasons = [];
                       });
                     }
-                    if (url != null && !url.toString().contains('filmix') && _filmixEpisodes.isNotEmpty) {
-                      setState(() { _filmixEpisodes = []; _filmixIndex = 0; });
+                    if (url != null &&
+                        !url.toString().contains('filmix') &&
+                        (_filmixEpisodes.isNotEmpty ||
+                            _filmixTranslations.isNotEmpty ||
+                            _filmixSeasons.isNotEmpty)) {
+                      setState(() {
+                        _filmixEpisodes = [];
+                        _filmixIndex = 0;
+                        _filmixTranslations = [];
+                        _filmixTranslationId = '';
+                        _filmixSeasons = [];
+                        _filmixSeasonId = '';
+                      });
                     }
                   },
                   onLoadStop: (controller, url) {
@@ -1555,6 +1817,33 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       }
                        _updateYouTubeState(url);
                      }
+                  },
+                  onReceivedError: (controller, request, error) {
+                    final isMainFrame = request.isForMainFrame == true;
+                    if (!isMainFrame) return;
+                    if (!_gostActive || !_webViewProxyEnabled) return;
+
+                    final failedUri = Uri.tryParse(request.url.toString());
+                    final description = (error.description).toString();
+                    if (_isRecoverableWebError(description)) {
+                      unawaited(_recoverProxyIfNeeded(
+                        failedUrl: failedUri,
+                        reason: description,
+                      ));
+                    }
+                  },
+                  onReceivedHttpError: (controller, request, errorResponse) {
+                    final isMainFrame = request.isForMainFrame == true;
+                    if (!isMainFrame) return;
+                    if (!_gostActive || !_webViewProxyEnabled) return;
+
+                    final code = int.tryParse('${errorResponse.statusCode}') ?? 0;
+                    if (_isRecoverableHttpCode(code)) {
+                      unawaited(_recoverProxyIfNeeded(
+                        failedUrl: Uri.tryParse(request.url.toString()),
+                        reason: 'HTTP $code',
+                      ));
+                    }
                   },
                   onUpdateVisitedHistory: (controller, url, isReload) {
                     // YouTube: ловим pushState-навигацию (YouTube SPA)
@@ -1791,6 +2080,32 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           }).toList(),
                         ),
                       ),
+                    if (_seasonvarTranslations.isEmpty && _filmixTranslations.isNotEmpty)
+                      SizedBox(
+                        height: 34,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: _filmixTranslations.map((tr) {
+                            final id = tr['id'] ?? '';
+                            final name = tr['name'] ?? id;
+                            final active = id.isNotEmpty && id == _filmixTranslationId;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: OutlinedButton(
+                                onPressed: () => _selectFilmixTranslation(id),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: active ? Colors.greenAccent : Colors.transparent,
+                                  foregroundColor: active ? Colors.black : Colors.white,
+                                  side: BorderSide(color: active ? Colors.greenAccent : Colors.white38),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  minimumSize: Size.zero,
+                                ),
+                                child: Text(name, style: const TextStyle(fontSize: 11)),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
                     if (_seasonvarSeasons.isNotEmpty)
                       SizedBox(
                         height: 34,
@@ -1815,6 +2130,32 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           }).toList(),
                         ),
                       ),
+                    if (_seasonvarSeasons.isEmpty && _filmixSeasons.isNotEmpty)
+                      SizedBox(
+                        height: 34,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: _filmixSeasons.map((s) {
+                            final id = s['id'] ?? '';
+                            final name = s['name'] ?? (id.isNotEmpty ? 'Сезон $id' : 'Сезон');
+                            final active = id.isNotEmpty && id == _filmixSeasonId;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: OutlinedButton(
+                                onPressed: () => _selectFilmixSeason(id),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: active ? Colors.greenAccent : Colors.transparent,
+                                  foregroundColor: active ? Colors.black : Colors.white,
+                                  side: BorderSide(color: active ? Colors.greenAccent : Colors.white38),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  minimumSize: Size.zero,
+                                ),
+                                child: Text(name, style: const TextStyle(fontSize: 11)),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
@@ -1824,15 +2165,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                     _seasonvarTranslations.isNotEmpty ||
                                     _seasonvarSeasons.isNotEmpty)
                                 ? 'Seasonvar: '
-                                : 'Filmix: ',
+                                : (_filmixSeasonId.isNotEmpty || _filmixTranslationId.isNotEmpty)
+                                    ? 'Filmix ${_filmixSeasonId.isNotEmpty ? "S${_filmixSeasonId}" : ""}${_filmixTranslationId.isNotEmpty ? " · $_filmixTranslationId" : ""}: '
+                                    : 'Filmix: ',
                             style: const TextStyle(color: Colors.orange, fontSize: 13),
                           ),
                           ...List.generate(_activeEpisodes.length, (index) {
                             final active = index == _activeEpisodeIndex;
                             final rawTitle = _activeEpisodes[index]['title'] ?? '';
+                            final season = _activeEpisodes[index]['season'] ?? '';
+                            final episode = _activeEpisodes[index]['episode'] ?? '';
                             final btnLabel = _seasonvarEpisodes.isNotEmpty
                                 ? '${index + 1}'
-                                : rawTitle.split(' ').take(2).join(' ');
+                                : (season.isNotEmpty || episode.isNotEmpty)
+                                    ? 'S${season.isNotEmpty ? season : "?"} E${episode.isNotEmpty ? episode : "?"}'
+                                    : rawTitle.split(' ').take(2).join(' ');
                             return Padding(
                               padding: const EdgeInsets.only(right: 6),
                               child: OutlinedButton(
