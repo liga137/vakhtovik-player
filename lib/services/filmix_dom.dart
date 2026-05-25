@@ -33,6 +33,22 @@ class FilmixDom {
     safeCall('filmixMediaUrl', clean);
   }
 
+  function emitMediaFromElement(el) {
+    if (!el) return;
+    try {
+      var current = el.currentSrc || '';
+      if (current) emitMedia(current);
+    } catch (_) {}
+    try {
+      var src = el.src || (el.getAttribute && el.getAttribute('src')) || '';
+      if (src) emitMedia(src);
+    } catch (_) {}
+    try {
+      var ds = (el.getAttribute && el.getAttribute('data-src')) || (el.dataset && el.dataset.src) || '';
+      if (ds) emitMedia(ds);
+    } catch (_) {}
+  }
+
   function extractMediaFromText(text) {
     if (!text || text.length < 10) return;
     var re = /(https?:\/\/[^\s"'<>\\]+(?:\.m3u8|\.mp4|\.mkv|master\.m3u8|playlist\.m3u8)[^\s"'<>\\]*)/ig;
@@ -143,6 +159,8 @@ class FilmixDom {
     '.episodes li', '.episode-list li', '.serial-episodes li',
     '.serial-series li', '.playlist li', '.series li',
     '.season-list li', '.seasons li',
+    'pjsdiv [data-season][data-episode]', 'pjsdiv [data-episode]', 'pjsdiv li',
+    '.pjsdiv [data-season][data-episode]', '.pjsdiv [data-episode]', '.pjsdiv li',
     '.b-simple_episode__item', '.b-simple_episode__link',
     '.b-simple_season__item', '.b-simple_season__link',
     '.serial__episodes li', '.serial__seasons li',
@@ -212,6 +230,41 @@ class FilmixDom {
     sortEpisodes(out);
     safeCall('filmixEpisodes', JSON.stringify(out.slice(0, 250)));
     return out.length;
+  }
+
+  function attachVideoListeners(doc) {
+    var videos = [];
+    try { videos = doc.querySelectorAll('video, pjsdiv video, .pjsdiv video'); } catch (_) { videos = []; }
+    for (var i = 0; i < videos.length; i++) {
+      var v = videos[i];
+      if (v.__vakhFilmixBound) {
+        emitMediaFromElement(v);
+        continue;
+      }
+      v.__vakhFilmixBound = true;
+      emitMediaFromElement(v);
+      var onTick = function() {
+        try { emitMediaFromElement(this); } catch (_) {}
+      };
+      try { v.addEventListener('loadedmetadata', onTick, true); } catch (_) {}
+      try { v.addEventListener('playing', onTick, true); } catch (_) {}
+      try { v.addEventListener('canplay', onTick, true); } catch (_) {}
+      try { v.addEventListener('progress', onTick, true); } catch (_) {}
+      try { v.addEventListener('timeupdate', onTick, true); } catch (_) {}
+      try { v.addEventListener('durationchange', onTick, true); } catch (_) {}
+    }
+  }
+
+  function scanDirectPlayerUrls() {
+    var docs = getAllDocuments();
+    for (var d = 0; d < docs.length; d++) {
+      attachVideoListeners(docs[d]);
+      var nodes = [];
+      try { nodes = docs[d].querySelectorAll('video, source, iframe, pjsdiv video, .pjsdiv video, [data-src]'); } catch (_) { nodes = []; }
+      for (var i = 0; i < nodes.length; i++) {
+        emitMediaFromElement(nodes[i]);
+      }
+    }
   }
 
   function scoreEpisodeElement(el, season, episode, titleLower) {
@@ -388,11 +441,11 @@ class FilmixDom {
     var mo = new MutationObserver(function() {
       var docs = getAllDocuments();
       for (var d = 0; d < docs.length; d++) {
+        attachVideoListeners(docs[d]);
         var vids = [];
-        try { vids = docs[d].querySelectorAll('video, source, iframe'); } catch (_) { vids = []; }
+        try { vids = docs[d].querySelectorAll('video, source, iframe, pjsdiv video, .pjsdiv video, [data-src]'); } catch (_) { vids = []; }
         for (var i = 0; i < vids.length; i++) {
-          var src = vids[i].src || vids[i].getAttribute('src');
-          if (src) emitMedia(src);
+          emitMediaFromElement(vids[i]);
         }
       }
     });
@@ -406,19 +459,14 @@ class FilmixDom {
 
   if (!window.__vakhFilmixTick) {
     window.__vakhFilmixTick = setInterval(function() {
-      var docs = getAllDocuments();
-      for (var d = 0; d < docs.length; d++) {
-        var vids = [];
-        try { vids = docs[d].querySelectorAll('video, source'); } catch (_) { vids = []; }
-        for (var i = 0; i < vids.length; i++) {
-          var src = vids[i].src || vids[i].getAttribute('src');
-          if (src) emitMedia(src);
-        }
-      }
+      scanDirectPlayerUrls();
       collectEpisodes();
     }, 2000);
   }
 
+  scanDirectPlayerUrls();
+  setTimeout(scanDirectPlayerUrls, 700);
+  setTimeout(scanDirectPlayerUrls, 2000);
   collectEpisodes();
   return 'filmix-dom-hooked';
 })();
