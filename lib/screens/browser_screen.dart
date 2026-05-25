@@ -63,6 +63,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _scanningSeasonvar = false;
   List<Map<String, String>> _seasonvarEpisodes = [];
   int _seasonvarIndex = 0;
+  List<Map<String, String>> _seasonvarTranslations = [];
+  String _seasonvarTranslationId = '';
+  List<Map<String, String>> _seasonvarSeasons = [];
   List<Map<String, String>> _filmixEpisodes = [];
   int _filmixIndex = 0;
   String _lastFilmixMediaUrl = '';
@@ -84,7 +87,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void _checkGostLater() {
     Future.delayed(const Duration(seconds: 15), () async {
       if (mounted) {
-        final ok = await HysteriaService.check();
+        final ok = await HysteriaService.checkWebProxy();
         if (mounted) {
           setState(() => _gostActive = ok);
           await _switchWindowsWebViewProxy(useProxy: ok, preservePage: true);
@@ -117,7 +120,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
 
     final profileDir = useProxy ? 'proxy' : 'direct';
-    final proxyArg = '--proxy-server=http://${HysteriaService.proxyHost}:${HysteriaService.proxyPort}';
+    final proxyArg =
+        '--proxy-server=${HysteriaService.proxyHost}:${HysteriaService.proxyPort} '
+        '--proxy-bypass-list=<-loopback> '
+        '--disable-quic';
 
     return WebViewEnvironment.create(
       settings: WebViewEnvironmentSettings(
@@ -609,44 +615,142 @@ class _BrowserScreenState extends State<BrowserScreen> {
     webViewController!.evaluateJavascript(source: r'''
       (async function(){
         const wait = (ms) => new Promise(r => setTimeout(r, ms));
+        const txt = (v) => (v || '').replace(/\s+/g, ' ').trim();
+        const safeCall = (name, payload) => {
+          try {
+            if (window.flutter_inappwebview) {
+              window.flutter_inappwebview.callHandler(name, payload);
+            }
+          } catch (_) {}
+        };
+
+        const translationNodes = Array.from(document.querySelectorAll('.pgs-trans li, [data-translate], [data-id]'))
+          .filter(el => txt(el.textContent).length > 0)
+          .slice(0, 20);
+        const translations = translationNodes.map((el, idx) => ({
+          id: String(el.getAttribute('data-translate') || el.getAttribute('data-id') || ('idx:' + idx)),
+          name: txt(el.textContent),
+          index: String(idx),
+        }));
+
+        const seasonLinks = Array.from(document.querySelectorAll('h2 a, .season-list a, .seasons a, a[href*="season"]'))
+          .map(a => ({
+            title: txt(a.textContent),
+            url: (a.href || '').trim(),
+          }))
+          .filter(x => x.title && x.url && /сезон|season|сериал/i.test(x.title))
+          .slice(0, 40);
+
+        const activeTrNode = document.querySelector('.pgs-trans li.active, .pgs-trans li.current, .pgs-trans li[style*="active"]');
+        let activeTrId = '';
+        if (activeTrNode) {
+          activeTrId = String(activeTrNode.getAttribute('data-translate') || activeTrNode.getAttribute('data-id') || '');
+          if (!activeTrId) {
+            const idx = translationNodes.indexOf(activeTrNode);
+            if (idx >= 0) activeTrId = 'idx:' + idx;
+          }
+        }
+
+        safeCall('seasonvarMeta', JSON.stringify({
+          translations,
+          seasons: seasonLinks,
+          activeTranslationId: activeTrId,
+        }));
+
+        const playlistContainer = document.querySelector('#htmlPlayer_playlist');
+        if (!playlistContainer) {
+          safeCall('seasonvarPlaylist', JSON.stringify([]));
+          return 0;
+        }
+
         const waitForVideoSrc = (lastSrc) => new Promise((resolve) => {
           let attempts = 0;
           const check = setInterval(() => {
-            const video = document.querySelector('video');
-            if (video) { video.muted = true; video.pause(); }
             attempts++;
-            if (video && video.src && video.src !== lastSrc && video.src.length > 10) {
-              clearInterval(check); resolve(video.src);
+            const video = document.querySelector('video');
+            if (video) {
+              try { video.muted = true; video.pause(); } catch (_) {}
             }
-            if (attempts > 30) { clearInterval(check); resolve(null); }
-          }, 350);
+            if (video && video.src && video.src !== lastSrc && video.src.length > 10) {
+              clearInterval(check);
+              resolve(video.src);
+              return;
+            }
+            if (attempts > 35) {
+              clearInterval(check);
+              resolve(null);
+            }
+          }, 320);
         });
 
-        const items = Array.from(document.querySelectorAll('#htmlPlayer_playlist > *'));
-        const result = [];
-        let last = '';
-        for (let i = 0; i < items.length; i++) {
-          items[i].click();
-          await wait(250);
-          const src = await waitForVideoSrc(last);
-          if (src) {
-            result.push({
-              index: String(i),
-              title: (items[i].innerText || ('Серия ' + (i + 1))).trim(),
-              url: src
-            });
-            last = src;
+        const collectOneTranslation = async (translationName) => {
+          const items = Array.from(document.querySelectorAll('#htmlPlayer_playlist > *, #htmlPlayer_playlist li, #htmlPlayer_playlist a'))
+            .filter(el => txt(el.textContent).length > 0);
+          const result = [];
+          let last = '';
+          for (let i = 0; i < items.length; i++) {
+            try { items[i].click(); } catch (_) {}
+            await wait(240);
+            const src = await waitForVideoSrc(last);
+            if (src) {
+              result.push({
+                index: String(i),
+                title: txt(items[i].innerText || ('Серия ' + (i + 1))),
+                translation: translationName,
+                url: src
+              });
+              last = src;
+            }
+          }
+          return result;
+        };
+
+        const all = [];
+        const maxTranslations = Math.min(4, translationNodes.length);
+        for (let t = 0; t < maxTranslations; t++) {
+          const trNode = translationNodes[t];
+          const trName = txt(trNode.textContent) || ('Озвучка ' + (t + 1));
+          try { trNode.click(); } catch (_) {}
+          await wait(2200);
+          const chunk = await collectOneTranslation(trName);
+          for (let i = 0; i < chunk.length; i++) all.push(chunk[i]);
+        }
+
+        // Восстанавливаем исходную озвучку, если нашли.
+        if (activeTrId) {
+          let backNode = document.querySelector('.pgs-trans li[data-translate="' + activeTrId + '"], .pgs-trans li[data-id="' + activeTrId + '"]');
+          if (!backNode && activeTrId.indexOf('idx:') === 0) {
+            const idx = parseInt(activeTrId.split(':')[1] || '-1', 10);
+            if (!Number.isNaN(idx) && idx >= 0 && idx < translationNodes.length) {
+              backNode = translationNodes[idx];
+            }
+          }
+          if (backNode) {
+            try { backNode.click(); } catch (_) {}
           }
         }
-        if (window.flutter_inappwebview) {
-          window.flutter_inappwebview.callHandler('seasonvarPlaylist', JSON.stringify(result));
+
+        const dedup = [];
+        const seen = new Set();
+        for (let i = 0; i < all.length; i++) {
+          const item = all[i];
+          const key = (item.url || '') + '|' + (item.translation || '');
+          if (seen.has(key)) continue;
+          seen.add(key);
+          dedup.push(item);
         }
-        return result.length;
+
+        safeCall('seasonvarPlaylist', JSON.stringify(dedup));
+        return dedup.length;
       })();
     ''');
   }
 
-  bool get _hasEpisodeList => _seasonvarEpisodes.isNotEmpty || _filmixEpisodes.isNotEmpty;
+  bool get _hasEpisodeList =>
+      _seasonvarEpisodes.isNotEmpty ||
+      _seasonvarTranslations.isNotEmpty ||
+      _seasonvarSeasons.isNotEmpty ||
+      _filmixEpisodes.isNotEmpty;
 
   List<Map<String, String>> get _activeEpisodes {
     if (_seasonvarEpisodes.isNotEmpty) return _seasonvarEpisodes;
@@ -666,6 +770,40 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (_filmixEpisodes.isNotEmpty) {
       _playFilmixEpisode(index);
     }
+  }
+
+  Future<void> _selectSeasonvarTranslation(String translationId, {String fallbackIndex = ''}) async {
+    if (translationId.isEmpty || webViewController == null) return;
+    await webViewController!.evaluateJavascript(source: """
+      (function() {
+        var id = '${_jsString(translationId)}';
+        var fallbackIndex = '${_jsString(fallbackIndex)}';
+        var node = document.querySelector('.pgs-trans li[data-translate="' + id + '"], .pgs-trans li[data-id="' + id + '"]');
+        if (!node && fallbackIndex) {
+          var idx = parseInt(fallbackIndex, 10);
+          if (!Number.isNaN(idx)) {
+            var nodes = document.querySelectorAll('.pgs-trans li, [data-translate], [data-id]');
+            if (idx >= 0 && idx < nodes.length) node = nodes[idx];
+          }
+        }
+        if (!node) return 'not-found';
+        node.click();
+        return 'clicked';
+      })();
+    """);
+    if (!mounted) return;
+    setState(() {
+      _seasonvarTranslationId = translationId;
+      _seasonvarEpisodes = [];
+      _seasonvarIndex = 0;
+    });
+    await Future.delayed(const Duration(milliseconds: 900));
+    _scanSeasonvarPlaylist(silent: true);
+  }
+
+  void _openSeasonvarSeason(String seasonUrl) {
+    if (seasonUrl.trim().isEmpty) return;
+    _loadAddress(seasonUrl.trim());
   }
 
   void _updateYouTubeState(Uri url) {
@@ -879,6 +1017,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       tooltip: 'Проверить обновления',
                       onPressed: _checkingUpdates ? null : () => _checkForUpdates(silent: false),
                     ),
+                    if (_currentRealUrl.contains('seasonvar') || _currentRealUrl.contains('filmix'))
+                      IconButton(
+                        icon: const Icon(Icons.playlist_play, color: Colors.orange),
+                        tooltip: 'Сканировать сезоны/серии/озвучки',
+                        onPressed: () {
+                          if (_currentRealUrl.contains('seasonvar')) {
+                            _scanSeasonvarPlaylist();
+                          } else if (_currentRealUrl.contains('filmix')) {
+                            _scanFilmixEpisodes();
+                          }
+                        },
+                      ),
                     GestureDetector(
                       onTap: _gostConnecting ? null : () async {
                         if (_gostActive) {
@@ -891,7 +1041,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           // Ждём до 90 сек на сателлите
                           for (var i = 0; i < 30; i++) {
                             await Future.delayed(const Duration(seconds: 3));
-                            final ok = await HysteriaService.check();
+                            final ok = await HysteriaService.checkWebProxy();
                             if (ok) {
                               if (mounted) {
                                 setState(() {
@@ -903,7 +1053,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               return;
                             }
                           }
-                          if (mounted) setState(() => _gostConnecting = false);
+                          if (mounted) {
+                            setState(() => _gostConnecting = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('VPN поднялся, но веб-прокси не открыл сайты. Проверь сеть/сервер.'),
+                                duration: Duration(seconds: 5),
+                              ),
+                            );
+                          }
                         }
                       },
                       child: Container(
@@ -1041,6 +1199,42 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       },
                     );
                     controller.addJavaScriptHandler(
+                      handlerName: 'seasonvarMeta',
+                      callback: (args) {
+                        if (args.isEmpty) return null;
+                        try {
+                          final map = Map<String, dynamic>.from(jsonDecode(args.first.toString()) as Map);
+                          final trs = (map['translations'] as List<dynamic>? ?? const [])
+                              .map((e) => Map<String, dynamic>.from(e as Map))
+                              .map((m) => <String, String>{
+                                    'id': m['id']?.toString() ?? '',
+                                    'name': m['name']?.toString() ?? '',
+                                    'index': m['index']?.toString() ?? '',
+                                  })
+                              .where((m) => (m['id'] ?? '').isNotEmpty && (m['name'] ?? '').isNotEmpty)
+                              .toList();
+                          final seasons = (map['seasons'] as List<dynamic>? ?? const [])
+                              .map((e) => Map<String, dynamic>.from(e as Map))
+                              .map((m) => <String, String>{
+                                    'title': m['title']?.toString() ?? '',
+                                    'url': m['url']?.toString() ?? '',
+                                  })
+                              .where((m) => (m['title'] ?? '').isNotEmpty && (m['url'] ?? '').isNotEmpty)
+                              .toList();
+                          final activeTranslationId = map['activeTranslationId']?.toString() ?? '';
+                          if (!mounted) return null;
+                          setState(() {
+                            _seasonvarTranslations = trs;
+                            _seasonvarSeasons = seasons;
+                            if (activeTranslationId.isNotEmpty) {
+                              _seasonvarTranslationId = activeTranslationId;
+                            }
+                          });
+                        } catch (_) {}
+                        return null;
+                      },
+                    );
+                    controller.addJavaScriptHandler(
                       handlerName: 'seasonvarPlaylist',
                       callback: (args) {
                         _scanningSeasonvar = false;
@@ -1052,21 +1246,42 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             return <String, String>{
                               'index': m['index']?.toString() ?? '',
                               'title': m['title']?.toString() ?? '',
+                              'translation': m['translation']?.toString() ?? '',
                               'url': m['url']?.toString() ?? '',
                             };
                           }).where((e) => (e['url'] ?? '').isNotEmpty).toList();
+
+                          String selectedTranslationName = '';
+                          if (_seasonvarTranslationId.isNotEmpty) {
+                            final selectedTranslation = _seasonvarTranslations.firstWhere(
+                              (t) => (t['id'] ?? '') == _seasonvarTranslationId,
+                              orElse: () => const <String, String>{},
+                            );
+                            selectedTranslationName = selectedTranslation['name'] ?? '';
+                          }
+
+                          var activeEpisodes = episodes;
+                          if (selectedTranslationName.isNotEmpty) {
+                            final filtered = episodes
+                                .where((e) => (e['translation'] ?? '') == selectedTranslationName)
+                                .toList();
+                            if (filtered.isNotEmpty) {
+                              activeEpisodes = filtered;
+                            }
+                          }
+
                           if (mounted) {
                             var currentIndex = 0;
                             final currentUrl = _interceptedUrl;
-                            final foundIndex = episodes.indexWhere((e) => (e['url'] ?? '') == currentUrl);
+                            final foundIndex = activeEpisodes.indexWhere((e) => (e['url'] ?? '') == currentUrl);
                             if (foundIndex >= 0) currentIndex = foundIndex;
                             setState(() {
-                              _seasonvarEpisodes = episodes;
+                              _seasonvarEpisodes = activeEpisodes;
                               _seasonvarIndex = currentIndex;
                             });
-                            if (episodes.isNotEmpty) {
+                            if (activeEpisodes.isNotEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Список серий готов: ${episodes.length}'), duration: const Duration(seconds: 2)),
+                                SnackBar(content: Text('Список серий готов: ${activeEpisodes.length}'), duration: const Duration(seconds: 2)),
                               );
                             }
                           }
@@ -1172,8 +1387,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   onLoadStart: (controller, url) {
                     if (mounted) setState(() { _pageLoading = true; });
                     // При переходе на другой сайт сбрасываем кнопки серий Seasonvar
-                    if (url != null && !url.toString().contains('seasonvar') && _seasonvarEpisodes.isNotEmpty) {
-                      setState(() { _seasonvarEpisodes = []; _seasonvarIndex = 0; });
+                    if (url != null &&
+                        !url.toString().contains('seasonvar') &&
+                        (_seasonvarEpisodes.isNotEmpty ||
+                            _seasonvarTranslations.isNotEmpty ||
+                            _seasonvarSeasons.isNotEmpty)) {
+                      setState(() {
+                        _seasonvarEpisodes = [];
+                        _seasonvarIndex = 0;
+                        _seasonvarTranslations = [];
+                        _seasonvarTranslationId = '';
+                        _seasonvarSeasons = [];
+                      });
                     }
                     if (url != null && !url.toString().contains('filmix') && _filmixEpisodes.isNotEmpty) {
                       setState(() { _filmixEpisodes = []; _filmixIndex = 0; });
@@ -1451,35 +1676,97 @@ class _BrowserScreenState extends State<BrowserScreen> {
               child: Container(
                 color: Colors.black87,
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      Text(
-                        _seasonvarEpisodes.isNotEmpty ? 'Seasonvar: ' : 'Filmix: ',
-                        style: const TextStyle(color: Colors.orange, fontSize: 13),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_seasonvarTranslations.isNotEmpty)
+                      SizedBox(
+                        height: 34,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: _seasonvarTranslations.map((tr) {
+                            final id = tr['id'] ?? '';
+                            final trIndex = tr['index'] ?? '';
+                            final name = tr['name'] ?? 'Озвучка';
+                            final active = id.isNotEmpty && id == _seasonvarTranslationId;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: OutlinedButton(
+                                onPressed: () => _selectSeasonvarTranslation(id, fallbackIndex: trIndex),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: active ? Colors.greenAccent : Colors.transparent,
+                                  foregroundColor: active ? Colors.black : Colors.white,
+                                  side: BorderSide(color: active ? Colors.greenAccent : Colors.white38),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  minimumSize: Size.zero,
+                                ),
+                                child: Text(name, style: const TextStyle(fontSize: 11)),
+                              ),
+                            );
+                          }).toList(),
+                        ),
                       ),
-                      ...List.generate(_activeEpisodes.length, (index) {
-                        final active = index == _activeEpisodeIndex;
-                        final rawTitle = _activeEpisodes[index]['title'] ?? '';
-                        final btnLabel = _seasonvarEpisodes.isNotEmpty ? '${index + 1}' : rawTitle.split(' ').take(2).join(' ');
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: OutlinedButton(
-                            onPressed: () => _playEpisodeFromActiveList(index),
-                            style: OutlinedButton.styleFrom(
-                              backgroundColor: active ? Colors.orange : Colors.transparent,
-                              foregroundColor: active ? Colors.black : Colors.white,
-                              side: BorderSide(color: active ? Colors.orange : Colors.white38),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              minimumSize: Size.zero,
-                            ),
-                            child: Text(btnLabel.isEmpty ? '${index + 1}' : btnLabel, style: const TextStyle(fontSize: 12)),
+                    if (_seasonvarSeasons.isNotEmpty)
+                      SizedBox(
+                        height: 34,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: _seasonvarSeasons.map((s) {
+                            final title = s['title'] ?? 'Сезон';
+                            final seasonUrl = s['url'] ?? '';
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: OutlinedButton(
+                                onPressed: () => _openSeasonvarSeason(seasonUrl),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: const BorderSide(color: Colors.white38),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  minimumSize: Size.zero,
+                                ),
+                                child: Text(title, style: const TextStyle(fontSize: 11)),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          Text(
+                            (_seasonvarEpisodes.isNotEmpty ||
+                                    _seasonvarTranslations.isNotEmpty ||
+                                    _seasonvarSeasons.isNotEmpty)
+                                ? 'Seasonvar: '
+                                : 'Filmix: ',
+                            style: const TextStyle(color: Colors.orange, fontSize: 13),
                           ),
-                        );
-                      }),
-                    ],
-                  ),
+                          ...List.generate(_activeEpisodes.length, (index) {
+                            final active = index == _activeEpisodeIndex;
+                            final rawTitle = _activeEpisodes[index]['title'] ?? '';
+                            final btnLabel = _seasonvarEpisodes.isNotEmpty
+                                ? '${index + 1}'
+                                : rawTitle.split(' ').take(2).join(' ');
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: OutlinedButton(
+                                onPressed: () => _playEpisodeFromActiveList(index),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: active ? Colors.orange : Colors.transparent,
+                                  foregroundColor: active ? Colors.black : Colors.white,
+                                  side: BorderSide(color: active ? Colors.orange : Colors.white38),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  minimumSize: Size.zero,
+                                ),
+                                child: Text(btnLabel.isEmpty ? '${index + 1}' : btnLabel, style: const TextStyle(fontSize: 12)),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

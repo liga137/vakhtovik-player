@@ -12,9 +12,11 @@ class YouTubeSearchScreen extends StatefulWidget {
   State<YouTubeSearchScreen> createState() => _YouTubeSearchScreenState();
 }
 
-class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
+class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
+    with SingleTickerProviderStateMixin {
   final _searchController = TextEditingController();
   final _subController = TextEditingController();
+  late final TabController _tabController;
   List<YouTubeVideo> _searchResults = const [];
   List<YouTubeVideo> _feed = const [];
   List<YouTubeVideo> _popular = const [];
@@ -25,6 +27,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
   bool _googleImporting = false;
   Timer? _googlePollTimer;
   String _quality = '240p';
+  bool _feedAutoRequested = false;
 
   static const _quickSearches = [
     'Лавкрафт аудиокнига Булдаков',
@@ -38,6 +41,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
   @override
   void dispose() {
     _googlePollTimer?.cancel();
+    _tabController.dispose();
     _searchController.dispose();
     _subController.dispose();
     super.dispose();
@@ -46,8 +50,37 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 5, vsync: this);
+    _tabController.addListener(_onTabChanged);
     _loadPopular();
     _loadShorts();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureFeedLoadedIfPossible();
+    });
+  }
+
+  void _onTabChanged() {
+    if (!mounted || _tabController.indexIsChanging) return;
+    if (_tabController.index == 0) {
+      _ensureFeedLoadedIfPossible();
+    }
+  }
+
+  void _ensureFeedLoadedIfPossible() {
+    if (!ApiService.isYouTubeLoggedIn) return;
+    if (_feed.isNotEmpty || _feedAutoRequested) return;
+    if (_loading) {
+      Future.delayed(const Duration(milliseconds: 700), () {
+        if (mounted) _ensureFeedLoadedIfPossible();
+      });
+      return;
+    }
+    _feedAutoRequested = true;
+    unawaited(_loadFeed().whenComplete(() {
+      if (mounted && _feed.isEmpty) {
+        _feedAutoRequested = false;
+      }
+    }));
   }
 
   Future<void> _search([String? query]) async {
@@ -288,6 +321,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
     user.dispose();
     pass.dispose();
     if (mounted) setState(() {});
+    _ensureFeedLoadedIfPossible();
     return result;
   }
 
@@ -411,16 +445,32 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
           const Center(
               child: Text('Пусто', style: TextStyle(color: Colors.white70)));
     }
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 1.55,
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      var crossAxisCount = 1;
+      if (width >= 1540) {
+        crossAxisCount = 4;
+      } else if (width >= 1120) {
+        crossAxisCount = 3;
+      } else if (width >= 680) {
+        crossAxisCount = 2;
+      }
+      final aspectRatio = crossAxisCount >= 4
+          ? 1.65
+          : (crossAxisCount == 3 ? 1.6 : (crossAxisCount == 2 ? 1.52 : 1.9));
+
+      return GridView.builder(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          childAspectRatio: aspectRatio,
           crossAxisSpacing: 8,
-          mainAxisSpacing: 8),
-      itemCount: items.length,
-      itemBuilder: (_, i) => _videoCard(items[i]),
-    );
+          mainAxisSpacing: 8,
+        ),
+        itemCount: items.length,
+        itemBuilder: (_, i) => _videoCard(items[i]),
+      );
+    });
   }
 
   Widget _videoCard(YouTubeVideo v) {
@@ -472,6 +522,13 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
   }
 
   Widget _feedTab() {
+    if (ApiService.isYouTubeLoggedIn && _feed.isEmpty && !_loading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _tabController.index == 0) {
+          _ensureFeedLoadedIfPossible();
+        }
+      });
+    }
     return Column(children: [
       Padding(
           padding: const EdgeInsets.all(8),
@@ -630,45 +687,45 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 5,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF111111),
-        appBar: AppBar(
-          title: const Text('YouTube без рекламы'),
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
-          actions: [_qualityButton(), _loginButton()],
-          bottom: const TabBar(tabs: [
-            Tab(icon: Icon(Icons.home), text: 'Лента'),
-            Tab(icon: Icon(Icons.search), text: 'Поиск'),
-            Tab(icon: Icon(Icons.trending_up), text: 'Популярное'),
-            Tab(icon: Icon(Icons.smart_display), text: 'Shorts'),
-            Tab(icon: Icon(Icons.subscriptions), text: 'Подписки')
-          ]),
+    return Scaffold(
+      backgroundColor: const Color(0xFF111111),
+      appBar: AppBar(
+        title: const Text('YouTube без рекламы'),
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        actions: [_qualityButton(), _loginButton()],
+        bottom: TabBar(controller: _tabController, tabs: const [
+          Tab(icon: Icon(Icons.home), text: 'Лента'),
+          Tab(icon: Icon(Icons.search), text: 'Поиск'),
+          Tab(icon: Icon(Icons.trending_up), text: 'Популярное'),
+          Tab(icon: Icon(Icons.smart_display), text: 'Shorts'),
+          Tab(icon: Icon(Icons.subscriptions), text: 'Подписки')
+        ]),
+      ),
+      body: Stack(children: [
+        TabBarView(
+          controller: _tabController,
+          children: [_feedTab(), _searchTab(), _popularTab(), _shortsTab(), _subsTab()],
         ),
-        body: Stack(children: [
-          TabBarView(children: [_feedTab(), _searchTab(), _popularTab(), _shortsTab(), _subsTab()]),
-          if (_starting)
-            Container(
-              color: Colors.black54,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(color: const Color(0xCC1A0F08), borderRadius: BorderRadius.circular(16)),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(color: Colors.orange),
-                      const SizedBox(height: 14),
-                      Text('Запускаю $_quality...', style: const TextStyle(color: Colors.white, fontSize: 16)),
-                    ],
-                  ),
+        if (_starting)
+          Container(
+            color: Colors.black54,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(color: const Color(0xCC1A0F08), borderRadius: BorderRadius.circular(16)),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Colors.orange),
+                    const SizedBox(height: 14),
+                    Text('Запускаю $_quality...', style: const TextStyle(color: Colors.white, fontSize: 16)),
+                  ],
                 ),
               ),
             ),
-        ]),
-      ),
+          ),
+      ]),
     );
   }
 }

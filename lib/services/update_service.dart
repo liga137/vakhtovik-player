@@ -25,40 +25,37 @@ class AppUpdateInfo {
 }
 
 class UpdateService {
-  static const _repoApiUrl = 'https://api.github.com/repos/liga137/vakhtovik-player/releases/latest';
+  static const _repoApiBase = 'https://api.github.com/repos/liga137/vakhtovik-player';
+  static const _repoLatestReleaseUrl = '$_repoApiBase/releases/latest';
+  static const _repoReleasesUrl = '$_repoApiBase/releases?per_page=1';
+  static const _repoTagsUrl = '$_repoApiBase/tags?per_page=1';
+  static const _repoReleasesPage = 'https://github.com/liga137/vakhtovik-player/releases';
   static http.Client get _client => IOClient(HysteriaService.createProxyClient());
 
   static Future<AppUpdateInfo> checkLatest() async {
     final pkg = await PackageInfo.fromPlatform();
     final current = pkg.version;
-    final resp = await _client.get(
-      Uri.parse(_repoApiUrl),
-      headers: {'Accept': 'application/vnd.github+json', 'User-Agent': 'vakhtovik-player'},
-    );
-
-    if (resp.statusCode != 200) {
-      throw Exception('GitHub API: ${resp.statusCode}');
-    }
-
-    final map = jsonDecode(resp.body) as Map<String, dynamic>;
-    final rawTag = (map['tag_name'] ?? '').toString().trim();
+    final map = await _fetchLatestRelease();
+    final rawTag = map != null ? (map['tag_name'] ?? '').toString().trim() : await _fetchLatestTag();
     final latest = _normalizeVersion(rawTag);
     final currentNorm = _normalizeVersion(current);
     final hasUpdate = _compareVersion(currentNorm, latest) < 0;
 
     String winUrl = '';
     String apkUrl = '';
-    final assets = (map['assets'] as List<dynamic>? ?? const []);
-    for (final a in assets) {
-      final m = Map<String, dynamic>.from(a as Map);
-      final name = (m['name'] ?? '').toString().toLowerCase();
-      final url = (m['browser_download_url'] ?? '').toString();
-      if (url.isEmpty) continue;
-      if (winUrl.isEmpty && (name.contains('windows') || name.endsWith('.zip') || name.endsWith('.exe'))) {
-        winUrl = url;
-      }
-      if (apkUrl.isEmpty && name.endsWith('.apk')) {
-        apkUrl = url;
+    if (map != null) {
+      final assets = (map['assets'] as List<dynamic>? ?? const []);
+      for (final a in assets) {
+        final m = Map<String, dynamic>.from(a as Map);
+        final name = (m['name'] ?? '').toString().toLowerCase();
+        final url = (m['browser_download_url'] ?? '').toString();
+        if (url.isEmpty) continue;
+        if (winUrl.isEmpty && (name.contains('windows') || name.endsWith('.zip') || name.endsWith('.exe'))) {
+          winUrl = url;
+        }
+        if (apkUrl.isEmpty && name.endsWith('.apk')) {
+          apkUrl = url;
+        }
       }
     }
 
@@ -66,18 +63,57 @@ class UpdateService {
       hasUpdate: hasUpdate,
       currentVersion: currentNorm,
       latestVersion: latest,
-      htmlUrl: (map['html_url'] ?? '').toString(),
-      releaseNotes: (map['body'] ?? '').toString(),
+      htmlUrl: map != null ? (map['html_url'] ?? _repoReleasesPage).toString() : _repoReleasesPage,
+      releaseNotes: map != null
+          ? (map['body'] ?? '').toString()
+          : 'GitHub Releases пока не опубликованы. Используется последняя версия из тегов.',
       windowsAssetUrl: winUrl,
       androidAssetUrl: apkUrl,
     );
+  }
+
+  static Future<Map<String, dynamic>?> _fetchLatestRelease() async {
+    final headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'vakhtovik-player'};
+
+    final latestResp = await _client.get(Uri.parse(_repoLatestReleaseUrl), headers: headers);
+    if (latestResp.statusCode == 200) {
+      return jsonDecode(latestResp.body) as Map<String, dynamic>;
+    }
+    if (latestResp.statusCode != 404) {
+      throw Exception('GitHub API releases/latest: ${latestResp.statusCode}');
+    }
+
+    final releasesResp = await _client.get(Uri.parse(_repoReleasesUrl), headers: headers);
+    if (releasesResp.statusCode == 200) {
+      final list = jsonDecode(releasesResp.body) as List<dynamic>;
+      if (list.isNotEmpty) {
+        return Map<String, dynamic>.from(list.first as Map);
+      }
+      return null;
+    }
+    if (releasesResp.statusCode == 404) return null;
+    throw Exception('GitHub API releases: ${releasesResp.statusCode}');
+  }
+
+  static Future<String> _fetchLatestTag() async {
+    final resp = await _client.get(
+      Uri.parse(_repoTagsUrl),
+      headers: {'Accept': 'application/vnd.github+json', 'User-Agent': 'vakhtovik-player'},
+    );
+    if (resp.statusCode != 200) {
+      throw Exception('GitHub API tags: ${resp.statusCode}');
+    }
+    final tags = jsonDecode(resp.body) as List<dynamic>;
+    if (tags.isEmpty) return '0.0.0';
+    final first = Map<String, dynamic>.from(tags.first as Map);
+    return (first['name'] ?? '').toString();
   }
 
   static String _normalizeVersion(String v) {
     final t = v.trim();
     if (t.isEmpty) return '0.0.0';
     return t.startsWith('v') || t.startsWith('V') ? t.substring(1) : t;
-    }
+  }
 
   static int _compareVersion(String a, String b) {
     final pa = a.split('.').map((e) => int.tryParse(e.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0).toList();
