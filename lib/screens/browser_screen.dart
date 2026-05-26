@@ -72,6 +72,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
   List<String> _recentLinks = [];
   bool _checkingUpdates = false;
 
+  // -- Retry загрузки страниц при слабом интернете --
+  int _webViewRetryCount = 0;
+  static const int _webViewMaxRetries = 3;
+  String? _lastFailedUrl;
+
   @override
   void initState() {
     super.initState();
@@ -203,7 +208,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     ];
     try {
       final presets =
-          await ApiService.getPresets().timeout(const Duration(seconds: 5));
+          await ApiService.getPresets().timeout(const Duration(seconds: 12));
       if (mounted) {
         setState(() {
           _presets = List<Preset>.from(presets.isNotEmpty ? presets : fallback);
@@ -490,7 +495,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
         _isLoading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Ошибка: $e'), duration: const Duration(seconds: 4)));
+          content: Text('Ошибка: $e'),
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(
+            label: 'Повторить',
+            onPressed: () => _startMagic(),
+          ),
+      ));
     }
   }
 
@@ -2022,6 +2033,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           if (mounted) {
                             setState(() {
                               _pageLoading = false;
+                              _webViewRetryCount = 0;
                             });
                           }
                           if (url != null) {
@@ -2121,6 +2133,54 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                   referer: 'https://www.youtube.com/');
                             }
                             _updateYouTubeState(url);
+                          }
+                        },
+                        onReceivedError: (controller, request, error) {
+                          final failedUrl = request.url?.toString() ?? '';
+                          // Игнорируем ошибки about:blank и фоновых ресурсов
+                          if (failedUrl.isEmpty ||
+                              failedUrl == 'about:blank' ||
+                              !failedUrl.startsWith('http')) {
+                            return;
+                          }
+                          _lastFailedUrl = failedUrl;
+                          if (_webViewRetryCount < _webViewMaxRetries) {
+                            _webViewRetryCount++;
+                            final delayMs = 1000 * (1 << (_webViewRetryCount - 1));
+                            Future.delayed(Duration(milliseconds: delayMs), () {
+                              if (mounted && _lastFailedUrl == failedUrl) {
+                                controller.loadUrl(urlRequest:
+                                    URLRequest(url: WebUri(failedUrl)));
+                              }
+                            });
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                      'Повторная загрузка (${_webViewRetryCount}/$_webViewMaxRetries)...'),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
+                          } else {
+                            _webViewRetryCount = 0;
+                            if (mounted) {
+                              setState(() => _pageLoading = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                      'Не удалось загрузить: ${error.description}'),
+                                  duration: const Duration(seconds: 6),
+                                  action: SnackBarAction(
+                                    label: 'Повторить',
+                                    onPressed: () {
+                                      _webViewRetryCount = 0;
+                                      _loadAddress(failedUrl);
+                                    },
+                                  ),
+                                ),
+                              );
+                            }
                           }
                         },
                         onUpdateVisitedHistory: (controller, url, isReload) {

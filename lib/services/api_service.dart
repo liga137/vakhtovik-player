@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' show Directory, File, HttpClient, Platform;
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,14 +19,65 @@ class ApiService {
   static String? _ytUsername;
   static bool _ytStateLoaded = false;
 
+  // -- Retry-конфигурация для нестабильной сети -----------------
+  static const int _maxRetries = 3;
+  static const Duration _retryBaseDelay = Duration(seconds: 5);
+
   static http.Client get _client => IOClient(_directHttpClient());
 
   static HttpClient _directHttpClient() {
     final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 30);
+    // Увеличенные таймауты для спутникового/слабого интернета
+    client.connectionTimeout = const Duration(seconds: 45);
+    client.idleTimeout = const Duration(seconds: 90);
     client.badCertificateCallback = (cert, host, port) => true;
-    client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
+    // Прокси имеет смысл только на Windows (там работает Hysteria/GOST).
+    // На Android системный прокси настраивается иначе.
+    if (Platform.isWindows) {
+      client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
+    }
     return client;
+  }
+
+  /// Выполняет [fn] с автоматическими повторами при сетевых ошибках.
+  /// На каждой повторной попытке создаётся новый HttpClient (свежие сокеты).
+  static Future<T> _withRetry<T>(Future<T> Function(http.Client client) fn,
+      {int maxRetries = _maxRetries}) async {
+    var attempt = 0;
+    Object? lastError;
+    while (true) {
+      attempt++;
+      try {
+        final c = IOClient(_directHttpClient());
+        try {
+          return await fn(c).timeout(const Duration(seconds: 45));
+        } finally {
+          c.close();
+        }
+      } on SocketException catch (e) {
+        lastError = e;
+      } on HttpException catch (e) {
+        lastError = e;
+      } on HandshakeException catch (e) {
+        lastError = e;
+      } on TlsException catch (e) {
+        lastError = e;
+      } on TimeoutException catch (e) {
+        lastError = e;
+      } on http.ClientException catch (e) {
+        lastError = e;
+      } on Exception catch (e) {
+        // На спутниковом канале любая ошибка (в т.ч. HTTP 5xx)
+        // может быть transient — пробуем ещё раз
+        lastError = e;
+      }
+      if (attempt >= maxRetries) break;
+      // Экспоненциальная задержка, но не более 30 секунд
+      final delayMs =
+          min(_retryBaseDelay.inMilliseconds * (1 << (attempt - 1)), 30000);
+      await Future<void>.delayed(Duration(milliseconds: delayMs));
+    }
+    throw lastError ?? Exception('Сеть недоступна после $maxRetries попыток');
   }
 
   // Всегда используем nip.io — сервер требует SNI-заголовок
@@ -63,14 +115,17 @@ class ApiService {
 
   /// Получить список пресетов качества
   static Future<List<Preset>> getPresets() async {
-    final response = await _client.get(Uri.parse('$baseUrl/presets'));
-    if (response.statusCode == 200) {
-      final Map<String, dynamic> data = json.decode(response.body);
-      return data.entries
-          .map((e) => Preset.fromJson(e.key, e.value as Map<String, dynamic>))
-          .toList();
-    }
-    throw Exception('Ошибка загрузки пресетов: ${response.statusCode}');
+    return _withRetry((c) async {
+      final response = await c.get(Uri.parse('$baseUrl/presets'));
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        return data.entries
+            .map(
+                (e) => Preset.fromJson(e.key, e.value as Map<String, dynamic>))
+            .toList();
+      }
+      throw Exception('Ошибка загрузки пресетов: ${response.statusCode}');
+    });
   }
 
   /// Запустить транскодирование
@@ -79,30 +134,37 @@ class ApiService {
     String quality = '360p',
     String referer = '',
   }) async {
-    final uri = Uri.parse('$baseUrl/transcode').replace(
-      queryParameters: {'url': url, 'quality': quality, 'referer': referer},
-    );
-    final response = await _client.post(uri);
-    if (response.statusCode == 200) {
-      return TranscodeResult.fromJson(json.decode(response.body));
-    }
-    final body = json.decode(response.body);
-    throw Exception(
-        body['detail'] ?? 'Ошибка транскодирования: ${response.statusCode}');
+    return _withRetry((c) async {
+      final uri = Uri.parse('$baseUrl/transcode').replace(
+        queryParameters: {'url': url, 'quality': quality, 'referer': referer},
+      );
+      final response = await c.post(uri);
+      if (response.statusCode == 200) {
+        return TranscodeResult.fromJson(json.decode(response.body));
+      }
+      final body = json.decode(response.body);
+      throw Exception(
+          body['detail'] ?? 'Ошибка транскодирования: ${response.statusCode}');
+    });
   }
 
   /// Получить статус сессии
   static Future<Map<String, dynamic>> getStatus(String sessionId) async {
-    final response = await _client.get(Uri.parse('$baseUrl/status/$sessionId'));
-    if (response.statusCode == 200) {
-      return json.decode(response.body);
-    }
-    throw Exception('Ошибка статуса: ${response.statusCode}');
+    return _withRetry((c) async {
+      final response =
+          await c.get(Uri.parse('$baseUrl/status/$sessionId'));
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      throw Exception('Ошибка статуса: ${response.statusCode}');
+    });
   }
 
   /// Остановить и очистить сессию
   static Future<void> stopSession(String sessionId) async {
-    await _client.post(Uri.parse('$baseUrl/stop/$sessionId'));
+    await _withRetry((c) async {
+      await c.post(Uri.parse('$baseUrl/stop/$sessionId'));
+    });
   }
 
   /// Скачать транскодированный mp4 на диск
@@ -142,20 +204,22 @@ class ApiService {
     final q = query.trim();
     if (q.isEmpty) return [];
 
-    final uri = Uri.parse('$baseUrl/yt/search').replace(
-      queryParameters: {'q': q, 'limit': limit.toString()},
-    );
-    final response =
-        await _client.get(uri).timeout(const Duration(seconds: 30));
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body) as List<dynamic>;
-      return data
-          .whereType<Map<String, dynamic>>()
-          .map(YouTubeVideo.fromJson)
-          .where((v) => v.id.isNotEmpty || v.url.isNotEmpty)
-          .toList();
-    }
-    throw Exception('Ошибка поиска YouTube: ${response.statusCode}');
+    return _withRetry((c) async {
+      final uri = Uri.parse('$baseUrl/yt/search').replace(
+        queryParameters: {'q': q, 'limit': limit.toString()},
+      );
+      final response =
+          await c.get(uri).timeout(const Duration(seconds: 30));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List<dynamic>;
+        return data
+            .whereType<Map<String, dynamic>>()
+            .map(YouTubeVideo.fromJson)
+            .where((v) => v.id.isNotEmpty || v.url.isNotEmpty)
+            .toList();
+      }
+      throw Exception('Ошибка поиска YouTube: ${response.statusCode}');
+    });
   }
 
   static Future<void> youtubeRegister(String username, String password) async {
@@ -170,20 +234,22 @@ class ApiService {
 
   static Future<void> _youtubeAuth(
       String path, String username, String password) async {
-    final response = await _client.post(
-      Uri.parse('$baseUrl$path'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'username': username, 'password': password}),
-    );
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body) as Map<String, dynamic>;
-      _ytToken = data['token'] as String?;
-      _ytUsername = data['username'] as String? ?? username;
-      await _saveAuthState();
-      return;
-    }
-    throw Exception(
-        'Ошибка авторизации: ${response.statusCode} ${response.body}');
+    await _withRetry((c) async {
+      final response = await c.post(
+        Uri.parse('$baseUrl$path'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'username': username, 'password': password}),
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        _ytToken = data['token'] as String?;
+        _ytUsername = data['username'] as String? ?? username;
+        await _saveAuthState();
+        return;
+      }
+      throw Exception(
+          'Ошибка авторизации: ${response.statusCode} ${response.body}');
+    });
   }
 
   static void youtubeLogout() {
@@ -194,58 +260,66 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> youtubeSubscriptions() async {
     await initLocalState();
-    final response = await _client.get(
-      Uri.parse('$baseUrl/yt/subscriptions'),
-      headers: _ytHeaders,
-    );
-    if (response.statusCode == 200) {
-      return List<Map<String, dynamic>>.from(json.decode(response.body));
-    }
-    throw Exception('Ошибка подписок: ${response.statusCode}');
+    return _withRetry((c) async {
+      final response = await c.get(
+        Uri.parse('$baseUrl/yt/subscriptions'),
+        headers: _ytHeaders,
+      );
+      if (response.statusCode == 200) {
+        return List<Map<String, dynamic>>.from(json.decode(response.body));
+      }
+      throw Exception('Ошибка подписок: ${response.statusCode}');
+    });
   }
 
   static Future<void> youtubeAddSubscription(String input,
       {String channelName = ''}) async {
     await initLocalState();
-    final response = await _client.post(
-      Uri.parse('$baseUrl/yt/subscriptions/add'),
-      headers: _ytHeaders,
-      body: json.encode({'text': input, 'channel_name': channelName}),
-    );
-    if (response.statusCode == 200) return;
-    throw Exception(
-        'Ошибка добавления: ${response.statusCode} ${response.body}');
+    await _withRetry((c) async {
+      final response = await c.post(
+        Uri.parse('$baseUrl/yt/subscriptions/add'),
+        headers: _ytHeaders,
+        body: json.encode({'text': input, 'channel_name': channelName}),
+      );
+      if (response.statusCode == 200) return;
+      throw Exception(
+          'Ошибка добавления: ${response.statusCode} ${response.body}');
+    });
   }
 
   static Future<List<YouTubeVideo>> youtubeFeed({int limit = 30}) async {
     await initLocalState();
-    final uri = Uri.parse('$baseUrl/yt/feed')
-        .replace(queryParameters: {'limit': limit.toString()});
-    final response = await _client.get(uri, headers: _ytHeaders);
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body) as List<dynamic>;
-      return data
-          .whereType<Map<String, dynamic>>()
-          .map(YouTubeVideo.fromJson)
-          .toList();
-    }
-    throw Exception('Ошибка ленты: ${response.statusCode}');
+    return _withRetry((c) async {
+      final uri = Uri.parse('$baseUrl/yt/feed')
+          .replace(queryParameters: {'limit': limit.toString()});
+      final response = await c.get(uri, headers: _ytHeaders);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List<dynamic>;
+        return data
+            .whereType<Map<String, dynamic>>()
+            .map(YouTubeVideo.fromJson)
+            .toList();
+      }
+      throw Exception('Ошибка ленты: ${response.statusCode}');
+    });
   }
 
   static Future<List<YouTubeVideo>> youtubePopular({int limit = 24}) async {
     await initLocalState();
-    final uri = Uri.parse('$baseUrl/yt/popular')
-        .replace(queryParameters: {'limit': limit.toString()});
-    final response =
-        await _client.get(uri).timeout(const Duration(seconds: 30));
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body) as List<dynamic>;
-      return data
-          .whereType<Map<String, dynamic>>()
-          .map(YouTubeVideo.fromJson)
-          .toList();
-    }
-    throw Exception('Ошибка популярного: ${response.statusCode}');
+    return _withRetry((c) async {
+      final uri = Uri.parse('$baseUrl/yt/popular')
+          .replace(queryParameters: {'limit': limit.toString()});
+      final response =
+          await c.get(uri).timeout(const Duration(seconds: 30));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List<dynamic>;
+        return data
+            .whereType<Map<String, dynamic>>()
+            .map(YouTubeVideo.fromJson)
+            .toList();
+      }
+      throw Exception('Ошибка популярного: ${response.statusCode}');
+    });
   }
 
   static String youtubeGoogleStartUrl(String state) {
@@ -258,14 +332,16 @@ class ApiService {
 
   static Future<Map<String, dynamic>> youtubeGoogleStatus(String state) async {
     await initLocalState();
-    final uri = Uri.parse('$baseUrl/yt/google/status').replace(
-      queryParameters: {'state': state},
-    );
-    final response = await _client.get(uri);
-    if (response.statusCode == 200) {
-      return json.decode(response.body) as Map<String, dynamic>;
-    }
-    throw Exception('Ошибка статуса Google: ${response.statusCode}');
+    return _withRetry((c) async {
+      final uri = Uri.parse('$baseUrl/yt/google/status').replace(
+        queryParameters: {'state': state},
+      );
+      final response = await c.get(uri);
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      throw Exception('Ошибка статуса Google: ${response.statusCode}');
+    });
   }
 
   static String _normalizeChannelName(String value) {

@@ -38,6 +38,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Timer? _durationTimer;
   bool _durationRefreshInFlight = false;
 
+  // -- Сценарий восстановления после обрыва сети (ADR-009) ---
+  int _reconnectAttempts = 0;
+  static const int _maxReconnectAttempts = 3;
+  static const Duration _reconnectDelay = Duration(seconds: 5);
+  bool _reconnecting = false;
+  String? _reconnectStatus;
+
   @override
   void initState() {
     super.initState();
@@ -47,8 +54,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _initPlayer() async {
+    _controller?.removeListener(_onPlayerError);
+    _controller?.dispose();
+    _chewieController?.dispose();
+
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.hlsUrl));
-    await _controller!.initialize();
+    _controller!.addListener(_onPlayerError);
+
+    try {
+      await _controller!.initialize();
+    } catch (e) {
+      _onPlaybackError('Ошибка инициализации плеера: $e');
+      return;
+    }
 
     await Future.delayed(const Duration(milliseconds: 500));
     final ar = _controller!.value.aspectRatio > 0
@@ -68,8 +86,44 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
 
     if (mounted) {
-      setState(() => _isInitialized = true);
+      setState(() {
+        _isInitialized = true;
+        _reconnecting = false;
+        _reconnectStatus = null;
+        _reconnectAttempts = 0;
+      });
     }
+  }
+
+  void _onPlayerError() {
+    if (_controller == null || _reconnecting) return;
+    final err = _controller!.value.errorDescription;
+    if (err == null || err.isEmpty) return;
+    _onPlaybackError(err);
+  }
+
+  void _onPlaybackError(String reason) {
+    if (_reconnecting || !mounted) return;
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      setState(() {
+        _reconnectStatus = 'Не удалось восстановить видео после '
+            '$_maxReconnectAttempts попыток.\n$reason';
+      });
+      return;
+    }
+
+    setState(() {
+      _reconnecting = true;
+      _reconnectAttempts++;
+      _isInitialized = false;
+      _reconnectStatus = 'Обрыв сети. Попытка $_reconnectAttempts '
+          'из $_maxReconnectAttempts...';
+    });
+
+    Future<void>.delayed(_reconnectDelay, () {
+      if (!mounted) return;
+      _initPlayer();
+    });
   }
 
   void _startDurationProbe() {
@@ -84,7 +138,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 15);
     client.badCertificateCallback = (_, __, ___) => true;
-    client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
+    if (Platform.isWindows) {
+      client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
+    }
     try {
       final req = await client.getUrl(Uri.parse(widget.hlsUrl));
       final resp = await req.close().timeout(const Duration(seconds: 10));
@@ -311,11 +367,45 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const CircularProgressIndicator(color: Colors.orange),
+                        if (_reconnectAttempts >= _maxReconnectAttempts &&
+                            _reconnectStatus != null)
+                          const Icon(Icons.error_outline,
+                              color: Colors.orange, size: 36),
+                        if (_reconnectAttempts < _maxReconnectAttempts ||
+                            _reconnectStatus == null)
+                          const CircularProgressIndicator(
+                              color: Colors.orange),
                         const SizedBox(height: 14),
-                        Text('Запускаю ${widget.quality}...',
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 16)),
+                        Text(
+                          _reconnectStatus ?? 'Запускаю ${widget.quality}...',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 16),
+                        ),
+                        if (_reconnectAttempts >= _maxReconnectAttempts) ...[
+                          const SizedBox(height: 12),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange),
+                            onPressed: () {
+                              setState(() {
+                                _reconnectAttempts = 0;
+                                _reconnectStatus = null;
+                              });
+                              _initPlayer();
+                            },
+                            child: const Text('Попробовать снова',
+                                style: TextStyle(color: Colors.black)),
+                          ),
+                          const SizedBox(height: 6),
+                          TextButton(
+                            onPressed: () {
+                              if (mounted) Navigator.pop(context);
+                            },
+                            child: const Text('Выйти',
+                                style: TextStyle(color: Colors.white54)),
+                          ),
+                        ],
                       ],
                     ),
                   ),
