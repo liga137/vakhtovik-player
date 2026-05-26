@@ -14,6 +14,7 @@ import '../services/filmix_dom.dart';
 import '../services/update_service.dart';
 import '../services/youtube_hover.dart';
 import '../models/preset.dart';
+import 'iptv_screen.dart';
 import 'youtube_search_screen.dart';
 import 'player_screen.dart';
 
@@ -2420,6 +2421,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                 MaterialPageRoute(
                                     builder: (_) =>
                                         const YouTubeSearchScreen()))),
+                        _HomeSiteButton(
+                            label: 'IPTV',
+                            icon: Icons.live_tv,
+                            onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) => const IptvScreen()))),
                         _HomeSiteButton(
                             label: 'Свой сайт',
                             icon: Icons.add_link,
