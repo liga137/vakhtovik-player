@@ -144,9 +144,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 15);
     client.badCertificateCallback = (_, __, ___) => true;
-    if (Platform.isWindows) {
-      client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
-    }
     try {
       final req = await client.getUrl(Uri.parse(widget.hlsUrl));
       final resp = await req.close().timeout(const Duration(seconds: 10));

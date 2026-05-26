@@ -32,11 +32,8 @@ class ApiService {
     client.connectionTimeout = const Duration(seconds: 45);
     client.idleTimeout = const Duration(seconds: 90);
     client.badCertificateCallback = (cert, host, port) => true;
-    // Прокси имеет смысл только на Windows (там работает Hysteria/GOST).
-    // На Android системный прокси настраивается иначе.
-    if (Platform.isWindows) {
-      client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
-    }
+    // Прокси 127.0.0.1:1080 убран — мёртв.
+    // neko-tun (системный VPN) маршрутизирует трафик сам (как для curl).
     return client;
   }
 

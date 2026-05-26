@@ -37,7 +37,6 @@ class UpdateService {
   static HttpClient _directHttpClient() {
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 25);
-    client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
     return client;
   }
 
