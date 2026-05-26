@@ -2151,7 +2151,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             return;
                           }
                           LogService.warn(LogService.browser,
-                              'WebView ошибка загрузки: $failedUrl — ${error.description} (код ${error.errorCode})');
+                              'WebView ошибка загрузки: $failedUrl — ${error.description} (тип ${error.type})');
                           _lastFailedUrl = failedUrl;
                           if (_webViewRetryCount < _webViewMaxRetries) {
                             _webViewRetryCount++;

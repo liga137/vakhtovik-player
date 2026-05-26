@@ -84,8 +84,9 @@ class LogService {
   }
 
   /// Предупреждение — что-то нештатное, но приложение продолжает работу.
-  static Future<void> warn(String source, String message) async {
-    await _write('WARN', source, message);
+  static Future<void> warn(String source, String message,
+      [Object? error]) async {
+    await _write('WARN', source, message, error);
   }
 
   /// Информация — штатные события (старт/стоп/переключение).
