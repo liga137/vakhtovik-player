@@ -376,9 +376,11 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     user.dispose();
     pass.dispose();
     if (mounted) setState(() {});
-    _ensureFreshLoadedIfPossible();
-    _ensureFeedLoadedIfPossible();
-    unawaited(_loadSubs());
+    if (result == true) {
+      _ensureFreshLoadedIfPossible();
+      _ensureFeedLoadedIfPossible();
+      unawaited(_loadSubs());
+    }
     return result;
   }
 

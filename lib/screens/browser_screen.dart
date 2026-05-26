@@ -108,11 +108,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
 
     const profileDir = 'direct';
+    const browserArgs =
+        '--disable-quic --disable-features=UseDnsHttpsSvcb,AsyncDns';
 
     return WebViewEnvironment.create(
       settings: WebViewEnvironmentSettings(
         userDataFolder: '${baseDir.path}/$profileDir',
-        additionalBrowserArguments: null,
+        additionalBrowserArguments: browserArgs,
       ),
     );
   }
