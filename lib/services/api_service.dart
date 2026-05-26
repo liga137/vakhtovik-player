@@ -24,6 +24,7 @@ class ApiService {
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 30);
     client.badCertificateCallback = (cert, host, port) => true;
+    client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
     return client;
   }
 
