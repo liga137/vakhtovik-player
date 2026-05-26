@@ -22,34 +22,17 @@ class ApiService {
 
   static HttpClient _directHttpClient() {
     final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 45);
+    client.connectionTimeout = const Duration(seconds: 30);
     client.badCertificateCallback = (cert, host, port) => true;
-    client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
     return client;
   }
 
-  /// Пробует HTTPS; при HandshakeException/TLS-ошибке возвращает HTTPS-URL по IP.
-  static Future<String> _resolveBaseUrl() async {
-    try {
-      final req = await _client
-          .get(Uri.parse('$_baseUrlHttps/presets'))
-          .timeout(const Duration(seconds: 15));
-      if (req.statusCode == 200) return _baseUrlHttps;
-    } catch (_) {}
-    return 'https://195.226.92.151:8008';
-  }
+  // Всегда используем nip.io — сервер требует SNI-заголовок
+  static String get baseUrl => _baseUrlHttps;
 
   static bool get isYouTubeLoggedIn => _ytToken != null;
   static String? get youtubeUsername => _ytUsername;
   static String? get youtubeToken => _ytToken;
-
-  static String? _resolvedBaseUrl;
-  static String get baseUrl => _resolvedBaseUrl ?? 'https://195.226.92.151:8008';
-
-  static Future<void> _ensureBaseUrlResolved() async {
-    if (_resolvedBaseUrl != null) return;
-    _resolvedBaseUrl = await _resolveBaseUrl();
-  }
 
   static Map<String, String> get _ytHeaders => {
         'Content-Type': 'application/json',
@@ -62,7 +45,6 @@ class ApiService {
     _ytToken = prefs.getString(_ytTokenKey);
     _ytUsername = prefs.getString(_ytUsernameKey);
     _ytStateLoaded = true;
-    await _ensureBaseUrlResolved();
   }
 
   static Future<void> _saveAuthState() async {
