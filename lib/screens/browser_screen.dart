@@ -1267,6 +1267,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() {
       _showHome = false;
       _pageLoading = true;
+      _seasonvarEpisodes = [];
+      _filmixEpisodes = [];
+      _filmixTranslations = [];
+      _filmixSeasons = [];
+      _seasonvarTranslations = [];
+      _seasonvarSeasons = [];
+      _seasonvarIndex = 0;
+      _filmixIndex = 0;
     });
     _currentRealUrl = siteUrl;
     _rememberUrl(siteUrl);
@@ -1294,6 +1302,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() {
       _showHome = false;
       _pageLoading = true;
+      _seasonvarEpisodes = [];
+      _filmixEpisodes = [];
+      _filmixTranslations = [];
+      _filmixSeasons = [];
+      _seasonvarTranslations = [];
+      _seasonvarSeasons = [];
+      _seasonvarIndex = 0;
+      _filmixIndex = 0;
     });
     _currentRealUrl = target;
     _rememberUrl(target);
@@ -1999,36 +2015,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           if (mounted) {
                             setState(() {
                               _pageLoading = true;
-                            });
-                          }
-                          // При переходе на другой сайт сбрасываем кнопки серий Seasonvar
-                          if (url != null &&
-                              !url.toString().contains('seasonvar') &&
-                              (_seasonvarEpisodes.isNotEmpty ||
-                                  _seasonvarTranslations.isNotEmpty ||
-                                  _seasonvarSeasons.isNotEmpty)) {
-                            setState(() {
-                              _seasonvarEpisodes = [];
-                              _seasonvarIndex = 0;
-                              _seasonvarTranslations = [];
-                              _seasonvarTranslationId = '';
-                              _seasonvarSeasons = [];
-                            });
-                          }
-                          if (url != null &&
-                              !url.toString().contains('filmix') &&
-                              (_filmixEpisodes.isNotEmpty ||
-                                  _filmixTranslations.isNotEmpty ||
-                                  _filmixSeasons.isNotEmpty)) {
-                            setState(() {
-                              _filmixEpisodes = [];
-                              _filmixIndex = 0;
-                              _filmixTranslations = [];
-                              _filmixTranslationId = '';
-                              _filmixSeasons = [];
-                              _filmixSeasonId = '';
-                              _lastFilmixMediaUrl = '';
-                              _lastAutoMediaUrl = '';
                             });
                           }
                         },

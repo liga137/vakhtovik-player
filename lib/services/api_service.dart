@@ -11,7 +11,6 @@ import '../models/youtube_video.dart';
 /// Сервис для работы с API «Плеер Вахтовика»
 class ApiService {
   static const String _baseUrlHttps = 'https://195.226.92.151.nip.io:8008';
-  static const String _baseUrlHttp = 'http://195.226.92.151:8008';
   static const String _ytTokenKey = 'yt_token';
   static const String _ytUsernameKey = 'yt_username';
   static const String _ytWatchedChannelsKey = 'yt_watched_channels';
@@ -23,20 +22,21 @@ class ApiService {
 
   static HttpClient _directHttpClient() {
     final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 30);
+    client.connectionTimeout = const Duration(seconds: 45);
     client.badCertificateCallback = (cert, host, port) => true;
+    client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
     return client;
   }
 
-  /// Пробует HTTPS; при HandshakeException/TLS-ошибке возвращает HTTP-URL.
+  /// Пробует HTTPS; при HandshakeException/TLS-ошибке возвращает HTTPS-URL по IP.
   static Future<String> _resolveBaseUrl() async {
     try {
       final req = await _client
           .get(Uri.parse('$_baseUrlHttps/presets'))
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 15));
       if (req.statusCode == 200) return _baseUrlHttps;
     } catch (_) {}
-    return _baseUrlHttp;
+    return 'https://195.226.92.151:8008';
   }
 
   static bool get isYouTubeLoggedIn => _ytToken != null;
@@ -44,7 +44,7 @@ class ApiService {
   static String? get youtubeToken => _ytToken;
 
   static String? _resolvedBaseUrl;
-  static String get baseUrl => _resolvedBaseUrl ?? _baseUrlHttp;
+  static String get baseUrl => _resolvedBaseUrl ?? 'https://195.226.92.151:8008';
 
   static Future<void> _ensureBaseUrlResolved() async {
     if (_resolvedBaseUrl != null) return;
