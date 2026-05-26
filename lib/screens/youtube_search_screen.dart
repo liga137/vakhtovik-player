@@ -357,7 +357,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
           ),
           actions: [
             TextButton(
-                onPressed: busy ? null : () => Navigator.pop(context, false),
+                onPressed: () => Navigator.pop(context, false),
                 child: const Text('Отмена')),
             TextButton(
               onPressed:

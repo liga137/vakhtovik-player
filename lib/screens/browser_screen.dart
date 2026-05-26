@@ -50,12 +50,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   VideoPlayerController? _videoController;
   ChewieController? _chewieController;
-  bool _showPlayer = false;
+  final bool _showPlayer = false;
   bool _waitingForNextEpisode = false; // флаг: ждём перехвата новой серии
   bool _onYouTube = false; // флаг: мы на странице YouTube
   bool _compressMode = false; // Режим «Сжатое» — кнопки на всех видео YouTube
-  Duration _lastPosition = Duration.zero; // для детекта конца HLS без duration
-  bool _endReached = false; // защита от множественных вызовов _playNextEpisode
   bool _interceptedAlready = false; // защита от повторного перехвата одного URL
   bool _scanningSeasonvar = false;
   List<Map<String, String>> _seasonvarEpisodes = [];
@@ -110,13 +108,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
 
     const profileDir = 'direct';
-    const browserArgs =
-        '--disable-quic --disable-features=UseDnsHttpsSvcb,AsyncDns';
 
     return WebViewEnvironment.create(
       settings: WebViewEnvironmentSettings(
         userDataFolder: '${baseDir.path}/$profileDir',
-        additionalBrowserArguments: browserArgs,
+        additionalBrowserArguments: null,
       ),
     );
   }
@@ -267,8 +263,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() {
       _recentLinks.removeWhere((x) => x == t);
       _recentLinks.insert(0, t);
-      if (_recentLinks.length > 30)
+      if (_recentLinks.length > 30) {
         _recentLinks = _recentLinks.take(30).toList();
+      }
     });
     _saveRecentLinks();
   }
@@ -1261,7 +1258,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (webViewController == null) return;
     final mode = _compressMode;
     webViewController!.evaluateJavascript(
-        source: "window.vakhCompressMode(" + (mode ? "true" : "false") + ");");
+        source: "window.vakhCompressMode(${mode ? "true" : "false"});");
   }
 
   void _openSite(String siteUrl) {
@@ -1281,8 +1278,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final parsed = Uri.tryParse(text);
     if (parsed != null &&
         parsed.path == '/lite' &&
-        parsed.queryParameters['url'] != null)
+        parsed.queryParameters['url'] != null) {
       return parsed.queryParameters['url']!;
+    }
     if (text.isEmpty || text == 'about:blank') return _currentRealUrl;
     return text;
   }
@@ -1300,46 +1298,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final loadUrl = _liteMode ? ApiService.liteUrl(target) : target;
     urlController.text = loadUrl;
     webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
-  }
-
-  ContentBlocker _block(
-      String urlFilter, List<ContentBlockerTriggerResourceType> types) {
-    return ContentBlocker(
-      trigger: ContentBlockerTrigger(urlFilter: urlFilter, resourceType: types),
-      action: ContentBlockerAction(type: ContentBlockerActionType.BLOCK),
-    );
-  }
-
-  List<ContentBlocker> _economyRules(EconomyLevel level) {
-    final adAndTrackers = _block(
-      r'.*(doubleclick|googlesyndication|google-analytics|googletagmanager|adfox|adriver|betweendigital|mc\.yandex|yandex\.ru/ads|mytarget|facebook\.net|scorecardresearch|hotjar|criteo|adsystem|getter\.cfd|schulist\.link).*',
-      [
-        ContentBlockerTriggerResourceType.SCRIPT,
-        ContentBlockerTriggerResourceType.RAW
-      ],
-    );
-    switch (level) {
-      case EconomyLevel.none:
-        return const [];
-      case EconomyLevel.economy:
-        return [
-          adAndTrackers,
-          _block(r'.*\.(woff2?|ttf|otf)(\?.*)?$',
-              [ContentBlockerTriggerResourceType.FONT])
-        ];
-      case EconomyLevel.superEconomy:
-        return [
-          adAndTrackers,
-          _block(r'.*\.(woff2?|ttf|otf)(\?.*)?$',
-              [ContentBlockerTriggerResourceType.FONT]),
-          _block(r'.*\.(jpg|jpeg|png|gif|webp|avif|svg)(\?.*)?$', [
-            ContentBlockerTriggerResourceType.IMAGE,
-            ContentBlockerTriggerResourceType.SVG_DOCUMENT
-          ]),
-        ];
-      case EconomyLevel.text:
-        return const [];
-    }
   }
 
   String _economyLabel(EconomyLevel level) {
@@ -1807,8 +1765,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                   final currentUrl = _interceptedUrl;
                                   final foundIndex = activeEpisodes.indexWhere(
                                       (e) => (e['url'] ?? '') == currentUrl);
-                                  if (foundIndex >= 0)
+                                  if (foundIndex >= 0) {
                                     currentIndex = foundIndex;
+                                  }
                                   setState(() {
                                     _seasonvarEpisodes = activeEpisodes;
                                     _seasonvarIndex = currentIndex;
@@ -2035,10 +1994,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           );
                         },
                         onLoadStart: (controller, url) {
-                          if (mounted)
+                          if (mounted) {
                             setState(() {
                               _pageLoading = true;
                             });
+                          }
                           // При переходе на другой сайт сбрасываем кнопки серий Seasonvar
                           if (url != null &&
                               !url.toString().contains('seasonvar') &&
@@ -2071,10 +2031,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           }
                         },
                         onLoadStop: (controller, url) async {
-                          if (mounted)
+                          if (mounted) {
                             setState(() {
                               _pageLoading = false;
                             });
+                          }
                           if (url != null) {
                             if (url.path == '/lite' &&
                                 url.queryParameters['url'] != null) {
@@ -2082,8 +2043,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               _currentRealUrl = url.queryParameters['url']!;
                             } else {
                               urlController.text = url.toString();
-                              if (url.toString() != 'about:blank')
+                              if (url.toString() != 'about:blank') {
                                 _currentRealUrl = url.toString();
+                              }
                             }
                             if (_currentRealUrl.isNotEmpty &&
                                 _currentRealUrl != 'about:blank') {
@@ -2182,8 +2144,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               _currentRealUrl = url.queryParameters['url']!;
                             } else {
                               urlController.text = url.toString();
-                              if (url.toString() != 'about:blank')
+                              if (url.toString() != 'about:blank') {
                                 _currentRealUrl = url.toString();
+                              }
                             }
                             if (_currentRealUrl.isNotEmpty &&
                                 _currentRealUrl != 'about:blank') {
@@ -2598,7 +2561,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                 ? 'Seasonvar: '
                                 : (_filmixSeasonId.isNotEmpty ||
                                         _filmixTranslationId.isNotEmpty)
-                                    ? 'Filmix ${_filmixSeasonId.isNotEmpty ? "S${_filmixSeasonId}" : ""}${_filmixTranslationId.isNotEmpty ? " · $_filmixTranslationId" : ""}: '
+                                    ? 'Filmix ${_filmixSeasonId.isNotEmpty ? "S$_filmixSeasonId" : ""}${_filmixTranslationId.isNotEmpty ? " · $_filmixTranslationId" : ""}: '
                                     : 'Filmix: ',
                             style: const TextStyle(
                                 color: Colors.orange, fontSize: 13),
@@ -2958,7 +2921,7 @@ class _MiniProgressOverlayState extends State<_MiniProgressOverlay> {
     final h = d.inHours;
     final m = d.inMinutes.remainder(60);
     final s = d.inSeconds.remainder(60);
-    return h > 0 ? '${h}h ${m}m' : '${m}:${s.toString().padLeft(2, '0')}';
+    return h > 0 ? '${h}h ${m}m' : '$m:${s.toString().padLeft(2, '0')}';
   }
 
   @override

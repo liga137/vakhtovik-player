@@ -10,6 +10,7 @@ class IptvService {
 
   // Берём легальный публичный источник iptv-org. Полный index.m3u слишком жирный
   // для спутника, поэтому стартуем с русскоязычного плейлиста.
+  // При недоступности используем встроенный список каналов (не требует интернета).
   static const _sources = [
     'https://iptv-org.github.io/iptv/languages/rus.m3u',
   ];
@@ -17,13 +18,18 @@ class IptvService {
   static const categoryOrder = [
     'Все',
     'Избранное',
+    'Общероссийские',
     'Кино',
     'Мультфильмы',
     'Спорт',
     'Новости',
-    'Познавательное',
-    'Музыка',
-    'Развлекательные',
+    'Познавательные',
+    'Музыкальные',
+    'Украина',
+    'Беларусь',
+    'Türkiye',
+    'Azerbaijan',
+    'Israel',
     'Региональные',
     'Разное',
   ];
@@ -248,32 +254,349 @@ class IptvService {
   }
 
   static const fallbackChannels = [
+    // Общероссийские
     IptvChannel(
-      name: 'NASA TV',
-      url: 'https://ntv1.infomaniak.com/livecast/ik:ntv1/manifest.m3u8',
-      category: 'Познавательное',
-      country: 'US',
-      language: 'English',
+      name: 'Первый канал',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/pervyj/video.m3u8',
+      category: 'Общероссийские',
+      logo:
+          'https://af-play.com/storage/images/pack_logos/cdef747b13675ef8302fe8283b7de688.png',
       source: 'fallback',
     ),
     IptvChannel(
-      name: 'Akamai Test Live',
+      name: 'Первый HD',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/pervyj-hd/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Россия 1',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/rossija/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Россия 1 HD',
       url:
-          'https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8',
-      category: 'Разное',
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/rossija-hd/video.m3u8',
+      category: 'Общероссийские',
       source: 'fallback',
     ),
     IptvChannel(
-      name: 'MUX Big Buck Bunny 360p',
-      url: 'https://test-streams.mux.dev/bbb-360p.m3u8',
+      name: 'НТВ',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/ntv/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'НТВ HD',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/ntv-hd/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'ТНТ',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/TNT/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'ТНТ HD',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/tnt-hd/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'СТС',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/CTC/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'ТВ3',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/tv3/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'РЕН ТВ',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/ren-tv/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'ТВЦ',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/tvc/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Звезда',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/zvezda/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: '5 канал',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/5kanal/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Пятница',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/piatnica/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Домашний',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/domashnij/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Мир',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/mir/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'ОТР',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/otp/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Ю ТВ',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/yu-tv/video.m3u8',
+      category: 'Общероссийские',
+      source: 'fallback',
+    ),
+    // Новости
+    IptvChannel(
+      name: 'Россия 24',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/rossija24/video.m3u8',
+      category: 'Новости',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'РБК',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/rbk/video.m3u8',
+      category: 'Новости',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Мир 24',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/mir-24/video.m3u8',
+      category: 'Новости',
+      source: 'fallback',
+    ),
+    // Кино
+    IptvChannel(
+      name: 'Кинопремьера HD',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/kinopremiera-hd/video.m3u8',
+      category: 'Кино',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Кинохит',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/kinohit/video.m3u8',
+      category: 'Кино',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Киномикс',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/kinomix/video.m3u8',
+      category: 'Кино',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Киносемья',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/kinosemja/video.m3u8',
+      category: 'Кино',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Кинокомедия',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/kinokomedia/video.m3u8',
+      category: 'Кино',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Дом Кино',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/dom-kino/video.m3u8',
+      category: 'Кино',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Мосфильм',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/mosfilm/video.m3u8',
+      category: 'Кино',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Русский Иллюзион',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/russkij-iluzion/video.m3u8',
+      category: 'Кино',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Блокбастер HD',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/blokbaster-hd/video.m3u8',
+      category: 'Кино',
+      source: 'fallback',
+    ),
+    // Спорт
+    IptvChannel(
+      name: 'Матч ТВ',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/match-tv/video.m3u8',
+      category: 'Спорт',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Матч ТВ HD',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/match-tv-hd/video.m3u8',
+      category: 'Спорт',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Матч! Арена',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/match-arena/video.m3u8',
+      category: 'Спорт',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Матч! Игра',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/match-igra/video.m3u8',
+      category: 'Спорт',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Матч! Боец',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/match-boec/video.m3u8',
+      category: 'Спорт',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Eurosport 1',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/eurosport/video.m3u8',
+      category: 'Спорт',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Авто Плюс HD',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/auto-plus-hd/video.m3u8',
+      category: 'Спорт',
+      source: 'fallback',
+    ),
+    // Мультфильмы
+    IptvChannel(
+      name: 'Карусель',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/karusel/video.m3u8',
       category: 'Мультфильмы',
       source: 'fallback',
     ),
     IptvChannel(
-      name: 'Apple BipBop Test',
+      name: 'Мульт',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/mult/video.m3u8',
+      category: 'Мультфильмы',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Детский мир',
       url:
-          'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8',
-      category: 'Кино',
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/detskij-mir/video.m3u8',
+      category: 'Мультфильмы',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Мультиландия',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/multimania/video.m3u8',
+      category: 'Мультфильмы',
+      source: 'fallback',
+    ),
+    // Познавательные
+    IptvChannel(
+      name: 'National Geographic',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/nat-geo/video.m3u8',
+      category: 'Познавательные',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Discovery Channel',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/discovery/video.m3u8',
+      category: 'Познавательные',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'History HD',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/history-hd/video.m3u8',
+      category: 'Познавательные',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Моя планета',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/moya-planeta/video.m3u8',
+      category: 'Познавательные',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Наука',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/nauka/video.m3u8',
+      category: 'Познавательные',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Зал Суда HD',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/zal-suda-hd/video.m3u8',
+      category: 'Познавательные',
+      source: 'fallback',
+    ),
+    // Музыкальные
+    IptvChannel(
+      name: 'Музыка Первого',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/muzyka-pervogo/video.m3u8',
+      category: 'Музыкальные',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'RU TV',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/ru-tv/video.m3u8',
+      category: 'Музыкальные',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Муз-ТВ',
+      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/muz-tv/video.m3u8',
+      category: 'Музыкальные',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Europa Plus TV',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/evropa-plus-tv/video.m3u8',
+      category: 'Музыкальные',
+      source: 'fallback',
+    ),
+    IptvChannel(
+      name: 'Шансон ТВ',
+      url:
+          'http://bethoven.af-stream.com:8080/s/pyxm92zq/shanson-tv/video.m3u8',
+      category: 'Музыкальные',
       source: 'fallback',
     ),
   ];

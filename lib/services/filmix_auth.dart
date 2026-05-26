@@ -23,7 +23,7 @@ class FilmixAuth {
     final manager = CookieManager.instance();
     for (final item in decoded) {
       if (item is! Map) continue;
-      final map = Map<String, dynamic>.from(item as Map);
+      final map = Map<String, dynamic>.from(item);
       final name = (map['name'] ?? '').toString();
       final value = (map['value'] ?? '').toString();
       if (name.isEmpty || value.isEmpty) continue;
@@ -83,18 +83,13 @@ class FilmixAuth {
 
   /// JS для автологина на любом домене Filmix (filmix.ac, filmix.me, filmix.biz и др.)
   static String getInjectionScript() {
-    return """
-(function() {
+    return """(function() {
   if (!window.location.hostname.includes('filmix')) return;
   if (window.__vakhtovikFilmixLoginStarted) return 'already-started';
   window.__vakhtovikFilmixLoginStarted = true;
 
-  var LOGIN = '""" +
-        filmixLogin +
-        """';
-  var PASS = '""" +
-        filmixPassword +
-        """';
+  var LOGIN = '$filmixLogin';
+  var PASS = '$filmixPassword';
 
   function visible(el) {
     if (!el) return false;
@@ -116,8 +111,8 @@ class FilmixAuth {
   // Уже залогинен?
   function loggedIn() {
     var ok = document.querySelector(
-    '.user-logged,.profile-link,.cabinet,a[href*=\"profile\"],' +
-    '.login-username,.user-name,.user-menu,.header-user,[class*=\"logged\"]'
+    '.user-logged,.profile-link,.cabinet,a[href*="profile"],' +
+    '.login-username,.user-name,.user-menu,.header-user,[class*="logged"]'
     );
     return !!ok && !(document.body.innerText || '').match(/Авторизация|Введите свои логин пароль/i);
   }
@@ -125,27 +120,27 @@ class FilmixAuth {
   function fillAndSubmit() {
     if (loggedIn()) return 'logged';
     var u = document.querySelector('#login_name') || document.querySelector(
-      'input[name=\"email\"],input[name=\"login\"],input[type=\"email\"],' +
-      'input[name=\"login_name\"],#login_name,input[name=\"username\"],' +
-      'input[placeholder*=\"mail\" i],input[placeholder*=\"логин\" i],input[placeholder*=\"Логин\" i]'
+      'input[name="email"],input[name="login"],input[type="email"],' +
+      'input[name="login_name"],#login_name,input[name="username"],' +
+      'input[placeholder*="mail" i],input[placeholder*="логин" i],input[placeholder*="Логин" i]'
     );
     var p = document.querySelector('#login_password') || document.querySelector(
-      'input[name=\"password\"],input[name=\"pass\"],input[type=\"password\"],' +
-      '#login_password,input[placeholder*=\"пароль\" i]'
+      'input[name="password"],input[name="pass"],input[type="password"],' +
+      '#login_password,input[placeholder*="пароль" i]'
     );
     if (!u || !p || !visible(u) || !visible(p)) return false;
     setValue(u, LOGIN);
     setValue(p, PASS);
 
-    document.querySelectorAll('input[type=\"checkbox\"]').forEach(function(cb) {
+    document.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
       var txt = ((cb.closest('label')||cb.parentElement||{}).innerText || '').toLowerCase();
       if (txt.includes('запом') || cb.name.toLowerCase().includes('remember')) cb.checked = true;
     });
 
     setTimeout(function() {
       var btn = document.querySelector('button.enter') || Array.from(document.querySelectorAll(
-        'button[type=\"submit\"],input[type=\"submit\"],.login-submit,' +
-        '#login_btn,button.log_btn,form button[class*=\"btn\"],.btn-primary,button,a'
+        'button[type="submit"],input[type="submit"],.login-submit,' +
+        '#login_btn,button.log_btn,form button[class*="btn"],.btn-primary,button,a'
       )).find(function(x) {
         var t = ((x.innerText || x.value || '') + '').trim().toLowerCase();
         return visible(x) && (t === 'войти' || t.includes('войти') || t.includes('login'));
@@ -162,10 +157,10 @@ class FilmixAuth {
     if (exact && visible(exact)) { exact.click(); return 'clicked-exact'; }
     // Пробуем открыть форму входа
     var trigger = Array.from(document.querySelectorAll(
-      'a[href*=\"login\"],a[href*=\"signin\"],a[href*=\"auth\"],' +
+      'a[href*="login"],a[href*="signin"],a[href*="auth"],' +
       '.login-btn,.signin-btn,#login-btn,.btn-login,button.login,' +
-      '[class*=\"login_btn\"],.header-login,.auth-btn,[data-modal*=\"login\"],' +
-      '[data-target*=\"login\"],[data-bs-target*=\"login\"],button,a,span,div'
+      '[class*="login_btn"],.header-login,.auth-btn,[data-modal*="login"],' +
+      '[data-target*="login"],[data-bs-target*="login"],button,a,span,div'
     )).find(function(x) {
       var t = (x.innerText || x.title || x.getAttribute('aria-label') || '').trim().toLowerCase();
       return visible(x) && (t === 'авторизация' || t.includes('авторизац') || t === 'вход' || t.includes('войти'));

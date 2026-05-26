@@ -146,8 +146,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _switchQuality(String newQuality) async {
     final source = widget.sourceUrl;
-    if (source == null || source.isEmpty || newQuality == widget.quality)
+    if (source == null || source.isEmpty || newQuality == widget.quality) {
       return;
+    }
 
     // Закрываем текущий и открываем новый плеер — без гонки
     ApiService.stopSession(widget.sessionId).catchError((_) {});
@@ -173,8 +174,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final h = d ~/ 3600;
     final m = (d % 3600) ~/ 60;
     final s = d % 60;
-    if (h > 0)
+    if (h > 0) {
       return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 

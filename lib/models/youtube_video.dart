@@ -175,8 +175,9 @@ class YouTubeVideo {
     if (v.isNotEmpty) return v;
     final parts = uri.pathSegments;
     if (parts.length >= 2 && parts.first == 'shorts') return parts[1].trim();
-    if (parts.isNotEmpty && parts.first == 'watch')
+    if (parts.isNotEmpty && parts.first == 'watch') {
       return (uri.queryParameters['v'] ?? '').trim();
+    }
     return '';
   }
 

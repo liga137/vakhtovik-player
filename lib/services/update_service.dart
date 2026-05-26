@@ -115,8 +115,9 @@ class UpdateService {
       }
       return null;
     }
-    if (releasesResp.statusCode == 404 || releasesResp.statusCode == 403)
+    if (releasesResp.statusCode == 404 || releasesResp.statusCode == 403) {
       return null;
+    }
     throw Exception('GitHub API releases: ${releasesResp.statusCode}');
   }
 
