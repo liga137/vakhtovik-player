@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/youtube_video.dart';
 import '../services/api_service.dart';
+import '../services/log_service.dart';
 import 'player_screen.dart';
 
 class YouTubeSearchScreen extends StatefulWidget {
@@ -126,6 +127,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       final items = await ApiService.youtubeFresh(limit: 48);
       if (mounted) setState(() => _fresh = items);
     } catch (e) {
+      LogService.error(LogService.youtube, 'Ошибка загрузки "Новое"', e);
       if (mounted) _snack('Ошибка "Новое": $e');
     } finally {
       if (mounted) setState(() => _loadingFresh = false);
@@ -141,6 +143,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       final items = await ApiService.searchYouTube(q, limit: 12);
       if (mounted) setState(() => _searchResults = items);
     } catch (e) {
+      LogService.error(LogService.youtube, 'Ошибка поиска YouTube', e);
       if (mounted) _snack('Ошибка поиска: $e');
     } finally {
       if (mounted) setState(() => _loadingSearch = false);
@@ -155,6 +158,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       final items = await ApiService.youtubeFeed(limit: 40);
       if (mounted) setState(() => _feed = items);
     } catch (e) {
+      LogService.error(LogService.youtube, 'Ошибка загрузки ленты', e);
       if (mounted) _snack('Ошибка ленты: $e');
     } finally {
       if (mounted) setState(() => _loadingFeed = false);
@@ -168,6 +172,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       final items = await ApiService.youtubePopular(limit: 24);
       if (mounted) setState(() => _popular = items);
     } catch (e) {
+      LogService.error(LogService.youtube, 'Ошибка загрузки популярного', e);
       if (mounted) _snack('Ошибка популярного: $e');
     } finally {
       if (mounted) setState(() => _loadingPopular = false);
@@ -194,6 +199,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       }).toList();
       if (mounted) setState(() => _shorts = normalized);
     } catch (e) {
+      LogService.error(LogService.youtube, 'Ошибка загрузки Shorts', e);
       if (mounted) _snack('Ошибка Shorts: $e');
     } finally {
       if (mounted) setState(() => _loadingShorts = false);
@@ -208,6 +214,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       final items = await ApiService.youtubeSubscriptions();
       if (mounted) setState(() => _subs = items);
     } catch (e) {
+      LogService.error(LogService.youtube, 'Ошибка загрузки подписок', e);
       if (mounted) _snack('Ошибка подписок: $e');
     } finally {
       if (mounted) setState(() => _loadingSubs = false);
@@ -224,6 +231,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       await _loadSubs();
       _snack('Подписка добавлена');
     } catch (e) {
+      LogService.error(LogService.youtube, 'Ошибка добавления подписки', e);
       _snack('Ошибка: $e');
     }
   }
@@ -263,9 +271,10 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
             _snack(
                 'Импорт не завершён. Проверь OAuth Production в Google Console.');
           }
-        } catch (_) {}
+          } catch (e) { LogService.warn(LogService.youtube, 'Ошибка опроса статуса OAuth', e); }
       });
     } catch (e) {
+      LogService.error(LogService.youtube, 'Ошибка запуска импорта Google подписок', e);
       if (mounted) setState(() => _googleImporting = false);
       _snack(
           'Ошибка: $e. Если видишь "app not verified", переведи OAuth в Production.');
@@ -317,6 +326,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
         }
         if (context.mounted) Navigator.pop(context, true);
       } catch (e) {
+        LogService.warn(LogService.youtube, 'Ошибка авторизации YouTube', e);
         final msg = e.toString().contains('401')
             ? 'Аккаунт не найден. Нажми «Создать» если впервые.'
             : e.toString().contains('400') && e.toString().contains('exists')
@@ -409,6 +419,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
                 duration: result.duration,
               )));
     } catch (e) {
+      LogService.error(LogService.youtube, 'Ошибка запуска видео YouTube', e);
       if (mounted) _snack('Ошибка запуска: $e');
     } finally {
       if (mounted) setState(() => _starting = false);

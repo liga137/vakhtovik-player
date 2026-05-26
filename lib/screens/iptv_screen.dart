@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/iptv_channel.dart';
 import '../services/api_service.dart';
 import '../services/iptv_service.dart';
+import '../services/log_service.dart';
 import 'player_screen.dart';
 
 class IptvScreen extends StatefulWidget {
@@ -49,6 +50,7 @@ class _IptvScreenState extends State<IptvScreen> {
         if (!_categories.contains(_category)) _category = 'Все';
       });
     } catch (e) {
+      LogService.error(LogService.iptv, 'IPTV: ошибка загрузки списка каналов', e);
       if (!mounted) return;
       setState(() {
         _channels = IptvService.fallbackChannels;
@@ -88,6 +90,7 @@ class _IptvScreenState extends State<IptvScreen> {
         ),
       ));
     } catch (e) {
+      LogService.error(LogService.iptv, 'IPTV: ошибка запуска канала', e);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('IPTV не запустился: $e')),

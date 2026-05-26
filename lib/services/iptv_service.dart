@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/iptv_channel.dart';
+import 'log_service.dart';
 
 class IptvService {
   static const _cacheKey = 'iptv_channels_cache_v1';
@@ -53,7 +54,8 @@ class IptvService {
         await _saveCache(prefs, cleaned);
         return cleaned;
       }
-    } catch (_) {
+    } catch (e) {
+      LogService.warn(LogService.iptv, 'IPTV: ошибка загрузки из сети, пробую кэш', e);
       final cached = _readCache(prefs, ignoreTtl: true);
       if (cached.isNotEmpty) return cached;
     }
@@ -242,7 +244,8 @@ class IptvService {
           .map(IptvChannel.fromJson)
           .where((e) => e.name.isNotEmpty && e.url.isNotEmpty)
           .toList();
-    } catch (_) {
+    } catch (e) {
+      LogService.warn(LogService.iptv, 'IPTV: ошибка чтения кэша', e);
       return const [];
     }
   }

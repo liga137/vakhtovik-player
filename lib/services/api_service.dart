@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Directory, File, HandshakeException, HttpClient, HttpException, Platform, SocketException, TlsException;
+import 'dart:io' show File, HandshakeException, HttpClient, HttpException, Platform, SocketException, TlsException;
 import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/preset.dart';
 import '../models/transcode_result.dart';
 import '../models/youtube_video.dart';
+import 'log_service.dart';
 
 /// Сервис для работы с API «Плеер Вахтовика»
 class ApiService {
@@ -41,8 +42,11 @@ class ApiService {
 
   /// Выполняет [fn] с автоматическими повторами при сетевых ошибках.
   /// На каждой повторной попытке создаётся новый HttpClient (свежие сокеты).
-  static Future<T> _withRetry<T>(Future<T> Function(http.Client client) fn,
-      {int maxRetries = _maxRetries}) async {
+  static Future<T> _withRetry<T>(
+    Future<T> Function(http.Client client) fn, {
+    int maxRetries = _maxRetries,
+    String operation = 'API',
+  }) async {
     var attempt = 0;
     Object? lastError;
     while (true) {
@@ -56,20 +60,27 @@ class ApiService {
         }
       } on SocketException catch (e) {
         lastError = e;
+        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — SocketException');
       } on HttpException catch (e) {
         lastError = e;
+        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — HttpException');
       } on HandshakeException catch (e) {
         lastError = e;
+        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — HandshakeException');
       } on TlsException catch (e) {
         lastError = e;
+        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — TlsException');
       } on TimeoutException catch (e) {
         lastError = e;
+        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — TimeoutException');
       } on http.ClientException catch (e) {
         lastError = e;
+        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — ClientException');
       } on Exception catch (e) {
         // На спутниковом канале любая ошибка (в т.ч. HTTP 5xx)
         // может быть transient — пробуем ещё раз
         lastError = e;
+        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — $e');
       }
       if (attempt >= maxRetries) break;
       // Экспоненциальная задержка, но не более 30 секунд
@@ -77,7 +88,9 @@ class ApiService {
           min(_retryBaseDelay.inMilliseconds * (1 << (attempt - 1)), 30000);
       await Future<void>.delayed(Duration(milliseconds: delayMs));
     }
-    throw lastError ?? Exception('Сеть недоступна после $maxRetries попыток');
+    final err = lastError ?? Exception('Сеть недоступна после $maxRetries попыток');
+    LogService.error(LogService.api, '$operation: ИСЧЕРПАНЫ ВСЕ $maxRetries ПОПЫТКИ', err);
+    throw err;
   }
 
   // Всегда используем nip.io — сервер требует SNI-заголовок
@@ -125,7 +138,7 @@ class ApiService {
             .toList();
       }
       throw Exception('Ошибка загрузки пресетов: ${response.statusCode}');
-    });
+    }, operation: 'getPresets');
   }
 
   /// Запустить транскодирование
@@ -145,7 +158,7 @@ class ApiService {
       final body = json.decode(response.body);
       throw Exception(
           body['detail'] ?? 'Ошибка транскодирования: ${response.statusCode}');
-    });
+    }, operation: 'transcode');
   }
 
   /// Получить статус сессии
@@ -157,14 +170,14 @@ class ApiService {
         return json.decode(response.body);
       }
       throw Exception('Ошибка статуса: ${response.statusCode}');
-    });
+    }, operation: 'getStatus');
   }
 
   /// Остановить и очистить сессию
   static Future<void> stopSession(String sessionId) async {
     await _withRetry((c) async {
       await c.post(Uri.parse('$baseUrl/stop/$sessionId'));
-    });
+    }, operation: 'stopSession');
   }
 
   /// Скачать транскодированный mp4 на диск
@@ -219,7 +232,7 @@ class ApiService {
             .toList();
       }
       throw Exception('Ошибка поиска YouTube: ${response.statusCode}');
-    });
+    }, operation: 'searchYouTube');
   }
 
   static Future<void> youtubeRegister(String username, String password) async {
@@ -249,7 +262,7 @@ class ApiService {
       }
       throw Exception(
           'Ошибка авторизации: ${response.statusCode} ${response.body}');
-    });
+    }, operation: path);
   }
 
   static void youtubeLogout() {
@@ -269,7 +282,7 @@ class ApiService {
         return List<Map<String, dynamic>>.from(json.decode(response.body));
       }
       throw Exception('Ошибка подписок: ${response.statusCode}');
-    });
+    }, operation: 'youtubeSubscriptions');
   }
 
   static Future<void> youtubeAddSubscription(String input,
@@ -284,7 +297,7 @@ class ApiService {
       if (response.statusCode == 200) return;
       throw Exception(
           'Ошибка добавления: ${response.statusCode} ${response.body}');
-    });
+    }, operation: 'youtubeAddSubscription');
   }
 
   static Future<List<YouTubeVideo>> youtubeFeed({int limit = 30}) async {
@@ -301,7 +314,7 @@ class ApiService {
             .toList();
       }
       throw Exception('Ошибка ленты: ${response.statusCode}');
-    });
+    }, operation: 'youtubeFeed');
   }
 
   static Future<List<YouTubeVideo>> youtubePopular({int limit = 24}) async {
@@ -319,7 +332,7 @@ class ApiService {
             .toList();
       }
       throw Exception('Ошибка популярного: ${response.statusCode}');
-    });
+    }, operation: 'youtubePopular');
   }
 
   static String youtubeGoogleStartUrl(String state) {
@@ -341,7 +354,7 @@ class ApiService {
         return json.decode(response.body) as Map<String, dynamic>;
       }
       throw Exception('Ошибка статуса Google: ${response.statusCode}');
-    });
+    }, operation: 'youtubeGoogleStatus');
   }
 
   static String _normalizeChannelName(String value) {

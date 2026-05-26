@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import '../services/api_service.dart';
+import '../services/log_service.dart';
 
 /// Экран плеера: мультиплатформенный HLS стриминг
 class PlayerScreen extends StatefulWidget {
@@ -64,6 +65,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       await _controller!.initialize();
     } catch (e) {
+      LogService.error(LogService.player, 'Ошибка инициализации плеера', e);
       _onPlaybackError('Ошибка инициализации плеера: $e');
       return;
     }
@@ -104,7 +106,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _onPlaybackError(String reason) {
     if (_reconnecting || !mounted) return;
+    LogService.warn(LogService.player,
+        'Ошибка воспроизведения (попытка ${_reconnectAttempts + 1}/$_maxReconnectAttempts): $reason');
     if (_reconnectAttempts >= _maxReconnectAttempts) {
+      LogService.error(LogService.player,
+          'Плеер: исчерпаны все $_maxReconnectAttempts попыток реконнекта. $reason');
       setState(() {
         _reconnectStatus = 'Не удалось восстановить видео после '
             '$_maxReconnectAttempts попыток.\n$reason';

@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import '../services/api_service.dart';
 import '../services/filmix_auth.dart';
 import '../services/filmix_dom.dart';
+import '../services/log_service.dart';
 import '../services/update_service.dart';
 import '../services/youtube_hover.dart';
 import '../models/preset.dart';
@@ -181,6 +182,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      LogService.error(LogService.browser, 'WebView2: ошибка создания окружения', e);
       setState(() {
         _webViewEnvironment = oldEnvironment;
         _webViewReady = true;
@@ -217,6 +219,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       }
     } catch (e) {
       if (mounted) {
+        LogService.error(LogService.browser, 'Не удалось загрузить пресеты', e);
         setState(() {
           _presets = List<Preset>.from(fallback);
           _selectedQuality = '240p';
@@ -491,6 +494,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      LogService.error(LogService.browser, 'Ошибка транскодирования: $_interceptedUrl', e);
       setState(() {
         _isLoading = false;
       });
@@ -791,6 +795,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _interceptedUrl = clean;
     _currentReferer = (referer ?? urlController.text).trim();
     _selectedQuality = '240p';
+
+    LogService.info(LogService.browser,
+        'Перехвачен URL: $clean (referer: $_currentReferer)');
 
     Future.microtask(() {
       if (!mounted) return;
@@ -2143,6 +2150,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               !failedUrl.startsWith('http')) {
                             return;
                           }
+                          LogService.warn(LogService.browser,
+                              'WebView ошибка загрузки: $failedUrl — ${error.description} (код ${error.errorCode})');
                           _lastFailedUrl = failedUrl;
                           if (_webViewRetryCount < _webViewMaxRetries) {
                             _webViewRetryCount++;
