@@ -4,7 +4,6 @@ import 'package:window_manager/window_manager.dart';
 import 'dart:io' show Platform;
 import 'screens/browser_screen.dart';
 import 'services/api_service.dart';
-import 'services/hysteria_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,16 +12,8 @@ void main() async {
     WindowsVideoPlayer.registerWith();
     await windowManager.ensureInitialized();
     windowManager.setMinimumSize(const Size(400, 300));
-    windowManager.addListener(_HysteriaCleanup());
   }
   runApp(const VakhtovikApp());
-}
-
-class _HysteriaCleanup extends WindowListener {
-  @override
-  void onWindowClose() {
-    HysteriaService.stop();
-  }
 }
 
 class VakhtovikApp extends StatelessWidget {

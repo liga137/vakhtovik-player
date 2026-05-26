@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/preset.dart';
 import '../models/transcode_result.dart';
 import '../models/youtube_video.dart';
-import 'hysteria_service.dart';
 
 /// Сервис для работы с API «Плеер Вахтовика»
 class ApiService {
@@ -19,8 +18,15 @@ class ApiService {
   static String? _ytUsername;
   static bool _ytStateLoaded = false;
 
-  static http.Client get _client =>
-      IOClient(HysteriaService.createProxyClient());
+  static http.Client get _client => IOClient(_directHttpClient());
+
+  static HttpClient _directHttpClient() {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 30);
+    client.badCertificateCallback = (cert, host, port) =>
+        host == '195.226.92.151.nip.io' || host == '195.226.92.151';
+    return client;
+  }
 
   static bool get isYouTubeLoggedIn => _ytToken != null;
   static String? get youtubeUsername => _ytUsername;

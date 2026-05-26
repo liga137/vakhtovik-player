@@ -1,8 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'hysteria_service.dart';
 
 class AppUpdateInfo {
   final bool hasUpdate;
@@ -25,12 +25,20 @@ class AppUpdateInfo {
 }
 
 class UpdateService {
-  static const _repoApiBase = 'https://api.github.com/repos/liga137/vakhtovik-player';
+  static const _repoApiBase =
+      'https://api.github.com/repos/liga137/vakhtovik-player';
   static const _repoLatestReleaseUrl = '$_repoApiBase/releases/latest';
   static const _repoReleasesUrl = '$_repoApiBase/releases?per_page=1';
   static const _repoTagsUrl = '$_repoApiBase/tags?per_page=1';
-  static const _repoReleasesPage = 'https://github.com/liga137/vakhtovik-player/releases';
-  static http.Client get _client => IOClient(HysteriaService.createProxyClient());
+  static const _repoReleasesPage =
+      'https://github.com/liga137/vakhtovik-player/releases';
+  static http.Client get _client => IOClient(_directHttpClient());
+
+  static HttpClient _directHttpClient() {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 20);
+    return client;
+  }
 
   static Future<AppUpdateInfo> checkLatest() async {
     final pkg = await PackageInfo.fromPlatform();
@@ -56,7 +64,10 @@ class UpdateService {
         final name = (m['name'] ?? '').toString().toLowerCase();
         final url = (m['browser_download_url'] ?? '').toString();
         if (url.isEmpty) continue;
-        if (winUrl.isEmpty && (name.contains('windows') || name.endsWith('.zip') || name.endsWith('.exe'))) {
+        if (winUrl.isEmpty &&
+            (name.contains('windows') ||
+                name.endsWith('.zip') ||
+                name.endsWith('.exe'))) {
           winUrl = url;
         }
         if (apkUrl.isEmpty && name.endsWith('.apk')) {
@@ -69,7 +80,9 @@ class UpdateService {
       hasUpdate: hasUpdate,
       currentVersion: currentNorm,
       latestVersion: latest,
-      htmlUrl: map != null ? (map['html_url'] ?? _repoReleasesPage).toString() : _repoReleasesPage,
+      htmlUrl: map != null
+          ? (map['html_url'] ?? _repoReleasesPage).toString()
+          : _repoReleasesPage,
       releaseNotes: map != null
           ? (map['body'] ?? '').toString()
           : 'GitHub Releases пока не опубликованы. Используется последняя версия из тегов.',
@@ -79,9 +92,13 @@ class UpdateService {
   }
 
   static Future<Map<String, dynamic>?> _fetchLatestRelease() async {
-    final headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'vakhtovik-player'};
+    final headers = {
+      'Accept': 'application/vnd.github+json',
+      'User-Agent': 'vakhtovik-player'
+    };
 
-    final latestResp = await _client.get(Uri.parse(_repoLatestReleaseUrl), headers: headers);
+    final latestResp =
+        await _client.get(Uri.parse(_repoLatestReleaseUrl), headers: headers);
     if (latestResp.statusCode == 200) {
       return jsonDecode(latestResp.body) as Map<String, dynamic>;
     }
@@ -89,7 +106,8 @@ class UpdateService {
       throw Exception('GitHub API releases/latest: ${latestResp.statusCode}');
     }
 
-    final releasesResp = await _client.get(Uri.parse(_repoReleasesUrl), headers: headers);
+    final releasesResp =
+        await _client.get(Uri.parse(_repoReleasesUrl), headers: headers);
     if (releasesResp.statusCode == 200) {
       final list = jsonDecode(releasesResp.body) as List<dynamic>;
       if (list.isNotEmpty) {
@@ -97,14 +115,18 @@ class UpdateService {
       }
       return null;
     }
-    if (releasesResp.statusCode == 404 || releasesResp.statusCode == 403) return null;
+    if (releasesResp.statusCode == 404 || releasesResp.statusCode == 403)
+      return null;
     throw Exception('GitHub API releases: ${releasesResp.statusCode}');
   }
 
   static Future<String> _fetchLatestTag() async {
     final resp = await _client.get(
       Uri.parse(_repoTagsUrl),
-      headers: {'Accept': 'application/vnd.github+json', 'User-Agent': 'vakhtovik-player'},
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'vakhtovik-player'
+      },
     );
     if (resp.statusCode == 404 || resp.statusCode == 403) {
       return '';
@@ -125,8 +147,14 @@ class UpdateService {
   }
 
   static int _compareVersion(String a, String b) {
-    final pa = a.split('.').map((e) => int.tryParse(e.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0).toList();
-    final pb = b.split('.').map((e) => int.tryParse(e.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0).toList();
+    final pa = a
+        .split('.')
+        .map((e) => int.tryParse(e.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
+        .toList();
+    final pb = b
+        .split('.')
+        .map((e) => int.tryParse(e.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
+        .toList();
     final len = pa.length > pb.length ? pa.length : pb.length;
     for (var i = 0; i < len; i++) {
       final av = i < pa.length ? pa[i] : 0;

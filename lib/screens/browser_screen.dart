@@ -9,7 +9,6 @@ import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:window_manager/window_manager.dart';
 import '../services/api_service.dart';
-import '../services/hysteria_service.dart';
 import '../services/filmix_auth.dart';
 import '../services/filmix_dom.dart';
 import '../services/update_service.dart';
@@ -31,7 +30,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
   InAppWebViewController? webViewController;
   WebViewEnvironment? _webViewEnvironment;
   bool _webViewReady = !Platform.isWindows;
-  bool _webViewProxyEnabled = false;
   int _webViewInstance = 0;
   String? _webViewRestoreUrl;
   String url = "https://seasonvar.ru/";
@@ -43,8 +41,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _liteMode = false;
   EconomyLevel _economyLevel = EconomyLevel.economy;
   bool _pageLoading = false;
-  bool _gostActive = false;
-  bool _gostConnecting = false;
   String _interceptedUrl = "";
   String _currentReferer = "";
   List<Preset> _presets = [];
@@ -76,7 +72,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
   String _lastAutoMediaUrl = '';
   List<String> _recentLinks = [];
   bool _checkingUpdates = false;
-  bool _proxyRecovering = false;
 
   @override
   void initState() {
@@ -84,35 +79,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _loadPresets();
     _loadRecentLinks();
     _initWindowsWebViewEnvironment();
-    _checkGostLater();
     Future.delayed(const Duration(seconds: 6), () {
       if (mounted) _checkForUpdates(silent: true);
     });
   }
 
-  void _checkGostLater() {
-    Future.delayed(const Duration(seconds: 15), () async {
-      if (mounted) {
-        final ok = await HysteriaService.checkWebProxy();
-        if (mounted) {
-          setState(() => _gostActive = ok);
-          await _switchWindowsWebViewProxy(useProxy: ok, preservePage: true);
-        }
-      }
-    });
-  }
-
-  String _proxyCheckTargetUrl() {
-    final current = _realUrlFromAddress().trim();
-    if (current.startsWith('http://') || current.startsWith('https://')) {
-      return current;
-    }
-    return 'https://seasonvar.ru/';
-  }
-
   Future<void> _initWindowsWebViewEnvironment() async {
     if (!Platform.isWindows) return;
-    await _switchWindowsWebViewProxy(useProxy: false, preservePage: false);
+    await _resetWindowsWebViewEnvironment(preservePage: false);
   }
 
   String _normalizeRestoreUrl(String raw) {
@@ -122,8 +96,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     return _currentRealUrl;
   }
 
-  Future<WebViewEnvironment?> _createWindowsEnvironment(
-      {required bool useProxy}) async {
+  Future<WebViewEnvironment?> _createWindowsEnvironment() async {
     if (!Platform.isWindows) return null;
     final availableVersion = await WebViewEnvironment.getAvailableVersion();
     if (availableVersion == null) return null;
@@ -135,17 +108,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
       await baseDir.create(recursive: true);
     }
 
-    final profileDir = useProxy ? 'proxy' : 'direct';
-    final proxyArg =
-        '--proxy-server="http://${HysteriaService.proxyHost}:${HysteriaService.proxyPort}" '
-        '--proxy-bypass-list=<-loopback> '
-        '--disable-quic '
-        '--disable-features=UseDnsHttpsSvcb,AsyncDns';
+    const profileDir = 'direct';
+    const browserArgs =
+        '--disable-quic --disable-features=UseDnsHttpsSvcb,AsyncDns';
 
     return WebViewEnvironment.create(
       settings: WebViewEnvironmentSettings(
         userDataFolder: '${baseDir.path}/$profileDir',
-        additionalBrowserArguments: useProxy ? proxyArg : null,
+        additionalBrowserArguments: browserArgs,
       ),
     );
   }
@@ -156,18 +126,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
       await env.dispose();
     } on MissingPluginException {
       // В некоторых сборках flutter_inappwebview для Windows метод dispose
-      // у окружения не реализован. Игнорируем, чтобы не ломать переключение proxy.
+      // у окружения не реализован. Игнорируем, чтобы не ломать WebView2.
     } catch (_) {}
   }
 
-  Future<void> _switchWindowsWebViewProxy({
-    required bool useProxy,
-    required bool preservePage,
-  }) async {
+  Future<void> _resetWindowsWebViewEnvironment(
+      {required bool preservePage}) async {
     if (!Platform.isWindows) return;
-    if (_webViewReady &&
-        _webViewEnvironment != null &&
-        _webViewProxyEnabled == useProxy) {
+    if (_webViewReady && _webViewEnvironment != null && !preservePage) {
       return;
     }
 
@@ -197,7 +163,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
 
     try {
-      final environment = await _createWindowsEnvironment(useProxy: useProxy);
+      final environment = await _createWindowsEnvironment();
       if (!mounted) {
         await _safeDisposeEnvironment(environment);
         return;
@@ -205,7 +171,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       await _safeDisposeEnvironment(oldEnvironment);
       setState(() {
         _webViewEnvironment = environment;
-        _webViewProxyEnabled = useProxy;
         _webViewRestoreUrl = preservePage ? restoreUrl : null;
         _webViewInstance++;
         webViewController = null;
@@ -214,85 +179,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
       if (!mounted) return;
       setState(() {
         _webViewEnvironment = oldEnvironment;
-        _webViewProxyEnabled = false;
         _webViewReady = true;
         _pageLoading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text('Ошибка WebView2 proxy: $e'),
+            content: Text('Ошибка WebView2: $e'),
             duration: const Duration(seconds: 4)),
       );
     }
-  }
-
-  Future<void> _recoverProxyIfNeeded(
-      {Uri? failedUrl, String reason = ''}) async {
-    if (!Platform.isWindows) return;
-    if (!_webViewProxyEnabled || !_gostActive) return;
-    if (_proxyRecovering) return;
-
-    final url = (failedUrl?.toString() ?? '').trim();
-    final target = (url.startsWith('http://') || url.startsWith('https://'))
-        ? url
-        : _proxyCheckTargetUrl();
-    if (!(target.startsWith('http://') || target.startsWith('https://')))
-      return;
-
-    _proxyRecovering = true;
-    try {
-      final ok = await HysteriaService.checkUrlViaProxy(target);
-      if (ok) return;
-
-      HysteriaService.stop();
-      if (!mounted) return;
-      setState(() {
-        _gostActive = false;
-        _gostConnecting = false;
-      });
-      await _switchWindowsWebViewProxy(useProxy: false, preservePage: true);
-      if (!mounted) return;
-
-      final host = Uri.tryParse(target)?.host ?? target;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Встроенный VPN не открыл $host. Переключил браузер в прямой режим.',
-          ),
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    } finally {
-      _proxyRecovering = false;
-    }
-  }
-
-  bool _isRecoverableWebError(String rawDescription) {
-    final d = rawDescription.toUpperCase();
-    if (d.isEmpty) return false;
-    return d.contains('ERR_PROXY_CONNECTION_FAILED') ||
-        d.contains('ERR_TUNNEL_CONNECTION_FAILED') ||
-        d.contains('ERR_CONNECTION_TIMED_OUT') ||
-        d.contains('ERR_CONNECTION_RESET') ||
-        d.contains('ERR_CONNECTION_CLOSED') ||
-        d.contains('ERR_CONNECTION_ABORTED') ||
-        d.contains('ERR_NAME_NOT_RESOLVED') ||
-        d.contains('ERR_INTERNET_DISCONNECTED') ||
-        d.contains('ERR_NETWORK_CHANGED');
-  }
-
-  bool _isRecoverableHttpCode(int code) {
-    return code == 407 ||
-        code == 429 ||
-        code == 500 ||
-        code == 502 ||
-        code == 503 ||
-        code == 504 ||
-        code == 520 ||
-        code == 521 ||
-        code == 522 ||
-        code == 523 ||
-        code == 524;
   }
 
   Future<void> _loadPresets() async {
@@ -720,7 +615,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
         RegExp(r's(\d{1,2})e(\d{1,3})', caseSensitive: false)
             .firstMatch(folder);
     final season = match != null ? '${int.tryParse(match.group(1)!) ?? 0}' : '';
-    final episode = match != null ? '${int.tryParse(match.group(2)!) ?? 0}' : '';
+    final episode =
+        match != null ? '${int.tryParse(match.group(2)!) ?? 0}' : '';
     if (season.isEmpty && episode.isEmpty) return null;
 
     final normalizedFolder = folder
@@ -798,9 +694,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
             ..._filmixSeasons,
             {'id': season, 'name': 'Сезон $season'}
           ];
-          _filmixSeasons.sort((a, b) =>
-              (int.tryParse(a['id'] ?? '') ?? 0)
-                  .compareTo(int.tryParse(b['id'] ?? '') ?? 0));
+          _filmixSeasons.sort((a, b) => (int.tryParse(a['id'] ?? '') ?? 0)
+              .compareTo(int.tryParse(b['id'] ?? '') ?? 0));
         }
         if (_filmixSeasonId.isEmpty) _filmixSeasonId = season;
       }
@@ -827,7 +722,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
       if (existing >= 0) {
         _filmixEpisodes[existing] = {
           ..._filmixEpisodes[existing],
-          'title': title.isNotEmpty ? title : _filmixEpisodes[existing]['title'] ?? ''
+          'title': title.isNotEmpty
+              ? title
+              : _filmixEpisodes[existing]['title'] ?? ''
         };
         _filmixIndex = existing;
       } else {
@@ -867,7 +764,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (_showPlayer || _isLoading) return;
     if (clean == _lastAutoMediaUrl) return;
 
-    final isFilmixSource = _isFilmixContext(lower) || _isFilmixContext(_currentRealUrl);
+    final isFilmixSource =
+        _isFilmixContext(lower) || _isFilmixContext(_currentRealUrl);
     if (isFilmixSource) {
       _applyFilmixHintFromMediaUrl(clean);
     }
@@ -1629,76 +1527,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           }
                         },
                       ),
-                    GestureDetector(
-                      onTap: _gostConnecting
-                          ? null
-                          : () async {
-                              if (_gostActive) {
-                                HysteriaService.stop();
-                                setState(() => _gostActive = false);
-                                await _switchWindowsWebViewProxy(
-                                    useProxy: false, preservePage: true);
-                              } else {
-                                setState(() => _gostConnecting = true);
-                                await HysteriaService.start();
-                                // Ждём до 90 сек на сателлите
-                                for (var i = 0; i < 30; i++) {
-                                  await Future.delayed(
-                                      const Duration(seconds: 3));
-                                  final ok =
-                                      await HysteriaService.checkWebProxy();
-                                  if (ok) {
-                                    if (mounted) {
-                                      setState(() {
-                                        _gostActive = true;
-                                        _gostConnecting = false;
-                                      });
-                                      await _switchWindowsWebViewProxy(
-                                          useProxy: true, preservePage: true);
-                                    }
-                                    return;
-                                  }
-                                }
-                                if (mounted) {
-                                  setState(() => _gostConnecting = false);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                          'VPN поднялся, но веб-прокси не открыл сайты. Проверь сеть/сервер.'),
-                                      duration: Duration(seconds: 5),
-                                    ),
-                                  );
-                                }
-                              }
-                            },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: _gostActive
-                              ? Colors.green.shade700
-                              : _gostConnecting
-                                  ? Colors.orange.shade800
-                                  : const Color(0xFF333333),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          _gostActive
-                              ? 'VPN ON'
-                              : _gostConnecting
-                                  ? '...'
-                                  : 'VPN OFF',
-                          style: TextStyle(
-                              color: _gostActive
-                                  ? Colors.greenAccent
-                                  : _gostConnecting
-                                      ? Colors.orange
-                                      : Colors.white54,
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ),
                     PopupMenuButton<EconomyLevel>(
                       tooltip: 'Режим экономии',
                       initialValue: _economyLevel,
@@ -1816,8 +1644,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   child: Stack(
                     children: [
                       InAppWebView(
-                        key: ValueKey(
-                            'webview_${_webViewInstance}_${_webViewProxyEnabled ? 'proxy' : 'direct'}'),
+                        key: ValueKey('webview_${_webViewInstance}_direct'),
                         webViewEnvironment: _webViewEnvironment,
                         initialUrlRequest:
                             URLRequest(url: WebUri("about:blank")),
@@ -2345,36 +2172,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             _updateYouTubeState(url);
                           }
                         },
-                        onReceivedError: (controller, request, error) {
-                          final isMainFrame = request.isForMainFrame == true;
-                          if (!isMainFrame) return;
-                          if (!_gostActive || !_webViewProxyEnabled) return;
-
-                          final failedUri =
-                              Uri.tryParse(request.url.toString());
-                          final description = (error.description).toString();
-                          if (_isRecoverableWebError(description)) {
-                            unawaited(_recoverProxyIfNeeded(
-                              failedUrl: failedUri,
-                              reason: description,
-                            ));
-                          }
-                        },
-                        onReceivedHttpError:
-                            (controller, request, errorResponse) {
-                          final isMainFrame = request.isForMainFrame == true;
-                          if (!isMainFrame) return;
-                          if (!_gostActive || !_webViewProxyEnabled) return;
-
-                          final code =
-                              int.tryParse('${errorResponse.statusCode}') ?? 0;
-                          if (_isRecoverableHttpCode(code)) {
-                            unawaited(_recoverProxyIfNeeded(
-                              failedUrl: Uri.tryParse(request.url.toString()),
-                              reason: 'HTTP $code',
-                            ));
-                          }
-                        },
                         onUpdateVisitedHistory: (controller, url, isReload) {
                           // YouTube: ловим pushState-навигацию (YouTube SPA)
                           if (url != null) {
@@ -2532,7 +2329,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           if (method.toUpperCase() == "GET" && isMedia) {
                             if (_isFilmixContext(uri) ||
                                 _isFilmixContext(_currentRealUrl)) {
-                              _applyFilmixHintFromMediaUrl(request.url.toString());
+                              _applyFilmixHintFromMediaUrl(
+                                  request.url.toString());
                             }
                             // Режим авто-переключения серий: сразу сжимаем без шторки
                             if (_waitingForNextEpisode) {
