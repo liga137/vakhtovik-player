@@ -14,20 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Flutter SDK (from Google)
-        shell: pwsh
-        run: |
-          $url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.3-stable.zip"
-          Write-Host "Downloading Flutter SDK..."
-          Invoke-WebRequest -Uri $url -OutFile flutter.zip -TimeoutSec 300
-          Write-Host "Extracting..."
-          Expand-Archive -Path flutter.zip -DestinationPath .
-          Remove-Item flutter.zip
-        working-directory: ${{ runner.temp }}
-
       - name: Add Flutter to PATH
         shell: pwsh
-        run: echo "$env:RUNNER_TEMP\flutter\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        run: |
+          # Ищем Flutter в стандартных местах
+          $paths = @("C:\flutter", "C:\src\flutter", "C:\tools\flutter", "$env:USERPROFILE\flutter")
+          $found = $paths | Where-Object { Test-Path "$_\bin\flutter.bat" } | Select-Object -First 1
+          if (-not $found) { Write-Error "Flutter не найден! Укажи путь в переменной FLUTTER_ROOT"; exit 1 }
+          Write-Host "Flutter найден: $found"
+          echo "$found\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Flutter doctor
         run: flutter doctor -v
