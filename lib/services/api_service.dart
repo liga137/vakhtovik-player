@@ -314,22 +314,69 @@ class ApiService {
     }, operation: 'youtubeFeed');
   }
 
+  /// Российское «В тренде» через InnerTube (gl=RU, без квот Google API).
   static Future<List<YouTubeVideo>> youtubePopular({int limit = 24}) async {
     await initLocalState();
+    final result = await getYoutubePopularInnerTube();
+    final videos = parseInnerTubeVideos(result);
+    return videos.take(limit).toList();
+  }
+
+  /// Лента «Главная» YouTube через InnerTube API (персонализированная).
+  /// Требует авторизации (куки передаются через Bearer-токен).
+  static Future<Map<String, dynamic>> getYoutubeHome({
+    String? continuation,
+  }) async {
+    await initLocalState();
     return _withRetry((c) async {
-      final uri = Uri.parse('$baseUrl/yt/popular')
-          .replace(queryParameters: {'limit': limit.toString()});
-      final response =
-          await c.get(uri).timeout(const Duration(seconds: 30));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List<dynamic>;
-        return data
-            .whereType<Map<String, dynamic>>()
-            .map(YouTubeVideo.fromJson)
-            .toList();
+      final headers = <String, String>{'Content-Type': 'application/json'};
+      final body = <String, dynamic>{};
+      if (continuation != null && continuation.isNotEmpty) {
+        body['continuation_token'] = continuation;
       }
-      throw Exception('Ошибка популярного: ${response.statusCode}');
-    }, operation: 'youtubePopular');
+      final response = await c.post(
+        Uri.parse('$baseUrl/youtube/home'),
+        headers: headers,
+        body: json.encode(body),
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      throw Exception('Ошибка InnerTube: ${response.statusCode}');
+    }, operation: 'youtubeHome');
+  }
+
+  /// Российское «В тренде» через InnerTube API.
+  static Future<Map<String, dynamic>> getYoutubePopularInnerTube() async {
+    await initLocalState();
+    return _withRetry((c) async {
+      final response = await c.post(
+        Uri.parse('$baseUrl/youtube/popular'),
+        headers: {'Content-Type': 'application/json'},
+        body: '{}',
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      throw Exception('Ошибка популярного (InnerTube): ${response.statusCode}');
+    }, operation: 'youtubePopularInnerTube');
+  }
+
+  /// Парсит ответ InnerTube в список YouTubeVideo.
+  static List<YouTubeVideo> parseInnerTubeVideos(Map<String, dynamic> result) {
+    final videos = (result['videos'] as List<dynamic>?)
+            ?.whereType<Map<String, dynamic>>()
+            .map((v) => YouTubeVideo.fromJson(v))
+            .toList() ??
+        [];
+    return videos;
+  }
+
+  /// Извлекает continuation_token из ответа InnerTube.
+  static String? innerTubeContinuation(Map<String, dynamic> result) {
+    final token = result['continuation_token'];
+    if (token is String && token.isNotEmpty) return token;
+    return null;
   }
 
   static String youtubeGoogleStartUrl(String state) {

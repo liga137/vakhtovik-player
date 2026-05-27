@@ -124,8 +124,9 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingFresh) return;
     setState(() => _loadingFresh = true);
     try {
-      final items = await ApiService.youtubePopular(limit: 48);
-      if (mounted) setState(() => _fresh = items);
+      final result = await ApiService.getYoutubeHome();
+      final videos = ApiService.parseInnerTubeVideos(result);
+      if (mounted) setState(() => _fresh = videos);
     } catch (e) {
       LogService.error(LogService.youtube, 'Ошибка загрузки "Главная"', e);
       if (mounted) _snack('Ошибка "Главная": $e');
@@ -623,7 +624,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
           padding: const EdgeInsets.all(8),
           child: Row(children: [
             const Expanded(
-                child: Text('Популярное на YouTube',
+                child: Text('Главная страница YouTube',
                     style: TextStyle(color: Colors.white70))),
             FilledButton.icon(
                 onPressed: _loadFresh,
