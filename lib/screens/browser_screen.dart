@@ -1404,7 +1404,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       ),
     );
   }
-  }
 
   Future<void> _showCustomSiteDialog() async {
     final c = TextEditingController(text: 'https://');
