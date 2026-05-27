@@ -2170,12 +2170,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         },
                         onReceivedError: (controller, request, error) {
                           final failedUrl = request.url?.toString() ?? '';
-                          // Игнорируем ошибки about:blank и фоновых ресурсов
+                          // Игнорируем ошибки about:blank, фоновых ресурсов и не-главных фреймов
                           if (failedUrl.isEmpty ||
                               failedUrl == 'about:blank' ||
                               !failedUrl.startsWith('http')) {
                             return;
                           }
+                          // Ретрим ТОЛЬКО ошибки главного фрейма, не саб-ресурсы (реклама, трекеры)
+                          final isMain = request.isForMainFrame ?? true;
+                          if (!isMain) return;
+
                           LogService.warn(LogService.browser,
                               'WebView ошибка загрузки: $failedUrl — ${error.description} (тип ${error.type})');
                           _lastFailedUrl = failedUrl;

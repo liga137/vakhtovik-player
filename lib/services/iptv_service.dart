@@ -9,28 +9,30 @@ class IptvService {
   static const _cacheTimeKey = 'iptv_channels_cache_time_v1';
   static const _cacheTtl = Duration(hours: 12);
 
-  // Берём легальный публичный источник iptv-org. Полный index.m3u слишком жирный
-  // для спутника, поэтому стартуем с русскоязычного плейлиста.
+  // Легальные публичные плейлисты IPTV.
   // При недоступности используем встроенный список каналов (не требует интернета).
   static const _sources = [
+    'https://sat-portal.com/upload/rus_22.05.2026.m3u8',
+    'https://sat-portal.com/upload/by_%2020.02.2026.m3u8',
+  ];
+
+  // Фолбэк-источники (если основные недоступны)
+  static const _fallbackSources = [
     'https://iptv-org.github.io/iptv/languages/rus.m3u',
   ];
 
   static const categoryOrder = [
     'Все',
     'Избранное',
-    'Общероссийские',
-    'Кино',
-    'Мультфильмы',
-    'Спорт',
-    'Новости',
-    'Познавательные',
-    'Музыкальные',
-    'Украина',
+    'Россия',
     'Беларусь',
-    'Türkiye',
-    'Azerbaijan',
-    'Israel',
+    'Общие',
+    'Кино',
+    'Детские',
+    'Спорт',
+    'Музыка',
+    'Познавательные',
+    'Новости',
     'Региональные',
     'Разное',
   ];
@@ -43,24 +45,35 @@ class IptvService {
       if (cached.isNotEmpty) return cached;
     }
 
-    try {
-      final out = <IptvChannel>[];
-      for (final source in _sources) {
-        final body = await _download(source);
-        out.addAll(parseM3u(body, source: source));
-      }
-      final cleaned = _dedupe(out);
-      if (cleaned.isNotEmpty) {
-        await _saveCache(prefs, cleaned);
-        return cleaned;
-      }
-    } catch (e) {
-      LogService.warn(LogService.iptv, 'IPTV: ошибка загрузки из сети, пробую кэш', e);
+    // Пробуем основные источники
+    List<IptvChannel>? result = await _tryLoad(_sources);
+    // Если не вышло — фолбэки
+    result ??= await _tryLoad(_fallbackSources);
+    // Если всё сломалось — кэш или fallback-список
+    if (result == null || result.isEmpty) {
+      LogService.warn(LogService.iptv, 'IPTV: все источники недоступны');
       final cached = _readCache(prefs, ignoreTtl: true);
       if (cached.isNotEmpty) return cached;
+      return fallbackChannels;
     }
+    await _saveCache(prefs, result);
+    return result;
+  }
 
-    return fallbackChannels;
+  static Future<List<IptvChannel>?> _tryLoad(List<String> sources) async {
+    for (final source in sources) {
+      try {
+        final body = await _download(source);
+        final channels = parseM3u(body, source: source);
+        if (channels.isNotEmpty) {
+          final cleaned = _dedupe(channels);
+          if (cleaned.isNotEmpty) return cleaned;
+        }
+      } catch (e) {
+        LogService.warn(LogService.iptv, 'IPTV: ошибка загрузки $source', e);
+      }
+    }
+    return null;
   }
 
   static List<String> categoriesFor(List<IptvChannel> channels) {
@@ -121,12 +134,16 @@ class IptvService {
       ]);
       final group = attrs['group-title'] ?? '';
       final category = normalizeCategory(group, name);
+      final autoCountry = _detectCountry(source);
+      final country = attrs['tvg-country']?.isNotEmpty == true
+          ? attrs['tvg-country']!
+          : autoCountry;
       out.add(IptvChannel(
         name: name,
         url: line,
         category: category,
         logo: attrs['tvg-logo'] ?? '',
-        country: attrs['tvg-country'] ?? '',
+        country: country,
         language: attrs['tvg-language'] ?? '',
         source: source,
       ));
@@ -143,6 +160,17 @@ class IptvService {
       attrs[(m.group(1) ?? '').toLowerCase()] = m.group(2) ?? '';
     }
     return attrs;
+  }
+
+  static String _detectCountry(String source) {
+    final s = source.toLowerCase();
+    if (s.contains('belarus') || s.contains('by_') || s.contains('/by/')) {
+      return 'Беларусь';
+    }
+    if (s.contains('rus_') || s.contains('/rus') || s.contains('russia')) {
+      return 'Россия';
+    }
+    return '';
   }
 
   static String normalizeCategory(String group, String name) {

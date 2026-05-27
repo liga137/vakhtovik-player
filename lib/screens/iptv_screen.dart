@@ -17,6 +17,7 @@ class _IptvScreenState extends State<IptvScreen> {
   final _searchController = TextEditingController();
   List<IptvChannel> _channels = const [];
   String _category = 'Все';
+  String _country = 'Все';
   String _quality = '240p';
   String _query = '';
   bool _loading = true;
@@ -48,6 +49,7 @@ class _IptvScreenState extends State<IptvScreen> {
         _channels = channels;
         _loading = false;
         if (!_categories.contains(_category)) _category = 'Все';
+        if (!_countries.contains(_country)) _country = 'Все';
       });
     } catch (e) {
       LogService.error(LogService.iptv, 'IPTV: ошибка загрузки списка каналов', e);
@@ -65,8 +67,23 @@ class _IptvScreenState extends State<IptvScreen> {
   List<IptvChannel> get _filtered {
     return _channels.where((ch) {
       final catOk = _category == 'Все' || ch.category == _category;
-      return catOk && ch.matches(_query);
+      final countryOk = _country == 'Все' || ch.country == _country;
+      return catOk && countryOk && ch.matches(_query);
     }).toList();
+  }
+
+  List<String> get _countries {
+    final set = _channels
+        .map((e) => e.country)
+        .where((e) => e.isNotEmpty)
+        .toSet();
+    final ordered = ['Россия', 'Беларусь'];
+    final result = <String>['Все'];
+    for (final c in ordered) {
+      if (set.contains(c)) result.add(c);
+    }
+    final tail = set.where((c) => !result.contains(c)).toList()..sort();
+    return [...result, ...tail];
   }
 
   Future<void> _play(IptvChannel channel) async {
@@ -160,6 +177,27 @@ class _IptvScreenState extends State<IptvScreen> {
               onChanged: (v) => setState(() => _query = v),
             ),
           ),
+          if (_countries.length > 1)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(children: [
+                const Text('Страна: ', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                ..._countries.map((c) => Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    selected: c == _country,
+                    label: Text(c, style: const TextStyle(fontSize: 11)),
+                    selectedColor: Colors.orange,
+                    backgroundColor: const Color(0xFF1A1A1A),
+                    labelStyle: TextStyle(
+                      color: c == _country ? Colors.black : Colors.white70,
+                    ),
+                    onSelected: (_) => setState(() => _country = c),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                )),
+              ]),
+            ),
           SizedBox(
             height: 48,
             child: ListView(
