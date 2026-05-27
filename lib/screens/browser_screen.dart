@@ -1396,36 +1396,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            const Text('Лог ошибок'),
-            const Spacer(),
-            Text('${log.split('\n').length} строк',
-                style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          ],
-        ),
+        title: Row(children: [
+          const Text('Лог ошибок'), const Spacer(),
+          Text('${log.split('\n').length} строк',
+              style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        ]),
         content: SizedBox(
-          width: double.maxFinite,
-          height: 400,
-          child: SingleChildScrollView(
-            child: SelectableText(
-              log,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-            ),
-          ),
+          width: double.maxFinite, height: 400,
+          child: SingleChildScrollView(child: SelectableText(log,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 11))),
         ),
         actions: [
-          TextButton(
-            onPressed: () {
-              LogService.clearLog();
-              Navigator.pop(ctx);
-            },
-            child: const Text('Очистить'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Закрыть'),
-          ),
+          TextButton(onPressed: () { LogService.clearLog(); Navigator.pop(ctx); },
+              child: const Text('Очистить')),
+          TextButton(onPressed: () => Navigator.pop(ctx),
+              child: const Text('Закрыть')),
         ],
       ),
     );
@@ -2192,7 +2177,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             return;
                           }
                           LogService.warn(LogService.browser,
-                              'WebView ошибка загрузки: $failedUrl — ${error.description} (код ${error.errorCode})');
+                              'WebView ошибка загрузки: $failedUrl — ${error.description} (тип ${error.type})');
                           _lastFailedUrl = failedUrl;
                           if (_webViewRetryCount < _webViewMaxRetries) {
                             _webViewRetryCount++;
@@ -2446,22 +2431,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Плеер Вахтовика',
-                            style: TextStyle(
-                                color: Colors.orange,
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold)),
-                        IconButton(
+                    Row(children: [
+                      const Text('Плеер Вахтовика',
+                          style: TextStyle(color: Colors.orange, fontSize: 24,
+                              fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      IconButton(
                           icon: const Icon(Icons.bug_report,
                               color: Colors.orange, size: 20),
-                          tooltip: 'Лог ошибок',
-                          onPressed: _showLogDialog,
-                        ),
-                      ],
-                    ),
+                          tooltip: 'Лог ошибок', onPressed: _showLogDialog,
+                      ),
+                    ]),
                     const SizedBox(height: 8),
                     const Text('Выбери сайт или введи свой адрес сверху',
                         style: TextStyle(color: Colors.white70)),
