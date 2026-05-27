@@ -10,22 +10,16 @@ permissions:
 
 jobs:
   build-windows:
-    runs-on: self-hosted
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Add Flutter to PATH
-        shell: pwsh
-        run: |
-          # Ищем Flutter в стандартных местах
-          $paths = @("C:\flutter", "C:\src\flutter", "C:\tools\flutter", "$env:USERPROFILE\flutter")
-          $found = $paths | Where-Object { Test-Path "$_\bin\flutter.bat" } | Select-Object -First 1
-          if (-not $found) { Write-Error "Flutter не найден! Укажи путь в переменной FLUTTER_ROOT"; exit 1 }
-          Write-Host "Flutter найден: $found"
-          echo "$found\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Flutter doctor
-        run: flutter doctor -v
+      - name: Setup Flutter 3.24.3
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.3'
+          channel: 'stable'
+          cache: true
 
       - name: Enable Windows Desktop
         run: flutter config --enable-windows-desktop
