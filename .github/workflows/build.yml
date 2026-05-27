@@ -41,25 +41,35 @@ jobs:
           retention-days: 30
 
   build-android:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - name: Git checkout (native)
+        shell: pwsh
+        run: |
+          git config --global user.name "Runner"
+          if (Test-Path .git) { 
+            git fetch; git reset --hard origin/master; git clean -fd
+          } else { 
+            git clone https://github.com/liga137/vakhtovik-player.git .
+          }
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+      - name: Configure Java & Android SDK
+        shell: pwsh
+        run: |
+          $javaHome = Get-ChildItem "C:\Program Files\Eclipse Adoptium" -Directory | Select-Object -First 1
+          echo "JAVA_HOME=$($javaHome.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "$($javaHome.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "ANDROID_HOME=$env:LOCALAPPDATA\Android\Sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "ANDROID_SDK_ROOT=$env:LOCALAPPDATA\Android\Sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "JAVA_HOME=$($javaHome.FullName)"
+          Write-Host "ANDROID_HOME=$env:LOCALAPPDATA\Android\Sdk"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Add Flutter to PATH
+        shell: pwsh
+        run: echo "C:\src\flutter\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - name: Setup Flutter 3.24.3
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.3'
-          channel: 'stable'
-          cache: true
+      - name: Flutter doctor
+        run: flutter doctor -v
 
       - name: Install Flutter dependencies
         run: flutter pub get
@@ -67,16 +77,13 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Vakhtovik-Player-Android
-          path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 30
+      - name: Save APK to Desktop
+        shell: pwsh
+        run: Copy-Item build\app\outputs\flutter-apk\app-release.apk $env:USERPROFILE\Desktop\Vakhtovik-Player-v0.2.6.apk -Force
 
   release:
     runs-on: ubuntu-latest
-    needs: [build-windows, build-android]
+    needs: [build-windows]
     if: github.ref == 'refs/heads/master'
     steps:
       - uses: actions/checkout@v4
@@ -115,10 +122,11 @@ jobs:
           body: |
             Автоматическая сборка Плеера Вахтовика.
 
-            Изменения:
-            - встроенный VPN полностью удалён из приложения и сборки;
-            - добавлен раздел IPTV с категориями и запуском через серверное сжатие;
-            - Windows и Android артефакты приложены ниже.
+            v${{ steps.version.outputs.version }}:
+            - YouTube «Главная» через InnerTube API
+            - IPTV: Беларусь + Россия, кэш-first
+            - WebView: исправлены циклические перезагрузки
+            - Исправлены YouTube search/feed/popular
           files: |
             release-assets/windows/Vakhtovik-Player-Windows.zip
             release-assets/android/Vakhtovik-Player-Android.apk
