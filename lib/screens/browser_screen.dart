@@ -1361,7 +1361,33 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final loadUrl = textMode ? ApiService.liteUrl(target) : target;
       urlController.text = loadUrl;
       if (mounted) setState(() => _pageLoading = true);
-    webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
+      webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
+    }
+  }
+
+  Future<void> _showCustomSiteDialog() async {
+    final c = TextEditingController(text: 'https://');
+    final result = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('Свой сайт'),
+              content: TextField(
+                  controller: c,
+                  autofocus: true,
+                  decoration:
+                      const InputDecoration(hintText: 'https://example.com'),
+                  onSubmitted: (v) => Navigator.pop(context, v)),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Отмена')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, c.text),
+                    child: const Text('Открыть'))
+              ],
+            ));
+    c.dispose();
+    if (result != null && result.trim().isNotEmpty) _loadAddress(result);
   }
 
   Future<void> _showLogDialog() async {
@@ -1403,31 +1429,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _showCustomSiteDialog() async {
-    final c = TextEditingController(text: 'https://');
-    final result = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-              title: const Text('Свой сайт'),
-              content: TextField(
-                  controller: c,
-                  autofocus: true,
-                  decoration:
-                      const InputDecoration(hintText: 'https://example.com'),
-                  onSubmitted: (v) => Navigator.pop(context, v)),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Отмена')),
-                FilledButton(
-                    onPressed: () => Navigator.pop(context, c.text),
-                    child: const Text('Открыть'))
-              ],
-            ));
-    c.dispose();
-    if (result != null && result.trim().isNotEmpty) _loadAddress(result);
   }
 
   @override
@@ -2191,7 +2192,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             return;
                           }
                           LogService.warn(LogService.browser,
-                              'WebView ошибка загрузки: $failedUrl — ${error.description} (тип ${error.type})');
+                              'WebView ошибка загрузки: $failedUrl — ${error.description} (код ${error.errorCode})');
                           _lastFailedUrl = failedUrl;
                           if (_webViewRetryCount < _webViewMaxRetries) {
                             _webViewRetryCount++;
