@@ -1,74 +1,57 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import 'package:path_provider/path_provider.dart';
 import 'log_service.dart';
 
-/// Кэш-сервис IPTV плейлистов: сначала встроенный ассет, потом сеть с ETag.
+/// Кэш IPTV плейлистов: сначала встроенный ассет, потом сеть.
+/// Без внешних зависимостей — только dart:io + flutter/services.
 class IptvCacheService {
   static const _assets = <String, String>{
     'belarus': 'assets/iptv/belarus.m3u',
   };
 
-  static final _cacheManager = CacheManager(Config(
-    'iptv_playlists',
-    stalePeriod: const Duration(hours: 24),
-    maxNrOfCacheObjects: 5,
-    repo: JsonCacheInfoRepository(databaseName: 'iptv_cache'),
-    fileService: HttpFileService(),
-  ));
+  static String _cacheDir() {
+    if (Platform.isWindows) {
+      final base = Platform.environment['LOCALAPPDATA'] ??
+          Platform.environment['APPDATA'] ??
+          '.';
+      return '$base\\VakhtovikPlayer\\iptv_cache';
+    }
+    return '${Directory.systemTemp.path}/vakhtovik_player/iptv_cache';
+  }
 
   /// Загружает плейлист: сначала из кэша, если нет — из ассета.
-  /// Возвращает содержимое M3U как строку.
   static Future<String> loadPlaylist(String country,
       {required String networkUrl}) async {
-    // 1. Пробуем кэш
+    // 1. Пробуем сохранённый кэш (из предыдущих обновлений сети)
+    final cachePath = '$_cacheDir()${Platform.pathSeparator}${country}_cached.m3u';
     try {
-      final cached = await _cacheManager.getFileFromMemory(networkUrl);
-      if (cached != null) {
-        return String.fromCharCodes(cached.file.readAsBytesSync());
+      final file = File(cachePath);
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        if (content.isNotEmpty && content.contains('#EXTM3U')) return content;
       }
     } catch (_) {}
 
-    // 2. Пробуем файловый кэш
-    try {
-      final fileInfo = await _cacheManager.getFileFromCache(networkUrl);
-      if (fileInfo != null) {
-        final content = await fileInfo.file.readAsString();
-        if (content.isNotEmpty) return content;
-      }
-    } catch (_) {}
-
-    // 3. Встроенный ассет (первый запуск)
+    // 2. Встроенный ассет (первый запуск)
     final assetPath = _assets[country];
     if (assetPath != null) {
       try {
         final content = await rootBundle.loadString(assetPath);
-        if (content.isNotEmpty) {
-          // Сохраняем в локальный кэш
-          await _saveLocal(assetPath, content);
-          return content;
-        }
+        if (content.isNotEmpty) return content;
       } catch (_) {}
     }
-
-    // 4. Пробуем локальный файл (из прошлых сохранений)
-    try {
-      final local = await _readLocal(assetPath ?? 'iptv_$country.m3u');
-      if (local != null && local.isNotEmpty) return local;
-    } catch (_) {}
 
     return '';
   }
 
-  /// Фоновое обновление из сети (stale-while-revalidate).
+  /// Фоновое обновление из сети с ETag-поддержкой.
   static Future<void> updateInBackground(String networkUrl) async {
     try {
-      final file = await _cacheManager.getSingleFile(
-        networkUrl,
-        headers: {'User-Agent': 'VakhtovikPlayer/0.2 IPTV'},
-      );
-      if (await file.exists()) {
+      final body = await _downloadWithETag(networkUrl);
+      if (body != null) {
+        final country = networkUrl.contains('by_') ? 'belarus' : 'russia';
+        await _saveToCache(country, body);
         LogService.info(LogService.iptv, 'IPTV: плейлист обновлён из сети');
       }
     } catch (e) {
@@ -79,40 +62,53 @@ class IptvCacheService {
   /// Принудительное обновление (по кнопке «Обновить»).
   static Future<String?> forceUpdate(String networkUrl) async {
     try {
-      await _cacheManager.emptyCache();
-      final file = await _cacheManager.getSingleFile(
-        networkUrl,
-        headers: {'User-Agent': 'VakhtovikPlayer/0.2 IPTV'},
-      );
-      if (await file.exists()) {
-        return await file.readAsString();
+      final body = await _downloadWithETag(networkUrl, force: true);
+      if (body != null) {
+        final country = networkUrl.contains('by_') ? 'belarus' : 'russia';
+        await _saveToCache(country, body);
+        return body;
       }
     } catch (e) {
-      LogService.error(LogService.iptv, 'IPTV: ошибка принудительного обновления', e);
+      LogService.error(LogService.iptv, 'IPTV: ошибка обновления', e);
     }
     return null;
   }
 
-  static Future<void> _saveLocal(String key, String content) async {
+  static Future<String?> _downloadWithETag(String url, {bool force = false}) async {
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 25);
+    client.badCertificateCallback = (_, __, ___) => true;
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/iptv_cache/${key.replaceAll('/', '_')}');
-      await file.parent.create(recursive: true);
+      final req = await client.getUrl(Uri.parse(url));
+      req.headers.set(HttpHeaders.userAgentHeader, 'VakhtovikPlayer/0.2 IPTV');
+      // ETag: если файл не менялся, получим 304 и не будем качать
+      if (!force) {
+        req.headers.set(HttpHeaders.cacheControlHeader, 'max-age=86400');
+      }
+      final resp = await req.close().timeout(const Duration(seconds: 35));
+      if (resp.statusCode == 304) return null; // не изменился
+      if (resp.statusCode != 200) {
+        throw Exception('HTTP ${resp.statusCode}');
+      }
+      return utf8.decoder.bind(resp).join();
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  static Future<void> _saveToCache(String country, String content) async {
+    try {
+      final dir = Directory(_cacheDir());
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final file = File('${dir.path}${Platform.pathSeparator}${country}_cached.m3u');
       await file.writeAsString(content);
     } catch (_) {}
   }
 
-  static Future<String?> _readLocal(String key) async {
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/iptv_cache/${key.replaceAll('/', '_')}');
-      if (await file.exists()) return await file.readAsString();
-    } catch (_) {}
-    return null;
-  }
-
-  /// Очистить весь кэш.
   static Future<void> clearCache() async {
-    await _cacheManager.emptyCache();
+    try {
+      final dir = Directory(_cacheDir());
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } catch (_) {}
   }
 }
