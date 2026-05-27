@@ -124,11 +124,11 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingFresh) return;
     setState(() => _loadingFresh = true);
     try {
-      final items = await ApiService.youtubeFresh(limit: 48);
+      final items = await ApiService.youtubePopular(limit: 48);
       if (mounted) setState(() => _fresh = items);
     } catch (e) {
-      LogService.error(LogService.youtube, 'Ошибка загрузки "Новое"', e);
-      if (mounted) _snack('Ошибка "Новое": $e');
+      LogService.error(LogService.youtube, 'Ошибка загрузки "Главная"', e);
+      if (mounted) _snack('Ошибка "Главная": $e');
     } finally {
       if (mounted) setState(() => _loadingFresh = false);
     }
@@ -623,7 +623,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
           padding: const EdgeInsets.all(8),
           child: Row(children: [
             const Expanded(
-                child: Text('Новое по просмотренным каналам',
+                child: Text('Популярное на YouTube',
                     style: TextStyle(color: Colors.white70))),
             FilledButton.icon(
                 onPressed: _loadFresh,
@@ -827,7 +827,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
         foregroundColor: Colors.white,
         actions: [_qualityButton(), _loginButton()],
         bottom: TabBar(controller: _tabController, tabs: const [
-          Tab(icon: Icon(Icons.auto_awesome), text: 'Новое'),
+          Tab(icon: Icon(Icons.home), text: 'Главная'),
           Tab(icon: Icon(Icons.home), text: 'Лента'),
           Tab(icon: Icon(Icons.search), text: 'Поиск'),
           Tab(icon: Icon(Icons.trending_up), text: 'Популярное'),

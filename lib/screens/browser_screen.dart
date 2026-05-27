@@ -1361,8 +1361,49 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final loadUrl = textMode ? ApiService.liteUrl(target) : target;
       urlController.text = loadUrl;
       if (mounted) setState(() => _pageLoading = true);
-      webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
-    }
+    webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(loadUrl)));
+  }
+
+  Future<void> _showLogDialog() async {
+    final log = await LogService.readLog();
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Text('Лог ошибок'),
+            const Spacer(),
+            Text('${log.split('\n').length} строк',
+                style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              log,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              LogService.clearLog();
+              Navigator.pop(ctx);
+            },
+            child: const Text('Очистить'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Закрыть'),
+          ),
+        ],
+      ),
+    );
+  }
   }
 
   Future<void> _showCustomSiteDialog() async {
@@ -2405,11 +2446,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Плеер Вахтовика',
-                        style: TextStyle(
-                            color: Colors.orange,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Плеер Вахтовика',
+                            style: TextStyle(
+                                color: Colors.orange,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold)),
+                        IconButton(
+                          icon: const Icon(Icons.bug_report,
+                              color: Colors.orange, size: 20),
+                          tooltip: 'Лог ошибок',
+                          onPressed: _showLogDialog,
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     const Text('Выбери сайт или введи свой адрес сверху',
                         style: TextStyle(color: Colors.white70)),
