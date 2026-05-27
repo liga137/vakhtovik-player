@@ -5,7 +5,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import '../services/api_service.dart';
-import '../services/log_service.dart';
 
 /// Экран плеера: мультиплатформенный HLS стриминг
 class PlayerScreen extends StatefulWidget {
@@ -65,7 +64,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       await _controller!.initialize();
     } catch (e) {
-      LogService.error(LogService.player, 'Ошибка инициализации плеера', e);
       _onPlaybackError('Ошибка инициализации плеера: $e');
       return;
     }
@@ -106,11 +104,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _onPlaybackError(String reason) {
     if (_reconnecting || !mounted) return;
-    LogService.warn(LogService.player,
-        'Ошибка воспроизведения (попытка ${_reconnectAttempts + 1}/$_maxReconnectAttempts): $reason');
     if (_reconnectAttempts >= _maxReconnectAttempts) {
-      LogService.error(LogService.player,
-          'Плеер: исчерпаны все $_maxReconnectAttempts попыток реконнекта. $reason');
       setState(() {
         _reconnectStatus = 'Не удалось восстановить видео после '
             '$_maxReconnectAttempts попыток.\n$reason';
@@ -144,6 +138,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 15);
     client.badCertificateCallback = (_, __, ___) => true;
+    if (Platform.isWindows) {
+      client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
+    }
     try {
       final req = await client.getUrl(Uri.parse(widget.hlsUrl));
       final resp = await req.close().timeout(const Duration(seconds: 10));

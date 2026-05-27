@@ -11,7 +11,6 @@ import 'package:window_manager/window_manager.dart';
 import '../services/api_service.dart';
 import '../services/filmix_auth.dart';
 import '../services/filmix_dom.dart';
-import '../services/log_service.dart';
 import '../services/update_service.dart';
 import '../services/youtube_hover.dart';
 import '../models/preset.dart';
@@ -182,7 +181,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      LogService.error(LogService.browser, 'WebView2: ошибка создания окружения', e);
       setState(() {
         _webViewEnvironment = oldEnvironment;
         _webViewReady = true;
@@ -219,7 +217,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       }
     } catch (e) {
       if (mounted) {
-        LogService.error(LogService.browser, 'Не удалось загрузить пресеты', e);
         setState(() {
           _presets = List<Preset>.from(fallback);
           _selectedQuality = '240p';
@@ -494,7 +491,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      LogService.error(LogService.browser, 'Ошибка транскодирования: $_interceptedUrl', e);
       setState(() {
         _isLoading = false;
       });
@@ -517,16 +513,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
           vids[i].muted = true;
           vids[i].pause();
         }
-        // На Windows WebView2 показывает ссылку внизу при hover даже под Flutter overlay.
-        // Отключаем pointer events у страницы, пока открыт наш плеер.
-        document.documentElement.style.pointerEvents = 'none';
-        if (document.body) document.body.style.pointerEvents = 'none';
       })();
     """);
   }
 
   void _stopPlayer() {
-    // WebView звук обратно
     _unmuteWebView();
   }
 
@@ -537,8 +528,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
         for (var i = 0; i < vids.length; i++) {
           vids[i].muted = false;
         }
-        document.documentElement.style.pointerEvents = '';
-        if (document.body) document.body.style.pointerEvents = '';
       })();
     """);
   }
@@ -795,9 +784,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _interceptedUrl = clean;
     _currentReferer = (referer ?? urlController.text).trim();
     _selectedQuality = '240p';
-
-    LogService.info(LogService.browser,
-        'Перехвачен URL: $clean (referer: $_currentReferer)');
 
     Future.microtask(() {
       if (!mounted) return;
@@ -1388,32 +1374,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
             ));
     c.dispose();
     if (result != null && result.trim().isNotEmpty) _loadAddress(result);
-  }
-
-  Future<void> _showLogDialog() async {
-    final log = await LogService.readLog();
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(children: [
-          const Text('Лог ошибок'), const Spacer(),
-          Text('${log.split('\n').length} строк',
-              style: const TextStyle(fontSize: 12, color: Colors.grey)),
-        ]),
-        content: SizedBox(
-          width: double.maxFinite, height: 400,
-          child: SingleChildScrollView(child: SelectableText(log,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 11))),
-        ),
-        actions: [
-          TextButton(onPressed: () { LogService.clearLog(); Navigator.pop(ctx); },
-              child: const Text('Очистить')),
-          TextButton(onPressed: () => Navigator.pop(ctx),
-              child: const Text('Закрыть')),
-        ],
-      ),
-    );
   }
 
   @override
@@ -2170,18 +2130,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         },
                         onReceivedError: (controller, request, error) {
                           final failedUrl = request.url?.toString() ?? '';
-                          // Игнорируем ошибки about:blank, фоновых ресурсов и не-главных фреймов
+                          // Игнорируем ошибки about:blank и фоновых ресурсов
                           if (failedUrl.isEmpty ||
                               failedUrl == 'about:blank' ||
                               !failedUrl.startsWith('http')) {
                             return;
                           }
-                          // Ретрим ТОЛЬКО ошибки главного фрейма, не саб-ресурсы (реклама, трекеры)
-                          final isMain = request.isForMainFrame ?? true;
-                          if (!isMain) return;
-
-                          LogService.warn(LogService.browser,
-                              'WebView ошибка загрузки: $failedUrl — ${error.description} (тип ${error.type})');
                           _lastFailedUrl = failedUrl;
                           if (_webViewRetryCount < _webViewMaxRetries) {
                             _webViewRetryCount++;
@@ -2435,17 +2389,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(children: [
-                      const Text('Плеер Вахтовика',
-                          style: TextStyle(color: Colors.orange, fontSize: 24,
-                              fontWeight: FontWeight.bold)),
-                      const Spacer(),
-                      IconButton(
-                          icon: const Icon(Icons.bug_report,
-                              color: Colors.orange, size: 20),
-                          tooltip: 'Лог ошибок', onPressed: _showLogDialog,
-                      ),
-                    ]),
+                    const Text('Плеер Вахтовика',
+                        style: TextStyle(
+                            color: Colors.orange,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     const Text('Выбери сайт или введи свой адрес сверху',
                         style: TextStyle(color: Colors.white70)),

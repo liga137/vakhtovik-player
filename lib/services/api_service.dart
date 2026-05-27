@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show File, HandshakeException, HttpClient, HttpException, Platform, SocketException, TlsException;
+import 'dart:io' show Directory, File, HttpClient, Platform;
 import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -8,7 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/preset.dart';
 import '../models/transcode_result.dart';
 import '../models/youtube_video.dart';
-import 'log_service.dart';
 
 /// Сервис для работы с API «Плеер Вахтовика»
 class ApiService {
@@ -32,18 +31,18 @@ class ApiService {
     client.connectionTimeout = const Duration(seconds: 45);
     client.idleTimeout = const Duration(seconds: 90);
     client.badCertificateCallback = (cert, host, port) => true;
-    // Прокси 127.0.0.1:1080 убран — мёртв.
-    // neko-tun (системный VPN) маршрутизирует трафик сам (как для curl).
+    // Прокси имеет смысл только на Windows (там работает Hysteria/GOST).
+    // На Android системный прокси настраивается иначе.
+    if (Platform.isWindows) {
+      client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
+    }
     return client;
   }
 
   /// Выполняет [fn] с автоматическими повторами при сетевых ошибках.
   /// На каждой повторной попытке создаётся новый HttpClient (свежие сокеты).
-  static Future<T> _withRetry<T>(
-    Future<T> Function(http.Client client) fn, {
-    int maxRetries = _maxRetries,
-    String operation = 'API',
-  }) async {
+  static Future<T> _withRetry<T>(Future<T> Function(http.Client client) fn,
+      {int maxRetries = _maxRetries}) async {
     var attempt = 0;
     Object? lastError;
     while (true) {
@@ -57,27 +56,20 @@ class ApiService {
         }
       } on SocketException catch (e) {
         lastError = e;
-        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — SocketException');
       } on HttpException catch (e) {
         lastError = e;
-        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — HttpException');
       } on HandshakeException catch (e) {
         lastError = e;
-        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — HandshakeException');
       } on TlsException catch (e) {
         lastError = e;
-        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — TlsException');
       } on TimeoutException catch (e) {
         lastError = e;
-        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — TimeoutException');
       } on http.ClientException catch (e) {
         lastError = e;
-        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — ClientException');
       } on Exception catch (e) {
         // На спутниковом канале любая ошибка (в т.ч. HTTP 5xx)
         // может быть transient — пробуем ещё раз
         lastError = e;
-        LogService.warn(LogService.api, '$operation: попытка $attempt/$maxRetries — $e');
       }
       if (attempt >= maxRetries) break;
       // Экспоненциальная задержка, но не более 30 секунд
@@ -85,9 +77,7 @@ class ApiService {
           min(_retryBaseDelay.inMilliseconds * (1 << (attempt - 1)), 30000);
       await Future<void>.delayed(Duration(milliseconds: delayMs));
     }
-    final err = lastError ?? Exception('Сеть недоступна после $maxRetries попыток');
-    LogService.error(LogService.api, '$operation: ИСЧЕРПАНЫ ВСЕ $maxRetries ПОПЫТКИ', err);
-    throw err;
+    throw lastError ?? Exception('Сеть недоступна после $maxRetries попыток');
   }
 
   // Всегда используем nip.io — сервер требует SNI-заголовок
@@ -135,7 +125,7 @@ class ApiService {
             .toList();
       }
       throw Exception('Ошибка загрузки пресетов: ${response.statusCode}');
-    }, operation: 'getPresets');
+    });
   }
 
   /// Запустить транскодирование
@@ -155,7 +145,7 @@ class ApiService {
       final body = json.decode(response.body);
       throw Exception(
           body['detail'] ?? 'Ошибка транскодирования: ${response.statusCode}');
-    }, operation: 'transcode');
+    });
   }
 
   /// Получить статус сессии
@@ -167,14 +157,14 @@ class ApiService {
         return json.decode(response.body);
       }
       throw Exception('Ошибка статуса: ${response.statusCode}');
-    }, operation: 'getStatus');
+    });
   }
 
   /// Остановить и очистить сессию
   static Future<void> stopSession(String sessionId) async {
     await _withRetry((c) async {
       await c.post(Uri.parse('$baseUrl/stop/$sessionId'));
-    }, operation: 'stopSession');
+    });
   }
 
   /// Скачать транскодированный mp4 на диск
@@ -229,7 +219,7 @@ class ApiService {
             .toList();
       }
       throw Exception('Ошибка поиска YouTube: ${response.statusCode}');
-    }, operation: 'searchYouTube');
+    });
   }
 
   static Future<void> youtubeRegister(String username, String password) async {
@@ -259,7 +249,7 @@ class ApiService {
       }
       throw Exception(
           'Ошибка авторизации: ${response.statusCode} ${response.body}');
-    }, operation: path);
+    });
   }
 
   static void youtubeLogout() {
@@ -279,7 +269,7 @@ class ApiService {
         return List<Map<String, dynamic>>.from(json.decode(response.body));
       }
       throw Exception('Ошибка подписок: ${response.statusCode}');
-    }, operation: 'youtubeSubscriptions');
+    });
   }
 
   static Future<void> youtubeAddSubscription(String input,
@@ -294,7 +284,7 @@ class ApiService {
       if (response.statusCode == 200) return;
       throw Exception(
           'Ошибка добавления: ${response.statusCode} ${response.body}');
-    }, operation: 'youtubeAddSubscription');
+    });
   }
 
   static Future<List<YouTubeVideo>> youtubeFeed({int limit = 30}) async {
@@ -311,72 +301,25 @@ class ApiService {
             .toList();
       }
       throw Exception('Ошибка ленты: ${response.statusCode}');
-    }, operation: 'youtubeFeed');
+    });
   }
 
-  /// Российское «В тренде» через InnerTube (gl=RU, без квот Google API).
   static Future<List<YouTubeVideo>> youtubePopular({int limit = 24}) async {
     await initLocalState();
-    final result = await getYoutubePopularInnerTube();
-    final videos = parseInnerTubeVideos(result);
-    return videos.take(limit).toList();
-  }
-
-  /// Лента «Главная» YouTube через InnerTube API (персонализированная).
-  /// Требует авторизации (куки передаются через Bearer-токен).
-  static Future<Map<String, dynamic>> getYoutubeHome({
-    String? continuation,
-  }) async {
-    await initLocalState();
     return _withRetry((c) async {
-      final headers = <String, String>{'Content-Type': 'application/json'};
-      final body = <String, dynamic>{};
-      if (continuation != null && continuation.isNotEmpty) {
-        body['continuation_token'] = continuation;
-      }
-      final response = await c.post(
-        Uri.parse('$baseUrl/youtube/home'),
-        headers: headers,
-        body: json.encode(body),
-      );
+      final uri = Uri.parse('$baseUrl/yt/popular')
+          .replace(queryParameters: {'limit': limit.toString()});
+      final response =
+          await c.get(uri).timeout(const Duration(seconds: 30));
       if (response.statusCode == 200) {
-        return json.decode(response.body) as Map<String, dynamic>;
+        final data = json.decode(response.body) as List<dynamic>;
+        return data
+            .whereType<Map<String, dynamic>>()
+            .map(YouTubeVideo.fromJson)
+            .toList();
       }
-      throw Exception('Ошибка InnerTube: ${response.statusCode}');
-    }, operation: 'youtubeHome');
-  }
-
-  /// Российское «В тренде» через InnerTube API.
-  static Future<Map<String, dynamic>> getYoutubePopularInnerTube() async {
-    await initLocalState();
-    return _withRetry((c) async {
-      final response = await c.post(
-        Uri.parse('$baseUrl/youtube/popular'),
-        headers: {'Content-Type': 'application/json'},
-        body: '{}',
-      );
-      if (response.statusCode == 200) {
-        return json.decode(response.body) as Map<String, dynamic>;
-      }
-      throw Exception('Ошибка популярного (InnerTube): ${response.statusCode}');
-    }, operation: 'youtubePopularInnerTube');
-  }
-
-  /// Парсит ответ InnerTube в список YouTubeVideo.
-  static List<YouTubeVideo> parseInnerTubeVideos(Map<String, dynamic> result) {
-    final videos = (result['videos'] as List<dynamic>?)
-            ?.whereType<Map<String, dynamic>>()
-            .map((v) => YouTubeVideo.fromJson(v))
-            .toList() ??
-        [];
-    return videos;
-  }
-
-  /// Извлекает continuation_token из ответа InnerTube.
-  static String? innerTubeContinuation(Map<String, dynamic> result) {
-    final token = result['continuation_token'];
-    if (token is String && token.isNotEmpty) return token;
-    return null;
+      throw Exception('Ошибка популярного: ${response.statusCode}');
+    });
   }
 
   static String youtubeGoogleStartUrl(String state) {
@@ -398,7 +341,7 @@ class ApiService {
         return json.decode(response.body) as Map<String, dynamic>;
       }
       throw Exception('Ошибка статуса Google: ${response.statusCode}');
-    }, operation: 'youtubeGoogleStatus');
+    });
   }
 
   static String _normalizeChannelName(String value) {

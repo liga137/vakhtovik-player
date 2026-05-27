@@ -2,66 +2,61 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/iptv_channel.dart';
-import 'iptv_cache_service.dart';
-import 'log_service.dart';
 
 class IptvService {
   static const _cacheKey = 'iptv_channels_cache_v1';
   static const _cacheTimeKey = 'iptv_channels_cache_time_v1';
   static const _cacheTtl = Duration(hours: 12);
 
-  // Источники плейлистов (страна → URL)
-  static const _sources = <String, String>{
-    'belarus': 'https://sat-portal.com/upload/by_%2020.02.2026.m3u8',
-    'russia': 'https://sat-portal.com/upload/rus_22.05.2026.m3u8',
-  };
+  // Берём легальный публичный источник iptv-org. Полный index.m3u слишком жирный
+  // для спутника, поэтому стартуем с русскоязычного плейлиста.
+  // При недоступности используем встроенный список каналов (не требует интернета).
+  static const _sources = [
+    'https://iptv-org.github.io/iptv/languages/rus.m3u',
+  ];
 
   static const categoryOrder = [
     'Все',
     'Избранное',
-    'Россия',
     'Общероссийские',
-    'Беларусь',
-    'Общие',
     'Кино',
-    'Детские',
+    'Мультфильмы',
     'Спорт',
-    'Музыка',
-    'Музыкальные',
-    'Познавательные',
     'Новости',
+    'Познавательные',
+    'Музыкальные',
+    'Украина',
+    'Беларусь',
+    'Türkiye',
+    'Azerbaijan',
+    'Israel',
     'Региональные',
     'Разное',
   ];
 
   static Future<List<IptvChannel>> loadChannels(
       {bool forceRefresh = false}) async {
-    final allChannels = <IptvChannel>[];
-
-    for (final entry in _sources.entries) {
-      final country = entry.key;
-      final url = entry.value;
-
-      // 1. Сначала из кэша / встроенного ассета (мгновенно)
-      final cachedBody = await IptvCacheService.loadPlaylist(country, networkUrl: url);
-      if (cachedBody.isNotEmpty) {
-        allChannels.addAll(parseM3u(cachedBody, source: url));
-      }
-
-      // 2. Фоновое обновление из сети (stale-while-revalidate)
-      if (forceRefresh) {
-        final fresh = await IptvCacheService.forceUpdate(url);
-        if (fresh != null && fresh.isNotEmpty) {
-          allChannels.addAll(parseM3u(fresh, source: url));
-        }
-      } else {
-        // Не ждём — обновляем в фоне
-        IptvCacheService.updateInBackground(url);
-      }
+    final prefs = await SharedPreferences.getInstance();
+    if (!forceRefresh) {
+      final cached = _readCache(prefs);
+      if (cached.isNotEmpty) return cached;
     }
 
-    final cleaned = _dedupe(allChannels);
-    if (cleaned.isNotEmpty) return cleaned;
+    try {
+      final out = <IptvChannel>[];
+      for (final source in _sources) {
+        final body = await _download(source);
+        out.addAll(parseM3u(body, source: source));
+      }
+      final cleaned = _dedupe(out);
+      if (cleaned.isNotEmpty) {
+        await _saveCache(prefs, cleaned);
+        return cleaned;
+      }
+    } catch (_) {
+      final cached = _readCache(prefs, ignoreTtl: true);
+      if (cached.isNotEmpty) return cached;
+    }
 
     return fallbackChannels;
   }
@@ -82,6 +77,7 @@ class IptvService {
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 25);
     client.badCertificateCallback = (_, __, ___) => true;
+    client.findProxy = (uri) => 'PROXY 127.0.0.1:1080; DIRECT';
     try {
       final req = await client.getUrl(Uri.parse(url));
       req.headers.set(HttpHeaders.userAgentHeader, 'VakhtovikPlayer/0.2 IPTV');
@@ -124,16 +120,12 @@ class IptvService {
       ]);
       final group = attrs['group-title'] ?? '';
       final category = normalizeCategory(group, name);
-      final autoCountry = _detectCountry(source);
-      final country = attrs['tvg-country']?.isNotEmpty == true
-          ? attrs['tvg-country']!
-          : autoCountry;
       out.add(IptvChannel(
         name: name,
         url: line,
         category: category,
         logo: attrs['tvg-logo'] ?? '',
-        country: country,
+        country: attrs['tvg-country'] ?? '',
         language: attrs['tvg-language'] ?? '',
         source: source,
       ));
@@ -150,17 +142,6 @@ class IptvService {
       attrs[(m.group(1) ?? '').toLowerCase()] = m.group(2) ?? '';
     }
     return attrs;
-  }
-
-  static String _detectCountry(String source) {
-    final s = source.toLowerCase();
-    if (s.contains('belarus') || s.contains('by_') || s.contains('/by/')) {
-      return 'Беларусь';
-    }
-    if (s.contains('rus_') || s.contains('/rus') || s.contains('russia')) {
-      return 'Россия';
-    }
-    return '';
   }
 
   static String normalizeCategory(String group, String name) {
@@ -261,8 +242,7 @@ class IptvService {
           .map(IptvChannel.fromJson)
           .where((e) => e.name.isNotEmpty && e.url.isNotEmpty)
           .toList();
-    } catch (e) {
-      LogService.warn(LogService.iptv, 'IPTV: ошибка чтения кэша', e);
+    } catch (_) {
       return const [];
     }
   }
@@ -617,21 +597,15 @@ class IptvService {
       name: 'Шансон ТВ',
       url:
           'http://bethoven.af-stream.com:8080/s/pyxm92zq/shanson-tv/video.m3u8',
-      category: 'Музыка',
+      category: 'Музыкальные',
       source: 'fallback',
     ),
-    // ── Беларусь (встроенные) ──
-    IptvChannel(name: 'Беларусь 1', url: 'https://edge50.dc.beltelecom.by/ngtrk/smil:belarus1.smil/chunklist_b5160000_sleng.m3u8', category: 'Беларусь', country: 'Беларусь', logo: '', source: 'fallback'),
-    IptvChannel(name: 'Беларусь 3 HD', url: 'https://edge50.dc.beltelecom.by/ngtrk/smil:belarus3.smil/chunklist_b5160000_sleng.m3u8', category: 'Беларусь', country: 'Беларусь', logo: '', source: 'fallback'),
-    IptvChannel(name: 'НТВ Беларусь', url: 'http://194.158.222.36:6107', category: 'Беларусь', country: 'Беларусь', logo: '', source: 'fallback'),
-    IptvChannel(name: 'Беларусь 24', url: 'https://edge53.dc.beltelecom.by/ngtrk/smil:belarus24.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', logo: '', source: 'fallback'),
-    IptvChannel(name: 'Беларусь 5', url: 'https://edge59.dc.beltelecom.by/ngtrk/smil:belarus5int.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', logo: '', source: 'fallback'),
-    IptvChannel(name: 'Первый информационный', url: 'https://ngtrk.dc.beltelecom.by/ngtrk/smil:informacionnyy.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', logo: '', source: 'fallback'),
-    IptvChannel(name: 'СТВ HD', url: 'http://ctv.dc.beltelecom.by/ctv/ctv.stream/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', logo: '', source: 'fallback'),
-    IptvChannel(name: 'Беларусь 5 (Спорт)', url: 'https://ngtrk.dc.beltelecom.by/ngtrk/smil:belarus5.smil/playlist.m3u8', category: 'Спорт', country: 'Беларусь', logo: '', source: 'fallback'),
-    IptvChannel(name: '1Mus', url: 'http://hz1.teleport.cc/HLS/HD.m3u8', category: 'Музыка', country: 'Беларусь', logo: '', source: 'fallback'),
-    IptvChannel(name: 'Belros', url: 'https://live2.mediacdn.ru/sr1/tro/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', logo: '', source: 'fallback'),
-    IptvChannel(name: 'Первый музыкальный', url: 'http://rtmp.one.by:1200', category: 'Музыка', country: 'Беларусь', logo: '', source: 'fallback'),
-    IptvChannel(name: 'Belsat TV', url: 'https://ythls.armelin.one/channel/UCRokSp8CGOuQO4R0F1RxRGg.m3u8', category: 'Беларусь', country: 'Беларусь', logo: '', source: 'fallback'),
+    // ── Беларусь ──
+    IptvChannel(name: 'ОНТ', url: 'https://stream.dc.beltelecom.by/ont/ont/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
+    IptvChannel(name: 'Беларусь 1', url: 'https://ngtrk.dc.beltelecom.by/ngtrk/smil:belarus1.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
+    IptvChannel(name: 'Беларусь 3', url: 'https://ngtrk.dc.beltelecom.by/ngtrk/smil:belarus3.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
+    IptvChannel(name: 'Беларусь 24', url: 'https://ngtrk.dc.beltelecom.by/ngtrk/smil:belarus24.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
+    IptvChannel(name: 'СТВ', url: 'http://ctv.dc.beltelecom.by/ctv/ctv.stream/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
+    IptvChannel(name: 'НТВ Беларусь', url: 'http://194.158.222.36:6107', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
   ];
 }

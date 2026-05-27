@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/preset.dart';
 import '../services/api_service.dart';
-import '../services/log_service.dart';
 import 'player_screen.dart';
 
 /// Главный экран: ввод ссылки + выбор качества
@@ -77,47 +76,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _showLogDialog() async {
-    final log = await LogService.readLog();
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            const Text('Лог ошибок'),
-            const Spacer(),
-            Text('${log.split('\n').length} строк',
-                style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 400,
-          child: SingleChildScrollView(
-            child: SelectableText(
-              log,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              LogService.clearLog();
-              Navigator.pop(ctx);
-            },
-            child: const Text('Очистить'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Закрыть'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   void dispose() {
     _urlController.dispose();
@@ -130,13 +88,6 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Плеер Вахтовика'),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.bug_report),
-            tooltip: 'Лог ошибок',
-            onPressed: _showLogDialog,
-          ),
-        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
