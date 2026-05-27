@@ -14,12 +14,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Flutter 3.24.3
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.3'
-          channel: 'stable'
-          cache: true
+      - name: Download Flutter SDK (from Google)
+        shell: pwsh
+        run: |
+          $url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.3-stable.zip"
+          Write-Host "Downloading Flutter SDK..."
+          Invoke-WebRequest -Uri $url -OutFile flutter.zip -TimeoutSec 300
+          Write-Host "Extracting..."
+          Expand-Archive -Path flutter.zip -DestinationPath .
+          Remove-Item flutter.zip
+        working-directory: ${{ runner.temp }}
+
+      - name: Add Flutter to PATH
+        shell: pwsh
+        run: echo "$env:RUNNER_TEMP\flutter\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Flutter doctor
+        run: flutter doctor -v
 
       - name: Enable Windows Desktop
         run: flutter config --enable-windows-desktop
@@ -54,12 +65,14 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Setup Flutter 3.24.3
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.24.3'
-          channel: 'stable'
-          cache: true
+      - name: Download Flutter SDK (from Google)
+        run: |
+          wget -q https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.24.3-stable.tar.xz
+          tar xf flutter_linux_3.24.3-stable.tar.xz
+          echo "$PWD/flutter/bin" >> $GITHUB_PATH
+
+      - name: Flutter doctor
+        run: flutter doctor -v
 
       - name: Install Flutter dependencies
         run: flutter pub get
@@ -115,10 +128,11 @@ jobs:
           body: |
             Автоматическая сборка Плеера Вахтовика.
 
-            Изменения:
-            - встроенный VPN полностью удалён из приложения и сборки;
-            - добавлен раздел IPTV с категориями и запуском через серверное сжатие;
-            - Windows и Android артефакты приложены ниже.
+            v${{ steps.version.outputs.version }}:
+            - YouTube «Главная» через InnerTube API
+            - IPTV: Беларусь + Россия, кэш-first
+            - WebView: исправлены циклические перезагрузки
+            - Исправлены YouTube search/feed/popular
           files: |
             release-assets/windows/Vakhtovik-Player-Windows.zip
             release-assets/android/Vakhtovik-Player-Android.apk
