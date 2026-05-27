@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/iptv_channel.dart';
+import 'iptv_cache_service.dart';
 import 'log_service.dart';
 
 class IptvService {
@@ -9,17 +10,11 @@ class IptvService {
   static const _cacheTimeKey = 'iptv_channels_cache_time_v1';
   static const _cacheTtl = Duration(hours: 12);
 
-  // Легальные публичные плейлисты IPTV.
-  // При недоступности используем встроенный список каналов (не требует интернета).
-  static const _sources = [
-    'https://sat-portal.com/upload/rus_22.05.2026.m3u8',
-    'https://sat-portal.com/upload/by_%2020.02.2026.m3u8',
-  ];
-
-  // Фолбэк-источники (если основные недоступны)
-  static const _fallbackSources = [
-    'https://iptv-org.github.io/iptv/languages/rus.m3u',
-  ];
+  // Источники плейлистов (страна → URL)
+  static const _sources = <String, String>{
+    'belarus': 'https://sat-portal.com/upload/by_%2020.02.2026.m3u8',
+    'russia': 'https://sat-portal.com/upload/rus_22.05.2026.m3u8',
+  };
 
   static const categoryOrder = [
     'Все',
@@ -41,41 +36,34 @@ class IptvService {
 
   static Future<List<IptvChannel>> loadChannels(
       {bool forceRefresh = false}) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!forceRefresh) {
-      final cached = _readCache(prefs);
-      if (cached.isNotEmpty) return cached;
-    }
+    final allChannels = <IptvChannel>[];
 
-    // Пробуем основные источники
-    List<IptvChannel>? result = await _tryLoad(_sources);
-    // Если не вышло — фолбэки
-    result ??= await _tryLoad(_fallbackSources);
-    // Если всё сломалось — кэш или fallback-список
-    if (result == null || result.isEmpty) {
-      LogService.warn(LogService.iptv, 'IPTV: все источники недоступны');
-      final cached = _readCache(prefs, ignoreTtl: true);
-      if (cached.isNotEmpty) return cached;
-      return fallbackChannels;
-    }
-    await _saveCache(prefs, result);
-    return result;
-  }
+    for (final entry in _sources.entries) {
+      final country = entry.key;
+      final url = entry.value;
 
-  static Future<List<IptvChannel>?> _tryLoad(List<String> sources) async {
-    for (final source in sources) {
-      try {
-        final body = await _download(source);
-        final channels = parseM3u(body, source: source);
-        if (channels.isNotEmpty) {
-          final cleaned = _dedupe(channels);
-          if (cleaned.isNotEmpty) return cleaned;
+      // 1. Сначала из кэша / встроенного ассета (мгновенно)
+      final cachedBody = await IptvCacheService.loadPlaylist(country, networkUrl: url);
+      if (cachedBody.isNotEmpty) {
+        allChannels.addAll(parseM3u(cachedBody, source: url));
+      }
+
+      // 2. Фоновое обновление из сети (stale-while-revalidate)
+      if (forceRefresh) {
+        final fresh = await IptvCacheService.forceUpdate(url);
+        if (fresh != null && fresh.isNotEmpty) {
+          allChannels.addAll(parseM3u(fresh, source: url));
         }
-      } catch (e) {
-        LogService.warn(LogService.iptv, 'IPTV: ошибка загрузки $source', e);
+      } else {
+        // Не ждём — обновляем в фоне
+        IptvCacheService.updateInBackground(url);
       }
     }
-    return null;
+
+    final cleaned = _dedupe(allChannels);
+    if (cleaned.isNotEmpty) return cleaned;
+
+    return fallbackChannels;
   }
 
   static List<String> categoriesFor(List<IptvChannel> channels) {

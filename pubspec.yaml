@@ -19,6 +19,8 @@ dependencies:
   url_launcher: ^6.3.1
   window_manager: ^0.4.3
   shared_preferences: ^2.3.2
+  flutter_cache_manager: ^3.4.1
+  path_provider: ^2.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -39,3 +41,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
+    - assets/iptv/
