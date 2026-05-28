@@ -9,8 +9,6 @@ import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:window_manager/window_manager.dart';
 import '../services/api_service.dart';
-import '../services/filmix_auth.dart';
-import '../services/filmix_dom.dart';
 import '../services/log_service.dart';
 import '../services/update_service.dart';
 import '../services/youtube_hover.dart';
@@ -471,8 +469,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       });
       _muteWebView();
 
-      final episodes = _seasonvarEpisodes.isNotEmpty ? _seasonvarEpisodes : null;
-      final epIndex = _seasonvarIndex;
       await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => PlayerScreen(
           hlsUrl: ApiService.hlsUrl(result.playlistUrl),
@@ -481,11 +477,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
           quality: _selectedQuality,
           referer: _currentReferer,
           duration: result.duration,
-          episodes: episodes,
-          episodeIndex: epIndex,
-          onEpisodeSelected: episodes != null
-              ? (i) => _playSeasonvarEpisode(i)
-              : null,
         ),
       ));
 
@@ -550,15 +541,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _playSeasonvarEpisode(int index) {
+    if (index < 0 || index >= _seasonvarEpisodes.length) return;
+    _seasonvarIndex = index;
     final ep = _seasonvarEpisodes[index];
     final epUrl = ep['url'] ?? '';
     if (epUrl.isEmpty) return;
-    // Закрыть текущий плеер если открыт
-    if (Navigator.of(context).canPop()) Navigator.of(context).pop();
     _interceptedUrl = epUrl;
-    _seasonvarIndex = index;
     _currentReferer = urlController.text;
     _interceptedAlready = false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text('Запускаю серию ${index + 1}'),
+          duration: const Duration(seconds: 1)),
+    );
     _startMagic();
   }
 
@@ -1671,17 +1666,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                 urlRequest:
                                     URLRequest(url: WebUri(restoreUrl)));
                           }
-                          unawaited(controller
-                              .addUserScript(
-                                userScript: UserScript(
-                                  groupName: 'vakhtovik_filmix_dom',
-                                  source: FilmixDom.getInjectionJS(),
-                                  injectionTime:
-                                      UserScriptInjectionTime.AT_DOCUMENT_END,
-                                  forMainFrameOnly: false,
-                                ),
-                              )
-                              .catchError((_) {}));
                           controller.addJavaScriptHandler(
                             handlerName: 'compressUrl',
                             callback: (args) {
@@ -2079,13 +2063,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                           "})();");
                                 }
                               });
-                            }
-
-                            // Filmix: только автологин (без DOM-инжекта)
-                            if (url.host.contains('filmix')) {
-                              await FilmixAuth.injectCookies(controller, url);
-                              Future.delayed(const Duration(seconds: 3),
-                                  () => FilmixAuth.persistCookies(url));
                             }
 
                             // YouTube: ховер-кнопки
