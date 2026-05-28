@@ -1,28 +1,83 @@
-#EXTM3U max-conn="2" url-tvg="http://bethoven.af-stream.com:8080/epg.xml.gz" catchup-type="shift"
-#EXTINF:0 group-title="Общероссийские" tvg-id="pervyj" tvg-logo="https://af-play.com/storage/images/pack_logos/cdef747b13675ef8302fe8283b7de688.png" tvg-rec="7" catchup-days="7",Первый канал
-#EXTGRP:Общероссийские
+#EXTM3U
+#EXTINF:-1 group-title="Общероссийские",Первый канал
 http://bethoven.af-stream.com:8080/s/pyxm92zq/pervyj/video.m3u8
-#EXTINF:0 group-title="Беларусь" tvg-id="ont-by",ОНТ
-#EXTGRP:Беларусь
+#EXTINF:-1 group-title="Общероссийские",Россия 1
+http://bethoven.af-stream.com:8080/s/pyxm92zq/rossija/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",НТВ
+http://bethoven.af-stream.com:8080/s/pyxm92zq/ntv/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",ТНТ
+http://bethoven.af-stream.com:8080/s/pyxm92zq/TNT/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",СТС
+http://bethoven.af-stream.com:8080/s/pyxm92zq/CTC/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",ТВ3
+http://bethoven.af-stream.com:8080/s/pyxm92zq/tv3/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",РЕН ТВ
+http://bethoven.af-stream.com:8080/s/pyxm92zq/ren-tv/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",ТВЦ
+http://bethoven.af-stream.com:8080/s/pyxm92zq/tvc/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",Звезда
+http://bethoven.af-stream.com:8080/s/pyxm92zq/zvezda/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",5 канал
+http://bethoven.af-stream.com:8080/s/pyxm92zq/5kanal/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",Пятница
+http://bethoven.af-stream.com:8080/s/pyxm92zq/piatnica/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",Домашний
+http://bethoven.af-stream.com:8080/s/pyxm92zq/domashnij/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",Мир
+http://bethoven.af-stream.com:8080/s/pyxm92zq/mir/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",ОТР
+http://bethoven.af-stream.com:8080/s/pyxm92zq/otp/video.m3u8
+#EXTINF:-1 group-title="Общероссийские",Ю ТВ
+http://bethoven.af-stream.com:8080/s/pyxm92zq/yu-tv/video.m3u8
+#EXTINF:-1 group-title="Новости",Россия 24
+http://bethoven.af-stream.com:8080/s/pyxm92zq/rossija24/video.m3u8
+#EXTINF:-1 group-title="Новости",РБК
+http://bethoven.af-stream.com:8080/s/pyxm92zq/rbk/video.m3u8
+#EXTINF:-1 group-title="Новости",Мир 24
+http://bethoven.af-stream.com:8080/s/pyxm92zq/mir-24/video.m3u8
+#EXTINF:-1 group-title="Кино",Кинопремьера HD
+http://bethoven.af-stream.com:8080/s/pyxm92zq/kinopremiera-hd/video.m3u8
+#EXTINF:-1 group-title="Кино",Кинохит
+http://bethoven.af-stream.com:8080/s/pyxm92zq/kinohit/video.m3u8
+#EXTINF:-1 group-title="Кино",Киномикс
+http://bethoven.af-stream.com:8080/s/pyxm92zq/kinomix/video.m3u8
+#EXTINF:-1 group-title="Кино",Дом Кино
+http://bethoven.af-stream.com:8080/s/pyxm92zq/dom-kino/video.m3u8
+#EXTINF:-1 group-title="Кино",Русский Иллюзион
+http://bethoven.af-stream.com:8080/s/pyxm92zq/russkij-iluzion/video.m3u8
+#EXTINF:-1 group-title="Спорт",Матч ТВ
+http://bethoven.af-stream.com:8080/s/pyxm92zq/match-tv/video.m3u8
+#EXTINF:-1 group-title="Спорт",Матч! Арена
+http://bethoven.af-stream.com:8080/s/pyxm92zq/match-arena/video.m3u8
+#EXTINF:-1 group-title="Спорт",Eurosport 1
+http://bethoven.af-stream.com:8080/s/pyxm92zq/eurosport/video.m3u8
+#EXTINF:-1 group-title="Мультфильмы",Карусель
+http://bethoven.af-stream.com:8080/s/pyxm92zq/karusel/video.m3u8
+#EXTINF:-1 group-title="Мультфильмы",Мульт
+http://bethoven.af-stream.com:8080/s/pyxm92zq/mult/video.m3u8
+#EXTINF:-1 group-title="Мультфильмы",Детский мир
+http://bethoven.af-stream.com:8080/s/pyxm92zq/detskij-mir/video.m3u8
+#EXTINF:-1 group-title="Познавательные",National Geographic
+http://bethoven.af-stream.com:8080/s/pyxm92zq/nat-geo/video.m3u8
+#EXTINF:-1 group-title="Познавательные",Discovery
+http://bethoven.af-stream.com:8080/s/pyxm92zq/discovery/video.m3u8
+#EXTINF:-1 group-title="Познавательные",Моя планета
+http://bethoven.af-stream.com:8080/s/pyxm92zq/moya-planeta/video.m3u8
+#EXTINF:-1 group-title="Музыка",Муз-ТВ
+http://bethoven.af-stream.com:8080/s/pyxm92zq/muz-tv/video.m3u8
+#EXTINF:-1 group-title="Музыка",Europa Plus TV
+http://bethoven.af-stream.com:8080/s/pyxm92zq/evropa-plus-tv/video.m3u8
+#EXTINF:-1 group-title="Беларусь",ОНТ
 http://bethoven.af-stream.com:8080/s/pyxm92zq/ont-by/video.m3u8
-#EXTINF:0 group-title="Беларусь" tvg-id="belarus1-by",Беларусь 1
-#EXTGRP:Беларусь
+#EXTINF:-1 group-title="Беларусь",Беларусь 1
 http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus1-by/video.m3u8
-#EXTINF:0 group-title="Беларусь" tvg-id="belarus2-by",Беларусь 2
-#EXTGRP:Беларусь
+#EXTINF:-1 group-title="Беларусь",Беларусь 2
 http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus2-by/video.m3u8
-#EXTINF:0 group-title="Беларусь" tvg-id="belarus3-by",Беларусь 3
-#EXTGRP:Беларусь
+#EXTINF:-1 group-title="Беларусь",Беларусь 3
 http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus3-by/video.m3u8
-#EXTINF:0 group-title="Беларусь" tvg-id="belarus-24",Беларусь 24
-#EXTGRP:Беларусь
+#EXTINF:-1 group-title="Беларусь",Беларусь 24
 http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus-24/video.m3u8
-#EXTINF:0 group-title="Беларусь" tvg-id="ntv-by-hd",НТВ Беларусь
-#EXTGRP:Беларусь
+#EXTINF:-1 group-title="Беларусь",НТВ Беларусь
 http://bethoven.af-stream.com:8080/s/pyxm92zq/ntv-by-hd/video.m3u8
-#EXTINF:0 group-title="Беларусь" tvg-id="stv-by-hd",СТВ
-#EXTGRP:Беларусь
+#EXTINF:-1 group-title="Беларусь",СТВ
 http://bethoven.af-stream.com:8080/s/pyxm92zq/stv-by-hd/video.m3u8
-#EXTINF:0 group-title="Беларусь" tvg-id="belsat-by",Белсат
-#EXTGRP:Беларусь
-http://bethoven.af-stream.com:8080/s/pyxm92zq/belsat-by/video.m3u8
