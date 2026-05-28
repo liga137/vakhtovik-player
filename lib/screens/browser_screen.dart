@@ -925,6 +925,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _scanFilmixEpisodes({bool silent = false}) {
+    // Отключено — будем переделывать
+    return;
+    /*
     if (webViewController == null) return;
     if (!silent) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -950,6 +953,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
     _startMagic();
   }
+  */
 
   void _scanSeasonvarPlaylist({bool silent = false}) {
     if (webViewController == null) return;
@@ -1037,43 +1041,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
           return idx >= 0 ? idx : 0;
         })();
 
-        const waitForVideoSrc = (lastSrc, timeoutMs = 25000) => new Promise((resolve) => {
-          const started = Date.now();
-          let done = false;
-          let lastFound = null;
-
-          const pickSrc = () => {
+        const waitForVideoSrc = (lastSrc) => new Promise((resolve) => {
+          let attempts = 0;
+          const check = setInterval(() => {
             const video = document.querySelector('video');
-            if (!video) return '';
-            try { video.muted = true; } catch (_) {}
-            return String(video.currentSrc || video.src || '').trim();
-          };
-
-          const finish = (value) => {
-            if (done) return;
-            done = true;
-            try { clearInterval(pollTimer); } catch (_) {}
-            try { mo.disconnect(); } catch (_) {}
-            resolve(value || null);
-          };
-
-          const check = () => {
-            const src = pickSrc();
-            if (!src || src.length < 10 || src.indexOf('undefined') >= 0) return;
-            if (!lastSrc || src !== lastSrc) {
-              finish(src);
-              return;
+            attempts++;
+            if (video && video.src && video.src !== lastSrc && video.src.length > 10) {
+              clearInterval(check); resolve(video.src);
             }
-            lastFound = src;
-          };
-
-          const mo = new MutationObserver(check);
-          mo.observe(document.body, {
-            subtree: true,
-            childList: true,
-            attributes: true,
-            attributeFilter: ['src', 'class'],
-          });
+            if (attempts > 30) { clearInterval(check); resolve(null); }
+          }, 350);
+        });
 
           const pollTimer = setInterval(() => {
             check();
@@ -2148,9 +2126,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           if (failedUrl.isEmpty ||
                               failedUrl == 'about:blank' ||
                               !failedUrl.startsWith('http')) return;
-                          // Ретрим только главный фрейм, не саб-ресурсы
                           final isMain = request.isForMainFrame ?? true;
                           if (!isMain) return;
+                          // CONNECTION_ABORTED — норма при навигации, не ошибка
+                          if (error.type == WebResourceErrorType.CONNECTION_ABORTED) return;
                           LogService.warn(LogService.browser,
                               'WebView ошибка: $failedUrl — ${error.description}');
                           _lastFailedUrl = failedUrl;

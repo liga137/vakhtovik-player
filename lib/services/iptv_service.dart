@@ -12,9 +12,9 @@ class IptvService {
   // для спутника, поэтому стартуем с русскоязычного плейлиста.
   // При недоступности используем встроенный список каналов (не требует интернета).
   static const _sources = <String, String>{
-    'belarus': 'https://sat-portal.com/upload/by_%2020.02.2026.m3u8',
     'russia': 'https://sat-portal.com/upload/rus_22.05.2026.m3u8',
   };
+  // Беларусь — только из встроенного fallback (надёжнее)
 
   static const categoryOrder = [
     'Все',
@@ -255,7 +255,7 @@ class IptvService {
     IptvChannel(
       name: 'Первый канал',
       url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/pervyj/video.m3u8',
-      category: 'Общероссийские',
+      category: 'Общероссийские', country: 'Россия',
       logo:
           'https://af-play.com/storage/images/pack_logos/cdef747b13675ef8302fe8283b7de688.png',
       source: 'fallback',
@@ -597,7 +597,7 @@ class IptvService {
       source: 'fallback',
     ),
     // ── Беларусь ──
-    IptvChannel(name: 'ОНТ', url: 'https://ngtrk.dc.beltelecom.by/ont/smil:ont.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
+    IptvChannel(name: 'ОНТ', url: 'http://ont.dc.beltelecom.by/ont/ont.stream/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
     IptvChannel(name: 'Беларусь 1', url: 'https://ngtrk.dc.beltelecom.by/ngtrk/smil:belarus1.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
     IptvChannel(name: 'Беларусь 3', url: 'https://ngtrk.dc.beltelecom.by/ngtrk/smil:belarus3.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
     IptvChannel(name: 'Беларусь 24', url: 'https://ngtrk.dc.beltelecom.by/ngtrk/smil:belarus24.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
