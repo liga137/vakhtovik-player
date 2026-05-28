@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Directory, File, HttpClient, Platform;
+import 'dart:io' show File, HandshakeException, HttpClient, HttpException, Platform, SocketException, TlsException;
 import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
