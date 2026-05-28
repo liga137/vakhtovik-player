@@ -852,8 +852,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Future<void> _selectFilmixSeason(String seasonId) async {
     if (seasonId.trim().isEmpty || webViewController == null) return;
-    await webViewController!
-        // .evaluateJavascript(source: FilmixDom.getInjectionJS());
+    // Filmix disabled — .evaluateJavascript removed
     if (!mounted) return;
     setState(() {
       _filmixSeasonId = seasonId.trim();
@@ -878,8 +877,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _lastFilmixMediaUrl = '';
     _lastAutoMediaUrl = '';
 
-    await webViewController!
-        // .evaluateJavascript(source: FilmixDom.getInjectionJS());
+    // Filmix disabled — .evaluateJavascript removed
     final clickResult = await webViewController!.evaluateJavascript(source: """
       (function() {
         var season = '${_jsString(season)}';
