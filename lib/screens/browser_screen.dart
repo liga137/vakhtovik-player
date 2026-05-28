@@ -471,6 +471,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
       });
       _muteWebView();
 
+      final episodes = _seasonvarEpisodes.isNotEmpty ? _seasonvarEpisodes : null;
+      final epIndex = _seasonvarIndex;
       await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => PlayerScreen(
           hlsUrl: ApiService.hlsUrl(result.playlistUrl),
@@ -479,6 +481,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
           quality: _selectedQuality,
           referer: _currentReferer,
           duration: result.duration,
+          episodes: episodes,
+          episodeIndex: epIndex,
+          onEpisodeSelected: episodes != null
+              ? (i) => _playSeasonvarEpisode(i)
+              : null,
         ),
       ));
 
@@ -543,19 +550,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _playSeasonvarEpisode(int index) {
-    if (index < 0 || index >= _seasonvarEpisodes.length) return;
-    _seasonvarIndex = index;
     final ep = _seasonvarEpisodes[index];
     final epUrl = ep['url'] ?? '';
     if (epUrl.isEmpty) return;
+    // Закрыть текущий плеер если открыт
+    if (Navigator.of(context).canPop()) Navigator.of(context).pop();
     _interceptedUrl = epUrl;
+    _seasonvarIndex = index;
     _currentReferer = urlController.text;
     _interceptedAlready = false;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text('Запускаю серию ${index + 1}'),
-          duration: const Duration(seconds: 1)),
-    );
     _startMagic();
   }
 
@@ -2078,38 +2081,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               });
                             }
 
-                            // Filmix: автологин
+                            // Filmix: только автологин (без DOM-инжекта)
                             if (url.host.contains('filmix')) {
                               await FilmixAuth.injectCookies(controller, url);
-                              controller.evaluateJavascript(
-                                  source: FilmixAuth.getInjectionScript());
-                              controller.evaluateJavascript(
-                                  source: FilmixDom.getInjectionJS());
-                              Future.delayed(
-                                  const Duration(milliseconds: 700),
-                                  () => controller.evaluateJavascript(
-                                      source: FilmixAuth.getInjectionScript()));
-                              Future.delayed(
-                                  const Duration(milliseconds: 900),
-                                  () => controller.evaluateJavascript(
-                                      source: FilmixDom.getInjectionJS()));
-                              Future.delayed(
-                                  const Duration(seconds: 2),
-                                  () => controller.evaluateJavascript(
-                                      source: FilmixAuth.getInjectionScript()));
-                              Future.delayed(const Duration(seconds: 2),
-                                  () => _scanFilmixEpisodes(silent: true));
-                              Future.delayed(
-                                  const Duration(seconds: 4),
-                                  () => controller.evaluateJavascript(
-                                      source: FilmixAuth.getInjectionScript()));
-                              Future.delayed(
-                                  const Duration(seconds: 7),
-                                  () => controller.evaluateJavascript(
-                                      source: FilmixAuth.getInjectionScript()));
                               Future.delayed(const Duration(seconds: 3),
-                                  () => FilmixAuth.persistCookies(url));
-                              Future.delayed(const Duration(seconds: 8),
                                   () => FilmixAuth.persistCookies(url));
                             }
 

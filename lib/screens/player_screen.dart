@@ -14,6 +14,9 @@ class PlayerScreen extends StatefulWidget {
   final String quality;
   final String referer;
   final double duration;
+  final List<Map<String, String>>? episodes;
+  final int episodeIndex;
+  final void Function(int index)? onEpisodeSelected;
 
   const PlayerScreen({
     super.key,
@@ -23,6 +26,9 @@ class PlayerScreen extends StatefulWidget {
     this.quality = '240p',
     this.referer = '',
     this.duration = 0,
+    this.episodes,
+    this.episodeIndex = 0,
+    this.onEpisodeSelected,
   });
 
   @override
@@ -336,99 +342,46 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         ],
       ),
-      body: Center(
-        child: _isInitialized && _chewieController != null
-            ? Stack(
-                children: [
-                  Positioned.fill(
-                      child: Chewie(controller: _chewieController!)),
-                  Positioned(
-                    left: 12,
-                    right: 12,
-                    top: 10,
-                    child: IgnorePointer(
-                      child: _PlaybackStatusOverlay(
-                        controller: _controller!,
-                        fallbackDurationSeconds: _durationHintSeconds,
-                        availableDurationSeconds: _durationHintSeconds,
+      body: Column(
+        children: [
+          Expanded(
+            child: Center(
+              child: _isInitialized && _chewieController != null
+                  ? Chewie(controller: _chewieController!)
+                  : const CircularProgressIndicator(color: Colors.orange),
+            ),
+          ),
+          if (widget.episodes != null && widget.episodes!.isNotEmpty)
+            Container(
+              color: Colors.black87,
+              height: 44,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: widget.episodes!.length,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                itemBuilder: (ctx, i) {
+                  final active = i == widget.episodeIndex;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+                    child: OutlinedButton(
+                      onPressed: active ? null : () => widget.onEpisodeSelected?.call(i),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: active ? Colors.orange : Colors.transparent,
+                        foregroundColor: active ? Colors.black : Colors.white70,
+                        side: BorderSide(color: active ? Colors.orange : Colors.white24),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        minimumSize: Size.zero,
                       ),
+                      child: Text('${i + 1}', style: const TextStyle(fontSize: 12)),
                     ),
-                  ),
-                ],
-              )
-            : Container(
-                color: Colors.black54,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                        color: const Color(0xCC1A0F08),
-                        borderRadius: BorderRadius.circular(16)),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_reconnectAttempts >= _maxReconnectAttempts &&
-                            _reconnectStatus != null)
-                          const Icon(Icons.error_outline,
-                              color: Colors.orange, size: 36),
-                        if (_reconnectAttempts < _maxReconnectAttempts ||
-                            _reconnectStatus == null)
-                          const CircularProgressIndicator(
-                              color: Colors.orange),
-                        const SizedBox(height: 14),
-                        Text(
-                          _reconnectStatus ?? 'Запускаю ${widget.quality}...',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 16),
-                        ),
-                        if (_reconnectAttempts >= _maxReconnectAttempts) ...[
-                          const SizedBox(height: 12),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.orange),
-                            onPressed: () {
-                              setState(() {
-                                _reconnectAttempts = 0;
-                                _reconnectStatus = null;
-                              });
-                              _initPlayer();
-                            },
-                            child: const Text('Попробовать снова',
-                                style: TextStyle(color: Colors.black)),
-                          ),
-                          const SizedBox(height: 6),
-                          TextButton(
-                            onPressed: () {
-                              if (mounted) Navigator.pop(context);
-                            },
-                            child: const Text('Выйти',
-                                style: TextStyle(color: Colors.white54)),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
+                  );
+                },
               ),
+            ),
+        ],
       ),
     );
   }
-}
-
-class _PlaybackStatusOverlay extends StatefulWidget {
-  final VideoPlayerController controller;
-  final double fallbackDurationSeconds;
-  final double availableDurationSeconds;
-
-  const _PlaybackStatusOverlay({
-    required this.controller,
-    required this.fallbackDurationSeconds,
-    required this.availableDurationSeconds,
-  });
-
-  @override
-  State<_PlaybackStatusOverlay> createState() => _PlaybackStatusOverlayState();
 }
 
 class _PlaybackStatusOverlayState extends State<_PlaybackStatusOverlay> {
