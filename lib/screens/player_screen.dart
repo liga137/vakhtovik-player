@@ -14,9 +14,6 @@ class PlayerScreen extends StatefulWidget {
   final String quality;
   final String referer;
   final double duration;
-  final List<Map<String, String>>? episodes;
-  final int episodeIndex;
-  final void Function(int index)? onEpisodeSelected;
 
   const PlayerScreen({
     super.key,
@@ -26,9 +23,6 @@ class PlayerScreen extends StatefulWidget {
     this.quality = '240p',
     this.referer = '',
     this.duration = 0,
-    this.episodes,
-    this.episodeIndex = 0,
-    this.onEpisodeSelected,
   });
 
   @override
@@ -342,174 +336,97 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Center(
-              child: _isInitialized && _chewieController != null
-                  ? Chewie(controller: _chewieController!)
-                  : const CircularProgressIndicator(color: Colors.orange),
-            ),
-          ),
-          if (widget.episodes != null && widget.episodes!.isNotEmpty)
-            Container(
-              color: Colors.black87,
-              height: 44,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: widget.episodes!.length,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                itemBuilder: (ctx, i) {
-                  final active = i == widget.episodeIndex;
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
-                    child: OutlinedButton(
-                      onPressed: active ? null : () => widget.onEpisodeSelected?.call(i),
-                      style: OutlinedButton.styleFrom(
-                        backgroundColor: active ? Colors.orange : Colors.transparent,
-                        foregroundColor: active ? Colors.black : Colors.white70,
-                        side: BorderSide(color: active ? Colors.orange : Colors.white24),
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        minimumSize: Size.zero,
+      body: Center(
+        child: _isInitialized && _chewieController != null
+            ? Stack(
+                children: [
+                  Positioned.fill(
+                      child: Chewie(controller: _chewieController!)),
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    top: 10,
+                    child: IgnorePointer(
+                      child: _PlaybackStatusOverlay(
+                        controller: _controller!,
+                        fallbackDurationSeconds: _durationHintSeconds,
+                        availableDurationSeconds: _durationHintSeconds,
                       ),
-                      child: Text('${i + 1}', style: const TextStyle(fontSize: 12)),
                     ),
-                  );
-                },
+                  ),
+                ],
+              )
+            : Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                        color: const Color(0xCC1A0F08),
+                        borderRadius: BorderRadius.circular(16)),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_reconnectAttempts >= _maxReconnectAttempts &&
+                            _reconnectStatus != null)
+                          const Icon(Icons.error_outline,
+                              color: Colors.orange, size: 36),
+                        if (_reconnectAttempts < _maxReconnectAttempts ||
+                            _reconnectStatus == null)
+                          const CircularProgressIndicator(
+                              color: Colors.orange),
+                        const SizedBox(height: 14),
+                        Text(
+                          _reconnectStatus ?? 'Запускаю ${widget.quality}...',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 16),
+                        ),
+                        if (_reconnectAttempts >= _maxReconnectAttempts) ...[
+                          const SizedBox(height: 12),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange),
+                            onPressed: () {
+                              setState(() {
+                                _reconnectAttempts = 0;
+                                _reconnectStatus = null;
+                              });
+                              _initPlayer();
+                            },
+                            child: const Text('Попробовать снова',
+                                style: TextStyle(color: Colors.black)),
+                          ),
+                          const SizedBox(height: 6),
+                          TextButton(
+                            onPressed: () {
+                              if (mounted) Navigator.pop(context);
+                            },
+                            child: const Text('Выйти',
+                                style: TextStyle(color: Colors.white54)),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ),
-        ],
       ),
     );
   }
 }
 
-class _PlaybackStatusOverlayState extends State<_PlaybackStatusOverlay> {
-  Timer? _timer;
+class _PlaybackStatusOverlay extends StatefulWidget {
+  final VideoPlayerController controller;
+  final double fallbackDurationSeconds;
+  final double availableDurationSeconds;
+
+  const _PlaybackStatusOverlay({
+    required this.controller,
+    required this.fallbackDurationSeconds,
+    required this.availableDurationSeconds,
+  });
 
   @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_tick);
-    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _tick());
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    widget.controller.removeListener(_tick);
-    super.dispose();
-  }
-
-  void _tick() {
-    if (mounted) setState(() {});
-  }
-
-  String _fmt(Duration d) {
-    if (d.inMilliseconds <= 0) return '0:00';
-    final h = d.inHours;
-    final m = d.inMinutes.remainder(60);
-    final s = d.inSeconds.remainder(60);
-    if (h > 0) {
-      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-    }
-    return '${d.inMinutes}:${s.toString().padLeft(2, '0')}';
-  }
-
-  Duration _effectiveDuration(VideoPlayerValue v) {
-    final duration = v.duration;
-    if (duration.inMilliseconds > 0) return duration;
-    final fallbackMs = (widget.fallbackDurationSeconds * 1000).round();
-    if (fallbackMs > 0) return Duration(milliseconds: fallbackMs);
-    return Duration.zero;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final value = widget.controller.value;
-    final position = value.position;
-    final duration = _effectiveDuration(value);
-    var bufferedEnd =
-        value.buffered.isNotEmpty ? value.buffered.last.end : Duration.zero;
-    final availableMs = (widget.availableDurationSeconds * 1000).round();
-    if (availableMs > bufferedEnd.inMilliseconds) {
-      bufferedEnd = Duration(milliseconds: availableMs);
-    }
-
-    final totalMs = duration.inMilliseconds;
-    final posMs = position.inMilliseconds
-        .clamp(0, totalMs > 0 ? totalMs : position.inMilliseconds)
-        .toDouble();
-    final bufMs = bufferedEnd.inMilliseconds
-        .clamp(0, totalMs > 0 ? totalMs : bufferedEnd.inMilliseconds)
-        .toDouble();
-
-    final progress =
-        totalMs > 0 ? (posMs / totalMs).clamp(0.0, 1.0).toDouble() : 0.0;
-    final bufferProgress =
-        totalMs > 0 ? (bufMs / totalMs).clamp(0.0, 1.0).toDouble() : 0.0;
-    final bufferedAhead = bufferedEnd - position;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xCC000000),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.schedule, color: Colors.orange, size: 14),
-              const SizedBox(width: 6),
-              Text(
-                '${_fmt(position)} / ${totalMs > 0 ? _fmt(duration) : 'длит. не определена'}',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600),
-              ),
-              const Spacer(),
-              if (value.isBuffering)
-                const SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.orange),
-                ),
-              const SizedBox(width: 8),
-              Text(
-                bufferedAhead.inSeconds > 0
-                    ? 'Буфер +${bufferedAhead.inSeconds}с'
-                    : 'Буфер 0с',
-                style: const TextStyle(color: Colors.white70, fontSize: 11),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(2),
-            child: SizedBox(
-              height: 4,
-              child: Stack(
-                children: [
-                  Positioned.fill(child: Container(color: Colors.white12)),
-                  FractionallySizedBox(
-                    widthFactor: bufferProgress,
-                    child: Container(color: Colors.white38),
-                  ),
-                  FractionallySizedBox(
-                    widthFactor: progress,
-                    child: Container(color: Colors.orange),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  State<_PlaybackStatusOverlay> createState() => _PlaybackStatusOverlayState();
 }
