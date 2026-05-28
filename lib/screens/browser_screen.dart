@@ -1351,6 +1351,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
+  Future<void> _showLogDialog() async {
+    final log = await LogService.readLog();
+    if (!mounted) return;
+    showDialog(context: context, builder: (ctx) => AlertDialog(
+      title: Row(children: [const Text('Лог ошибок'), const Spacer(),
+        Text('${log.split('\n').length} строк', style: const TextStyle(fontSize: 12, color: Colors.grey))]),
+      content: SizedBox(width: double.maxFinite, height: 400,
+        child: SingleChildScrollView(child: SelectableText(log, style: const TextStyle(fontFamily: 'monospace', fontSize: 11)))),
+      actions: [
+        TextButton(onPressed: (){LogService.clearLog(); Navigator.pop(ctx);}, child: const Text('Очистить')),
+        TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text('Закрыть')),
+    ])));
+  }
+
   Future<void> _showCustomSiteDialog() async {
     final c = TextEditingController(text: 'https://');
     final result = await showDialog<String>(
@@ -2130,12 +2144,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         },
                         onReceivedError: (controller, request, error) {
                           final failedUrl = request.url?.toString() ?? '';
-                          // Игнорируем ошибки about:blank и фоновых ресурсов
                           if (failedUrl.isEmpty ||
                               failedUrl == 'about:blank' ||
-                              !failedUrl.startsWith('http')) {
-                            return;
-                          }
+                              !failedUrl.startsWith('http')) return;
+                          // Ретрим только главный фрейм, не саб-ресурсы
+                          final isMain = request.isForMainFrame ?? true;
+                          if (!isMain) return;
+                          LogService.warn(LogService.browser,
+                              'WebView ошибка: $failedUrl — ${error.description}');
                           _lastFailedUrl = failedUrl;
                           if (_webViewRetryCount < _webViewMaxRetries) {
                             _webViewRetryCount++;
@@ -2389,11 +2405,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Плеер Вахтовика',
-                        style: TextStyle(
-                            color: Colors.orange,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold)),
+                    Row(children: [
+                      const Text('Плеер Вахтовика', style: TextStyle(color: Colors.orange, fontSize: 24, fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      IconButton(icon: const Icon(Icons.bug_report, color: Colors.orange, size: 20), tooltip: 'Лог ошибок', onPressed: _showLogDialog),
+                    ]),
                     const SizedBox(height: 8),
                     const Text('Выбери сайт или введи свой адрес сверху',
                         style: TextStyle(color: Colors.white70)),
@@ -2455,155 +2471,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (_seasonvarTranslations.isNotEmpty)
-                      SizedBox(
-                        height: 34,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          children: _seasonvarTranslations.map((tr) {
-                            final id = tr['id'] ?? '';
-                            final trIndex = tr['index'] ?? '';
-                            final name = tr['name'] ?? 'Озвучка';
-                            final active =
-                                id.isNotEmpty && id == _seasonvarTranslationId;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: OutlinedButton(
-                                onPressed: () => _selectSeasonvarTranslation(id,
-                                    fallbackIndex: trIndex),
-                                style: OutlinedButton.styleFrom(
-                                  backgroundColor: active
-                                      ? Colors.greenAccent
-                                      : Colors.transparent,
-                                  foregroundColor:
-                                      active ? Colors.black : Colors.white,
-                                  side: BorderSide(
-                                      color: active
-                                          ? Colors.greenAccent
-                                          : Colors.white38),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
-                                  minimumSize: Size.zero,
-                                ),
-                                child: Text(name,
-                                    style: const TextStyle(fontSize: 11)),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    if (_seasonvarTranslations.isEmpty &&
-                        _filmixTranslations.isNotEmpty)
-                      SizedBox(
-                        height: 34,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          children: _filmixTranslations.map((tr) {
-                            final id = tr['id'] ?? '';
-                            final name = tr['name'] ?? id;
-                            final active =
-                                id.isNotEmpty && id == _filmixTranslationId;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: OutlinedButton(
-                                onPressed: () => _selectFilmixTranslation(id),
-                                style: OutlinedButton.styleFrom(
-                                  backgroundColor: active
-                                      ? Colors.greenAccent
-                                      : Colors.transparent,
-                                  foregroundColor:
-                                      active ? Colors.black : Colors.white,
-                                  side: BorderSide(
-                                      color: active
-                                          ? Colors.greenAccent
-                                          : Colors.white38),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
-                                  minimumSize: Size.zero,
-                                ),
-                                child: Text(name,
-                                    style: const TextStyle(fontSize: 11)),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    if (_seasonvarSeasons.isNotEmpty)
-                      SizedBox(
-                        height: 34,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          children: _seasonvarSeasons.map((s) {
-                            final title = s['title'] ?? 'Сезон';
-                            final seasonUrl = s['url'] ?? '';
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: OutlinedButton(
-                                onPressed: () =>
-                                    _openSeasonvarSeason(seasonUrl),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.white,
-                                  side: const BorderSide(color: Colors.white38),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
-                                  minimumSize: Size.zero,
-                                ),
-                                child: Text(title,
-                                    style: const TextStyle(fontSize: 11)),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    if (_seasonvarSeasons.isEmpty && _filmixSeasons.isNotEmpty)
-                      SizedBox(
-                        height: 34,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          children: _filmixSeasons.map((s) {
-                            final id = s['id'] ?? '';
-                            final name = s['name'] ??
-                                (id.isNotEmpty ? 'Сезон $id' : 'Сезон');
-                            final active =
-                                id.isNotEmpty && id == _filmixSeasonId;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: OutlinedButton(
-                                onPressed: () => _selectFilmixSeason(id),
-                                style: OutlinedButton.styleFrom(
-                                  backgroundColor: active
-                                      ? Colors.greenAccent
-                                      : Colors.transparent,
-                                  foregroundColor:
-                                      active ? Colors.black : Colors.white,
-                                  side: BorderSide(
-                                      color: active
-                                          ? Colors.greenAccent
-                                          : Colors.white38),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
-                                  minimumSize: Size.zero,
-                                ),
-                                child: Text(name,
-                                    style: const TextStyle(fontSize: 11)),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
                           Text(
-                            (_seasonvarEpisodes.isNotEmpty ||
-                                    _seasonvarTranslations.isNotEmpty ||
-                                    _seasonvarSeasons.isNotEmpty)
-                                ? 'Seasonvar: '
-                                : (_filmixSeasonId.isNotEmpty ||
-                                        _filmixTranslationId.isNotEmpty)
-                                    ? 'Filmix ${_filmixSeasonId.isNotEmpty ? "S$_filmixSeasonId" : ""}${_filmixTranslationId.isNotEmpty ? " · $_filmixTranslationId" : ""}: '
-                                    : 'Filmix: ',
+                            _seasonvarEpisodes.isNotEmpty ? 'Seasonvar: ' : 'Filmix: ',
                             style: const TextStyle(
                                 color: Colors.orange, fontSize: 13),
                           ),

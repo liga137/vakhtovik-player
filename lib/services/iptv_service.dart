@@ -11,9 +11,10 @@ class IptvService {
   // Берём легальный публичный источник iptv-org. Полный index.m3u слишком жирный
   // для спутника, поэтому стартуем с русскоязычного плейлиста.
   // При недоступности используем встроенный список каналов (не требует интернета).
-  static const _sources = [
-    'https://iptv-org.github.io/iptv/languages/rus.m3u',
-  ];
+  static const _sources = <String, String>{
+    'belarus': 'https://sat-portal.com/upload/by_%2020.02.2026.m3u8',
+    'russia': 'https://sat-portal.com/upload/rus_22.05.2026.m3u8',
+  };
 
   static const categoryOrder = [
     'Все',
@@ -41,23 +42,18 @@ class IptvService {
       final cached = _readCache(prefs);
       if (cached.isNotEmpty) return cached;
     }
-
     try {
       final out = <IptvChannel>[];
-      for (final source in _sources) {
-        final body = await _download(source);
-        out.addAll(parseM3u(body, source: source));
+      for (final entry in _sources.entries) {
+        final body = await _download(entry.value);
+        out.addAll(parseM3u(body, source: entry.value));
       }
       final cleaned = _dedupe(out);
-      if (cleaned.isNotEmpty) {
-        await _saveCache(prefs, cleaned);
-        return cleaned;
-      }
+      if (cleaned.isNotEmpty) { await _saveCache(prefs, cleaned); return cleaned; }
     } catch (_) {
       final cached = _readCache(prefs, ignoreTtl: true);
       if (cached.isNotEmpty) return cached;
     }
-
     return fallbackChannels;
   }
 
@@ -601,7 +597,7 @@ class IptvService {
       source: 'fallback',
     ),
     // ── Беларусь ──
-    IptvChannel(name: 'ОНТ', url: 'https://stream.dc.beltelecom.by/ont/ont/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
+    IptvChannel(name: 'ОНТ', url: 'https://ngtrk.dc.beltelecom.by/ont/smil:ont.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
     IptvChannel(name: 'Беларусь 1', url: 'https://ngtrk.dc.beltelecom.by/ngtrk/smil:belarus1.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
     IptvChannel(name: 'Беларусь 3', url: 'https://ngtrk.dc.beltelecom.by/ngtrk/smil:belarus3.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
     IptvChannel(name: 'Беларусь 24', url: 'https://ngtrk.dc.beltelecom.by/ngtrk/smil:belarus24.smil/playlist.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
