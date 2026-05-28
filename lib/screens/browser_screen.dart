@@ -1363,7 +1363,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       actions: [
         TextButton(onPressed: () { LogService.clearLog(); Navigator.pop(ctx); }, child: const Text('Очистить')),
         TextButton(onPressed: () { Navigator.pop(ctx); }, child: const Text('Закрыть')),
-    ])));
+    ]));
   }
 
   Future<void> _showCustomSiteDialog() async {
