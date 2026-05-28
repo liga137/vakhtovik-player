@@ -415,18 +415,3 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 }
-
-class _PlaybackStatusOverlay extends StatefulWidget {
-  final VideoPlayerController controller;
-  final double fallbackDurationSeconds;
-  final double availableDurationSeconds;
-
-  const _PlaybackStatusOverlay({
-    required this.controller,
-    required this.fallbackDurationSeconds,
-    required this.availableDurationSeconds,
-  });
-
-  @override
-  State<_PlaybackStatusOverlay> createState() => _PlaybackStatusOverlayState();
-}

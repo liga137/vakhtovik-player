@@ -848,14 +848,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (translationId.trim().isEmpty || webViewController == null) return;
     // Filmix disabled
     return;
-    await webViewController!
-        // .evaluateJavascript(source: FilmixDom.getInjectionJS());
-    if (!mounted) return;
-    setState(() {
-      _filmixTranslationId = translationId.trim();
-      _filmixIndex = 0;
-    });
-    _scanFilmixEpisodes(silent: true);
+  }
+
+  Future<void> _selectFilmixSeason(String seasonId) async {
+    return;
+  }
+
+  void _playFilmixEpisode(int index) async {
+    return;
   }
 
   Future<void> _selectFilmixSeason(String seasonId) async {
@@ -2159,10 +2159,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               _rememberUrl(_currentRealUrl);
                             }
                             _updateYouTubeState(url);
-                            if (url.host.contains('filmix')) {
-                              controller.evaluateJavascript(
-                                  source: FilmixDom.getInjectionJS());
-                            }
                             if (url.host.contains('youtube.com') &&
                                 (url.path.contains('/watch') ||
                                     url.path.contains('/shorts/')) &&
