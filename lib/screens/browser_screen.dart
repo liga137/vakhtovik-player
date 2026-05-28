@@ -925,18 +925,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _scanFilmixEpisodes({bool silent = false}) {
-    // Отключено — будем переделывать
-    return;
-    /*
-    if (webViewController == null) return;
-    if (!silent) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Сканирую серии Filmix...'),
-            duration: Duration(seconds: 2)),
-      );
-    }
-    webViewController!.evaluateJavascript(source: FilmixDom.getInjectionJS());
+    return; // Отключено
   }
 
   void _openCompressedUrl(String url, {String? referer}) {
@@ -953,7 +942,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
     _startMagic();
   }
-  */
 
   void _scanSeasonvarPlaylist({bool silent = false}) {
     if (webViewController == null) return;
@@ -1053,22 +1041,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
           }, 350);
         });
 
-          const pollTimer = setInterval(() => {
-            check();
-            if (Date.now() - started >= timeoutMs) {
-              finish(lastFound);
-            }
-          }, 260);
-
-          check();
-        });
-
         const switchPlaylistItem = async (index, lastSrc) => {
           const items = getPlaylistItems();
           if (index < 0 || index >= items.length) return null;
           try { items[index].click(); } catch (_) {}
           await wait(220);
-          return await waitForVideoSrc(lastSrc, 25000);
+          return await waitForVideoSrc(lastSrc);
         };
 
         const collectOneTranslation = async (translationName) => {
@@ -2126,6 +2104,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           if (failedUrl.isEmpty ||
                               failedUrl == 'about:blank' ||
                               !failedUrl.startsWith('http')) return;
+                          // Ретрим только главный фрейм, не саб-ресурсы
                           final isMain = request.isForMainFrame ?? true;
                           if (!isMain) return;
                           // CONNECTION_ABORTED — норма при навигации, не ошибка
