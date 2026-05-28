@@ -342,18 +342,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 children: [
                   Positioned.fill(
                       child: Chewie(controller: _chewieController!)),
-                  Positioned(
-                    left: 12,
-                    right: 12,
-                    top: 10,
-                    child: IgnorePointer(
-                      child: _PlaybackStatusOverlay(
-                        controller: _controller!,
-                        fallbackDurationSeconds: _durationHintSeconds,
-                        availableDurationSeconds: _durationHintSeconds,
-                      ),
-                    ),
-                  ),
+                  // _PlaybackStatusOverlay removed (statusbar removed per chat session)
+                  const SizedBox.shrink(),
                 ],
               )
             : Container(

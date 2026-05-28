@@ -851,14 +851,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   Future<void> _selectFilmixSeason(String seasonId) async {
-    return;
-  }
-
-  void _playFilmixEpisode(int index) async {
-    return;
-  }
-
-  Future<void> _selectFilmixSeason(String seasonId) async {
     if (seasonId.trim().isEmpty || webViewController == null) return;
     await webViewController!
         // .evaluateJavascript(source: FilmixDom.getInjectionJS());
