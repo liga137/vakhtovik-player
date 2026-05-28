@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import '../services/api_service.dart';
 import '../services/filmix_auth.dart';
 import '../services/filmix_dom.dart';
+import '../services/log_service.dart';
 import '../services/update_service.dart';
 import '../services/youtube_hover.dart';
 import '../models/preset.dart';
@@ -1360,8 +1361,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
       content: SizedBox(width: double.maxFinite, height: 400,
         child: SingleChildScrollView(child: SelectableText(log, style: const TextStyle(fontFamily: 'monospace', fontSize: 11)))),
       actions: [
-        TextButton(onPressed: (){LogService.clearLog(); Navigator.pop(ctx);}, child: const Text('Очистить')),
-        TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text('Закрыть')),
+        TextButton(onPressed: () { LogService.clearLog(); Navigator.pop(ctx); }, child: const Text('Очистить')),
+        TextButton(onPressed: () { Navigator.pop(ctx); }, child: const Text('Закрыть')),
     ])));
   }
 

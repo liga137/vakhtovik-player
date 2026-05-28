@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/youtube_video.dart';
 import '../services/api_service.dart';
+import '../services/log_service.dart';
 import 'player_screen.dart';
 
 class YouTubeSearchScreen extends StatefulWidget {

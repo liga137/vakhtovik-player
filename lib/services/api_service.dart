@@ -42,7 +42,7 @@ class ApiService {
   /// Выполняет [fn] с автоматическими повторами при сетевых ошибках.
   /// На каждой повторной попытке создаётся новый HttpClient (свежие сокеты).
   static Future<T> _withRetry<T>(Future<T> Function(http.Client client) fn,
-      {int maxRetries = _maxRetries}) async {
+      {int maxRetries = _maxRetries, String operation = 'API'}) async {
     var attempt = 0;
     Object? lastError;
     while (true) {

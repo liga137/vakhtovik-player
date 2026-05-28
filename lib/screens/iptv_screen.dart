@@ -167,13 +167,25 @@ class _IptvScreenState extends State<IptvScreen> {
             ),
           ),
           if (_countries.length > 1)
-            Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Wrap(spacing: 6, children: [
-              const Text('Страна:', style: TextStyle(color: Colors.white54, fontSize: 11)),
-              ..._countries.map((c) => ChoiceChip(selected: c==_country, label: Text(c, style: const TextStyle(fontSize: 11)),
-                selectedColor: Colors.orange, backgroundColor: const Color(0xFF1A1A1A),
-                labelStyle: TextStyle(color: c==_country?Colors.black:Colors.white70),
-                onSelected: (_)=>setState(()=>_country=c), visualDensity: VisualDensity.compact)))
-            ])),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Wrap(
+                spacing: 6,
+                children: [
+                  const Text('Страна:', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                  for (final c in _countries)
+                    ChoiceChip(
+                      selected: c == _country,
+                      label: Text(c, style: const TextStyle(fontSize: 11)),
+                      selectedColor: Colors.orange,
+                      backgroundColor: const Color(0xFF1A1A1A),
+                      labelStyle: TextStyle(color: c == _country ? Colors.black : Colors.white70),
+                      onSelected: (_) => setState(() => _country = c),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+            ),
           SizedBox(
             height: 48,
             child: ListView(
