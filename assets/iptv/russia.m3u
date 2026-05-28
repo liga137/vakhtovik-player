@@ -1,0 +1,28 @@
+#EXTM3U max-conn="2" url-tvg="http://bethoven.af-stream.com:8080/epg.xml.gz" catchup-type="shift"
+#EXTINF:0 group-title="Общероссийские" tvg-id="pervyj" tvg-logo="https://af-play.com/storage/images/pack_logos/cdef747b13675ef8302fe8283b7de688.png" tvg-rec="7" catchup-days="7",Первый канал
+#EXTGRP:Общероссийские
+http://bethoven.af-stream.com:8080/s/pyxm92zq/pervyj/video.m3u8
+#EXTINF:0 group-title="Беларусь" tvg-id="ont-by",ОНТ
+#EXTGRP:Беларусь
+http://bethoven.af-stream.com:8080/s/pyxm92zq/ont-by/video.m3u8
+#EXTINF:0 group-title="Беларусь" tvg-id="belarus1-by",Беларусь 1
+#EXTGRP:Беларусь
+http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus1-by/video.m3u8
+#EXTINF:0 group-title="Беларусь" tvg-id="belarus2-by",Беларусь 2
+#EXTGRP:Беларусь
+http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus2-by/video.m3u8
+#EXTINF:0 group-title="Беларусь" tvg-id="belarus3-by",Беларусь 3
+#EXTGRP:Беларусь
+http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus3-by/video.m3u8
+#EXTINF:0 group-title="Беларусь" tvg-id="belarus-24",Беларусь 24
+#EXTGRP:Беларусь
+http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus-24/video.m3u8
+#EXTINF:0 group-title="Беларусь" tvg-id="ntv-by-hd",НТВ Беларусь
+#EXTGRP:Беларусь
+http://bethoven.af-stream.com:8080/s/pyxm92zq/ntv-by-hd/video.m3u8
+#EXTINF:0 group-title="Беларусь" tvg-id="stv-by-hd",СТВ
+#EXTGRP:Беларусь
+http://bethoven.af-stream.com:8080/s/pyxm92zq/stv-by-hd/video.m3u8
+#EXTINF:0 group-title="Беларусь" tvg-id="belsat-by",Белсат
+#EXTGRP:Беларусь
+http://bethoven.af-stream.com:8080/s/pyxm92zq/belsat-by/video.m3u8

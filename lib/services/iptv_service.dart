@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/iptv_channel.dart';
 
@@ -11,37 +12,41 @@ class IptvService {
   // Берём легальный публичный источник iptv-org. Полный index.m3u слишком жирный
   // для спутника, поэтому стартуем с русскоязычного плейлиста.
   // При недоступности используем встроенный список каналов (не требует интернета).
-  static const _sources = <String, String>{
-    'russia': 'https://sat-portal.com/upload/rus_22.05.2026.m3u8',
+  // Встроенные плейлисты (ассеты)
+  static const _embeddedAssets = <String, String>{
+    'belarus': 'assets/iptv/belarus.m3u',
+    'russia': 'assets/iptv/russia.m3u',
   };
-  // Беларусь — только из встроенного fallback (надёжнее)
-
-  static const categoryOrder = [
-    'Все',
-    'Избранное',
-    'Общероссийские',
-    'Кино',
-    'Мультфильмы',
-    'Спорт',
-    'Новости',
-    'Познавательные',
-    'Музыкальные',
-    'Украина',
-    'Беларусь',
-    'Türkiye',
-    'Azerbaijan',
-    'Israel',
-    'Региональные',
-    'Разное',
-  ];
 
   static Future<List<IptvChannel>> loadChannels(
       {bool forceRefresh = false}) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!forceRefresh) {
-      final cached = _readCache(prefs);
-      if (cached.isNotEmpty) return cached;
+    final all = <IptvChannel>[];
+
+    // 1. Встроенные ассеты (мгновенно, без сети)
+    for (final entry in _embeddedAssets.entries) {
+      try {
+        final body = await rootBundle.loadString(entry.value);
+        if (body.isNotEmpty) {
+          all.addAll(parseM3u(body, source: entry.key));
+        }
+      } catch (e) {
+        LogService.warn(LogService.iptv, 'IPTV: ошибка ассета ${entry.key}', e);
+      }
     }
+
+    // 2. Фоновое обновление из сети
+    if (forceRefresh) {
+      for (final url in ['https://sat-portal.com/upload/rus_22.05.2026.m3u8']) {
+        try {
+          final body = await _download(url);
+          if (body.isNotEmpty) all.addAll(parseM3u(body, source: url));
+        } catch (_) {}
+      }
+    }
+
+    final cleaned = _dedupe(all);
+    return cleaned.isNotEmpty ? cleaned : fallbackChannels;
+  }
     try {
       final out = <IptvChannel>[];
       for (final entry in _sources.entries) {
@@ -251,15 +256,14 @@ class IptvService {
   }
 
   static const fallbackChannels = [
-    // Общероссийские
-    IptvChannel(
-      name: 'Первый канал',
-      url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/pervyj/video.m3u8',
-      category: 'Общероссийские', country: 'Россия',
-      logo:
-          'https://af-play.com/storage/images/pack_logos/cdef747b13675ef8302fe8283b7de688.png',
-      source: 'fallback',
-    ),
+    IptvChannel(name: 'Первый канал', url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/pervyj/video.m3u8', category: 'Общероссийские', country: 'Россия', source: 'fallback'),
+    IptvChannel(name: 'Россия 1', url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/rossija/video.m3u8', category: 'Общероссийские', country: 'Россия', source: 'fallback'),
+    IptvChannel(name: 'НТВ', url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/ntv/video.m3u8', category: 'Общероссийские', country: 'Россия', source: 'fallback'),
+    IptvChannel(name: 'ОНТ', url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/ont-by/video.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
+    IptvChannel(name: 'Беларусь 1', url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus1-by/video.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
+    IptvChannel(name: 'Беларусь 24', url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus-24/video.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
+    IptvChannel(name: 'СТВ', url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/stv-by-hd/video.m3u8', category: 'Беларусь', country: 'Беларусь', source: 'fallback'),
+  ];
     IptvChannel(
       name: 'Первый HD',
       url: 'http://bethoven.af-stream.com:8080/s/pyxm92zq/pervyj-hd/video.m3u8',
