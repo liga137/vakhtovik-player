@@ -58,13 +58,12 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(_onTabChanged);
     unawaited(ApiService.initLocalState().then((_) async {
       if (!mounted) return;
       setState(() {});
       _ensureFreshLoadedIfPossible();
-      _ensureFeedLoadedIfPossible();
       if (ApiService.isYouTubeLoggedIn) {
         await _loadSubs();
       }
@@ -73,7 +72,6 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     _loadShorts();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ensureFreshLoadedIfPossible();
-      _ensureFeedLoadedIfPossible();
     });
   }
 
@@ -81,9 +79,6 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (!mounted || _tabController.indexIsChanging) return;
     if (_tabController.index == 0) {
       _ensureFreshLoadedIfPossible();
-    }
-    if (_tabController.index == 1) {
-      _ensureFeedLoadedIfPossible();
     }
   }
 
@@ -126,10 +121,19 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     try {
       final result = await ApiService.getYoutubeHome();
       final videos = ApiService.parseInnerTubeVideos(result);
-      if (mounted) setState(() => _fresh = videos);
+      if (mounted && videos.isNotEmpty) setState(() => _fresh = videos);
+      if (videos.isEmpty) throw Exception('InnerTube вернул пустой список');
     } catch (e) {
-      LogService.error(LogService.youtube, 'Ошибка "Главная"', e);
-      if (mounted) _snack('Ошибка "Главная": $e');
+      LogService.error(LogService.youtube, 'Ошибка "Главная" (InnerTube)', e);
+      // Fallback: yt-dlp популярное
+      try {
+        final fallback = await ApiService.youtubePopular(limit: 24);
+        if (mounted) setState(() => _fresh = fallback);
+        if (mounted) _snack('Главная недоступна — показываю популярное');
+      } catch (e2) {
+        LogService.error(LogService.youtube, 'Ошибка fallback "Главная"', e2);
+        if (mounted) _snack('Ошибка загрузки: $e2');
+      }
     } finally {
       if (mounted) setState(() => _loadingFresh = false);
     }
@@ -820,7 +824,6 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
         actions: [_qualityButton(), _loginButton()],
         bottom: TabBar(controller: _tabController, tabs: const [
           Tab(icon: Icon(Icons.home), text: 'Главная'),
-          Tab(icon: Icon(Icons.home), text: 'Лента'),
           Tab(icon: Icon(Icons.search), text: 'Поиск'),
           Tab(icon: Icon(Icons.trending_up), text: 'Популярное'),
           Tab(icon: Icon(Icons.smart_display), text: 'Shorts'),
@@ -832,7 +835,6 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
           controller: _tabController,
           children: [
             _freshTab(),
-            _feedTab(),
             _searchTab(),
             _popularTab(),
             _shortsTab(),

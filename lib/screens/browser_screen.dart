@@ -767,11 +767,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (_showPlayer || _isLoading) return;
     if (clean == _lastAutoMediaUrl) return;
 
-    final isFilmixSource =
-        _isFilmixContext(lower) || _isFilmixContext(_currentRealUrl);
-    if (isFilmixSource) {
-      _applyFilmixHintFromMediaUrl(clean);
-    }
+    // Filmix disabled — skip filmix hint extraction
+    // final isFilmixSource =
+    //     _isFilmixContext(lower) || _isFilmixContext(_currentRealUrl);
+    // if (isFilmixSource) {
+    //   _applyFilmixHintFromMediaUrl(clean);
+    // }
 
     final canAutostart =
         _waitingForNextEpisode || (!_showInterceptor && !_interceptedAlready);
@@ -1166,10 +1167,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool get _hasEpisodeList =>
       _seasonvarEpisodes.isNotEmpty ||
       _seasonvarTranslations.isNotEmpty ||
-      _seasonvarSeasons.isNotEmpty ||
-      _filmixEpisodes.isNotEmpty ||
-      _filmixTranslations.isNotEmpty ||
-      _filmixSeasons.isNotEmpty;
+      _seasonvarSeasons.isNotEmpty;
+      // Filmix disabled — removed from condition
 
   List<Map<String, String>> get _activeEpisodes {
     if (_seasonvarEpisodes.isNotEmpty) return _seasonvarEpisodes;
