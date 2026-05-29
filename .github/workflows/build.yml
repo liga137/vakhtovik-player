@@ -77,7 +77,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.24'
 
       - name: Download Android NDK r26c
         run: |
@@ -92,6 +92,7 @@ jobs:
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
           cd $HOME/sing-box
+          rm -f experimental/libbox/pidfd_android.go
           go get -tool golang.org/x/mobile/cmd/gobind@latest
           go mod tidy
           gomobile init
