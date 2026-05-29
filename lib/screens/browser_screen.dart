@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import '../services/api_service.dart';
 import '../services/log_service.dart';
 import '../services/update_service.dart';
+import '../services/vpn_service.dart';
 import '../services/youtube_hover.dart';
 import '../models/preset.dart';
 import 'iptv_screen.dart';
@@ -54,6 +55,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _onYouTube = false; // флаг: мы на странице YouTube
   bool _compressMode = false; // Режим «Сжатое» — кнопки на всех видео YouTube
   bool _interceptedAlready = false; // защита от повторного перехвата одного URL
+  VpnState _vpnState = VpnState.disconnected;
+  StreamSubscription<VpnState>? _vpnSub;
   bool _scanningSeasonvar = false;
   List<Map<String, String>> _seasonvarEpisodes = [];
   int _seasonvarIndex = 0;
@@ -82,6 +85,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _loadPresets();
     _loadRecentLinks();
     _initWindowsWebViewEnvironment();
+    _vpnSub = VpnService.instance.stateStream.listen((s) {
+      if (mounted) setState(() => _vpnState = s);
+    });
     Future.delayed(const Duration(seconds: 6), () {
       if (mounted) _checkForUpdates(silent: true);
     });
@@ -355,8 +361,96 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void dispose() {
     _videoController?.dispose();
     _chewieController?.dispose();
+    _vpnSub?.cancel();
     unawaited(_safeDisposeEnvironment(_webViewEnvironment));
     super.dispose();
+  }
+
+  // ── VPN (sing-box) ────────────────────────────────────────
+
+  String _vpnTooltip() {
+    switch (_vpnState) {
+      case VpnState.connected: return 'VPN подключён';
+      case VpnState.connecting: return 'VPN подключается...';
+      case VpnState.disconnecting: return 'VPN отключается...';
+      case VpnState.error: return 'Ошибка VPN: ${VpnService.instance.lastError}';
+      case VpnState.disconnected: return 'VPN отключён';
+    }
+  }
+
+  Future<void> _toggleVpn() async {
+    if (_vpnState == VpnState.connecting || _vpnState == VpnState.disconnecting) return;
+
+    if (_vpnState == VpnState.connected) {
+      await VpnService.instance.disconnect();
+      return;
+    }
+
+    // Загружаем конфиг и подключаемся
+    final config = await VpnService.loadConfig();
+    if (!mounted) return;
+
+    // Если дефолтный конфиг (не настроен) — показываем диалог
+    if (config.contains('YOUR_SERVER') || config.contains('YOUR_PASSWORD')) {
+      final result = await _showVpnConfigDialog(config);
+      if (result != null && mounted) {
+        await VpnService.saveConfig(result);
+        await VpnService.instance.connect(result);
+        if (mounted && VpnService.instance.lastError.isNotEmpty) {
+          _snack(VpnService.instance.lastError);
+        }
+      }
+      return;
+    }
+
+    await VpnService.instance.connect(config);
+    if (mounted && VpnService.instance.lastError.isNotEmpty) {
+      _snack(VpnService.instance.lastError);
+    }
+  }
+
+  Future<String?> _showVpnConfigDialog(String currentConfig) async {
+    final ctrl = TextEditingController(text: currentConfig);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Конфиг sing-box'),
+        content: SizedBox(
+          width: 400,
+          height: 300,
+          child: TextField(
+            controller: ctrl,
+            maxLines: null,
+            expands: true,
+            textAlignVertical: TextAlignVertical.top,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+            decoration: const InputDecoration(
+              hintText: '{\n  "outbounds": [...]\n}',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('Подключить'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    return result;
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 3)),
+    );
   }
 
   // Скрипт для авто-переключения серии — НЕ закрывает плеер, ждёт новый перехват
@@ -1492,6 +1586,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               fontWeight: FontWeight.bold),
                         ),
                       ),
+                    ),
+                    // ── VPN (sing-box) ──
+                    IconButton(
+                      icon: Icon(
+                        _vpnState == VpnState.connected
+                            ? Icons.shield
+                            : Icons.shield_outlined,
+                        color: _vpnState == VpnState.connected
+                            ? Colors.greenAccent
+                            : _vpnState == VpnState.connecting
+                                ? Colors.orange
+                                : Colors.white54,
+                        size: 20,
+                      ),
+                      tooltip: _vpnTooltip(),
+                      onPressed: _toggleVpn,
                     ),
                     // YouTube: кнопки «Сжать» + «Оригинал/Сжатое» в хедере
                     if (_onYouTube) ...[
