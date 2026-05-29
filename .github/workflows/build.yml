@@ -74,6 +74,28 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Download Android NDK r26c
+        run: |
+          wget -q https://dl.google.com/android/repository/android-ndk-r26c-linux.zip
+          unzip -q android-ndk-r26c-linux.zip -d $HOME
+          echo "ANDROID_NDK_HOME=$HOME/android-ndk-r26c" >> $GITHUB_ENV
+
+      - name: Clone sing-box
+        run: git clone --depth 1 https://github.com/SagerNet/sing-box.git $HOME/sing-box
+
+      - name: Build libbox.aar
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+          cd $HOME/sing-box
+          gomobile bind -target=android -o libbox.aar ./experimental/libbox
+          cp libbox.aar ${{ github.workspace }}/android/app/libs/
+
       - name: Build release APK
         run: flutter build apk --release
 
