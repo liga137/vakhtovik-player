@@ -1,6 +1,7 @@
 // VPN plugin for sing-box on Windows.
 // Spawns sing-box.exe as a hidden subprocess with JSON config.
 
+#define FLUTTER_PLUGIN_IMPL
 #include "vpn_plugin.h"
 
 #include <flutter/method_channel.h>
@@ -45,7 +46,12 @@ std::wstring GetExeDir() {
 
 std::wstring GetConfigDir() {
     wchar_t localAppData[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, localAppData))) {
+    DWORD len = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, MAX_PATH);
+    if (len > 0 && len < MAX_PATH) {
+        return std::wstring(localAppData) + L"\\VakhtovikPlayer";
+    }
+    len = GetEnvironmentVariableW(L"APPDATA", localAppData, MAX_PATH);
+    if (len > 0 && len < MAX_PATH) {
         return std::wstring(localAppData) + L"\\VakhtovikPlayer";
     }
     return GetExeDir();
