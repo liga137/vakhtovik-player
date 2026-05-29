@@ -91,7 +91,7 @@ jobs:
       - name: Build libbox.aar
         run: |
           go install golang.org/x/mobile/cmd/gomobile@latest
-          go get golang.org/x/mobile
+          go get golang.org/x/mobile@latest
           cd $HOME/sing-box
           go mod tidy
           gomobile init
