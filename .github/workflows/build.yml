@@ -27,6 +27,16 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      - name: Download sing-box.exe
+        shell: pwsh
+        run: |
+          $url = "https://github.com/SagerNet/sing-box/releases/download/v1.13.12/sing-box-1.13.12-windows-amd64.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\sing-box.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\sing-box.zip" -DestinationPath "$env:RUNNER_TEMP\sing-box" -Force
+          $extracted = Get-ChildItem "$env:RUNNER_TEMP\sing-box" -Directory | Select-Object -First 1
+          Copy-Item "$($extracted.FullName)\sing-box.exe" windows\ -Force
+          Copy-Item "$($extracted.FullName)\libcronet.dll" windows\ -Force
+
       - name: Build Windows Release
         run: flutter build windows --release
 
