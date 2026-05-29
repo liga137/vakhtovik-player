@@ -42,3 +42,10 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // libbox.aar — собери через: cd sing-box && gomobile bind -target=android -o libbox.aar ./experimental/libbox
+    // Положи libbox.aar в android/app/libs/
+    implementation fileTree(dir: 'libs', include: ['*.aar'])
+    implementation 'androidx.core:core-ktx:1.12.0'
+}
