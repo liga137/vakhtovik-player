@@ -1,5 +1,5 @@
 // VPN plugin for sing-box on Windows.
-// Loads libbox.dll and manages Hysteria2/TUN connections.
+// Spawns sing-box.exe as a hidden subprocess with JSON config.
 
 #include "vpn_plugin.h"
 
@@ -8,177 +8,221 @@
 #include <flutter/standard_method_codec.h>
 
 #include <windows.h>
+#include <tlhelp32.h>
 #include <memory>
 #include <string>
-#include <thread>
-#include <atomic>
+#include <fstream>
+#include <cstdio>
 
 namespace {
 
-// ── libbox.dll function signatures (from sing-box experimental/libbox) ──
-// These match the Go → C-shared exports:
-//   Go: func StartInstance(configJson string, workingDir string) *C.char
-//   Go: func StopInstance()
+std::string WideToUtf8(const std::wstring& wstr) {
+    if (wstr.empty()) return {};
+    int len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return {};
+    std::string result(len - 1, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &result[0], len, nullptr, nullptr);
+    return result;
+}
 
-typedef char* (*StartFunc)(const char* configJson, const char* workingDir);
-typedef void (*StopFunc)();
+std::wstring Utf8ToWide(const std::string& str) {
+    if (str.empty()) return {};
+    int len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
+    if (len <= 0) return {};
+    std::wstring result(len - 1, 0);
+    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &result[0], len);
+    return result;
+}
+
+std::wstring GetExeDir() {
+    wchar_t path[MAX_PATH];
+    GetModuleFileNameW(nullptr, path, MAX_PATH);
+    std::wstring full(path);
+    auto pos = full.find_last_of(L"\\/");
+    if (pos != std::wstring::npos) full = full.substr(0, pos);
+    return full;
+}
+
+std::wstring GetConfigDir() {
+    wchar_t localAppData[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, localAppData))) {
+        return std::wstring(localAppData) + L"\\VakhtovikPlayer";
+    }
+    return GetExeDir();
+}
+
+void KillProcessTree(DWORD pid) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return;
+
+    PROCESSENTRY32W pe = { sizeof(PROCESSENTRY32W) };
+    if (Process32FirstW(snapshot, &pe)) {
+        do {
+            if (pe.th32ParentProcessID == pid) {
+                KillProcessTree(pe.th32ProcessID);
+            }
+        } while (Process32NextW(snapshot, &pe));
+    }
+    CloseHandle(snapshot);
+
+    HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+    if (proc) {
+        TerminateProcess(proc, 0);
+        CloseHandle(proc);
+    }
+}
 
 class VpnPlugin : public flutter::Plugin {
 public:
-  static void RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar) {
-    auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-      registrar->messenger(), "vakhtovik/singbox",
-      &flutter::StandardMethodCodec::GetInstance()
-    );
+    static void RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar) {
+        auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+            registrar->messenger(), "vakhtovik/singbox",
+            &flutter::StandardMethodCodec::GetInstance()
+        );
 
-    auto plugin = std::make_unique<VpnPlugin>(registrar);
-    channel->SetMethodCallHandler(
-      [plugin_weak = plugin.get()](const auto& call, auto result) {
-        plugin_weak->HandleMethodCall(call, std::move(result));
-      }
-    );
+        auto plugin = std::make_unique<VpnPlugin>(registrar);
+        channel->SetMethodCallHandler(
+            [plugin_weak = plugin.get()](const auto& call, auto result) {
+                plugin_weak->HandleMethodCall(call, std::move(result));
+            }
+        );
 
-    registrar->AddPlugin(std::move(plugin));
-  }
-
-  explicit VpnPlugin(flutter::PluginRegistrarWindows* registrar)
-    : registrar_(registrar) {}
-
-  ~VpnPlugin() override { Shutdown(); }
-
-  void HandleMethodCall(
-    const flutter::MethodCall<flutter::EncodableValue>& call,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result
-  ) {
-    if (call.method_name() == "isAvailable") {
-      // libbox.dll must be next to the executable
-      HMODULE test = LoadLibraryW(L"libbox.dll");
-      if (test) {
-        FreeLibrary(test);
-        result->Success(flutter::EncodableValue(true));
-      } else {
-        result->Success(flutter::EncodableValue(false));
-      }
+        registrar->AddPlugin(std::move(plugin));
     }
-    else if (call.method_name() == "connect") {
-      const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
-      std::string config;
-      if (args) {
-        auto it = args->find(flutter::EncodableValue("config"));
-        if (it != args->end()) {
-          config = std::get<std::string>(it->second);
+
+    explicit VpnPlugin(flutter::PluginRegistrarWindows* registrar)
+        : registrar_(registrar) {}
+
+    ~VpnPlugin() override { StopVpn(); }
+
+    void HandleMethodCall(
+        const flutter::MethodCall<flutter::EncodableValue>& call,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result
+    ) {
+        if (call.method_name() == "isAvailable") {
+            // Проверяем, есть ли sing-box.exe рядом с приложением
+            auto exePath = GetExeDir() + L"\\sing-box.exe";
+            DWORD attrs = GetFileAttributesW(exePath.c_str());
+            bool exists = (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY));
+            result->Success(flutter::EncodableValue(exists));
         }
-      }
-
-      if (config.empty()) {
-        result->Error("NO_CONFIG", "Config is empty");
-        return;
-      }
-
-      bool ok = StartVpn(config);
-      if (ok) {
-        result->Success(flutter::EncodableValue(true));
-      } else {
-        result->Error("START_FAILED", "Could not start VPN. Is libbox.dll present?");
-      }
+        else if (call.method_name() == "connect") {
+            const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+            std::string config;
+            if (args) {
+                auto it = args->find(flutter::EncodableValue("config"));
+                if (it != args->end()) {
+                    config = std::get<std::string>(it->second);
+                }
+            }
+            if (config.empty()) {
+                result->Error("NO_CONFIG", "Config is empty");
+                return;
+            }
+            bool ok = StartVpn(config);
+            result->Success(flutter::EncodableValue(ok));
+        }
+        else if (call.method_name() == "disconnect") {
+            StopVpn();
+            result->Success(flutter::EncodableValue(true));
+        }
+        else {
+            result->NotImplemented();
+        }
     }
-    else if (call.method_name() == "disconnect") {
-      StopVpn();
-      result->Success(flutter::EncodableValue(true));
-    }
-    else {
-      result->NotImplemented();
-    }
-  }
 
 private:
-  bool StartVpn(const std::string& config) {
-    Shutdown();
+    bool StartVpn(const std::string& configJson) {
+        StopVpn();
 
-    hLibbox_ = LoadLibraryW(L"libbox.dll");
-    if (!hLibbox_) {
-      return false;
-    }
+        // 1. Пишем конфиг во временный файл
+        auto configDir = GetConfigDir();
+        CreateDirectoryW(configDir.c_str(), nullptr);
+        auto configPath = WideToUtf8(configDir) + "\\vpn_config.json";
+        {
+            std::ofstream f(configPath, std::ios::trunc);
+            if (!f) return false;
+            f << configJson;
+            f.close();
+        }
 
-    auto startFn = reinterpret_cast<StartFunc>(
-      GetProcAddress(hLibbox_, "StartInstance")
-    );
+        // 2. Запускаем sing-box.exe run -c <config>
+        auto exeDir = GetExeDir();
+        auto singBoxPath = exeDir + L"\\sing-box.exe";
+        auto configPathW = Utf8ToWide(configPath);
 
-    if (!startFn) {
-      FreeLibrary(hLibbox_);
-      hLibbox_ = nullptr;
-      return false;
-    }
+        std::wstring cmdLine = L"\"" + singBoxPath + L"\" run -c \"" + configPathW + L"\"";
 
-    running_.store(true);
+        STARTUPINFOW si = { sizeof(STARTUPINFOW) };
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
 
-    // Copy config for thread safety
-    std::string cfg = config;
+        PROCESS_INFORMATION pi = {};
 
-    vpnThread_ = std::thread([this, startFn, cfg]() {
-      // sing-box StartInstance blocks until stopped
-      char* errMsg = startFn(cfg.c_str(), nullptr);
-
-      running_.store(false);
-
-      if (errMsg) {
-        // Report error back to Dart via method channel
-        auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          registrar_->messenger(), "vakhtovik/singbox",
-          &flutter::StandardMethodCodec::GetInstance()
+        BOOL created = CreateProcessW(
+            singBoxPath.c_str(),  // lpApplicationName
+            &cmdLine[0],          // lpCommandLine (writable buffer)
+            nullptr,              // lpProcessAttributes
+            nullptr,              // lpThreadAttributes
+            FALSE,                // bInheritHandles
+            CREATE_NO_WINDOW,     // dwCreationFlags
+            nullptr,              // lpEnvironment
+            exeDir.c_str(),       // lpCurrentDirectory
+            &si,                  // lpStartupInfo
+            &pi                   // lpProcessInformation
         );
-        flutter::EncodableMap args;
-        args[flutter::EncodableValue("error")] = flutter::EncodableValue(std::string(errMsg));
-        channel->InvokeMethod("onStatusChanged",
-          std::make_unique<flutter::EncodableValue>("Error")
-        );
-      }
-    });
 
-    return true;
-  }
+        if (!created) {
+            return false;
+        }
 
-  void StopVpn() {
-    if (running_.load() && hLibbox_) {
-      auto stopFn = reinterpret_cast<StopFunc>(
-        GetProcAddress(hLibbox_, "StopInstance")
-      );
-      if (stopFn) {
-        stopFn();
-      }
+        // 3. Сохраняем хендл процесса
+        hProcess_ = pi.hProcess;
+        processId_ = pi.dwProcessId;
+        CloseHandle(pi.hThread);
+
+        // Ждём немного и проверяем, не упал ли сразу
+        DWORD waitResult = WaitForSingleObject(hProcess_, 3000);
+        if (waitResult == WAIT_OBJECT_0) {
+            // Процесс завершился — ошибка в конфиге
+            DWORD exitCode = 0;
+            GetExitCodeProcess(hProcess_, &exitCode);
+            CloseHandle(hProcess_);
+            hProcess_ = nullptr;
+            processId_ = 0;
+            DeleteFileW(configPathW.c_str());
+            return false;
+        }
+
+        return true;
     }
-    Shutdown();
-  }
 
-  void Shutdown() {
-    running_.store(false);
-    if (vpnThread_.joinable()) {
-      // Don't block forever — sing-box may not respond
-      auto nativeHandle = vpnThread_.native_handle();
-      vpnThread_.detach();
-      // Give it 2 seconds, then force
-      if (nativeHandle) {
-        WaitForSingleObject(nativeHandle, 2000);
-        TerminateThread(nativeHandle, 0);
-      }
-    }
-    if (hLibbox_) {
-      FreeLibrary(hLibbox_);
-      hLibbox_ = nullptr;
-    }
-  }
+    void StopVpn() {
+        if (processId_ != 0) {
+            KillProcessTree(processId_);
+            if (hProcess_) {
+                WaitForSingleObject(hProcess_, 5000);
+                CloseHandle(hProcess_);
+                hProcess_ = nullptr;
+            }
+            processId_ = 0;
+        }
 
-  flutter::PluginRegistrarWindows* registrar_;
-  HMODULE hLibbox_ = nullptr;
-  std::thread vpnThread_;
-  std::atomic<bool> running_{false};
+        // Чистим конфиг
+        auto configPath = GetConfigDir() + L"\\vpn_config.json";
+        DeleteFileW(configPath.c_str());
+    }
+
+    flutter::PluginRegistrarWindows* registrar_;
+    HANDLE hProcess_ = nullptr;
+    DWORD processId_ = 0;
 };
 
 } // namespace
 
 void VpnPluginRegisterWithRegistrar(FlutterDesktopPluginRegistrarRef registrar) {
-  VpnPlugin::RegisterWithRegistrar(
-    flutter::PluginRegistrarManager::GetInstance()
-      ->GetRegistrar<flutter::PluginRegistrarWindows>(registrar)
-  );
+    VpnPlugin::RegisterWithRegistrar(
+        flutter::PluginRegistrarManager::GetInstance()
+            ->GetRegistrar<flutter::PluginRegistrarWindows>(registrar)
+    );
 }
