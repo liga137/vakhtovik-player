@@ -1399,46 +1399,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       tooltip: 'Обновить',
                       onPressed: () => webViewController?.reload(),
                     ),
-                    PopupMenuButton<String>(
-                      tooltip: 'Недавние ссылки',
-                      icon: const Icon(Icons.history, color: Colors.white),
-                      onSelected: (value) {
-                        if (value == '__clear__') {
-                          _clearRecentLinks();
-                          return;
-                        }
-                        _loadAddress(value);
-                      },
-                      itemBuilder: (_) {
-                        if (_recentLinks.isEmpty) {
-                          return const [
-                            PopupMenuItem<String>(
-                              value: '__empty__',
-                              enabled: false,
-                              child: Text('История пуста'),
-                            ),
-                          ];
-                        }
-                        final items = <PopupMenuEntry<String>>[
-                          ..._recentLinks
-                              .take(12)
-                              .map((link) => PopupMenuItem<String>(
-                                    value: link,
-                                    child: SizedBox(
-                                      width: 340,
-                                      child: Text(link,
-                                          overflow: TextOverflow.ellipsis),
-                                    ),
-                                  )),
-                          const PopupMenuDivider(),
-                          const PopupMenuItem<String>(
-                            value: '__clear__',
-                            child: Text('Очистить историю'),
-                          ),
-                        ];
-                        return items;
-                      },
-                    ),
+                    // History button removed — not needed
                     IconButton(
                       icon: const Icon(Icons.home, color: Colors.white),
                       onPressed: () {
@@ -1490,20 +1451,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           ? null
                           : () => _checkForUpdates(silent: false),
                     ),
-                    if (_currentRealUrl.contains('seasonvar') ||
-                        _currentRealUrl.contains('filmix'))
-                      IconButton(
-                        icon: const Icon(Icons.playlist_play,
-                            color: Colors.orange),
-                        tooltip: 'Сканировать сезоны/серии/озвучки',
-                        onPressed: () {
-                          if (_currentRealUrl.contains('seasonvar')) {
-                            _scanSeasonvarPlaylist();
-                          } else if (_currentRealUrl.contains('filmix')) {
-                            _scanFilmixEpisodes();
-                          }
-                        },
-                      ),
+                    // Debug playlist-scan button removed
                     PopupMenuButton<EconomyLevel>(
                       tooltip: 'Режим экономии',
                       initialValue: _economyLevel,

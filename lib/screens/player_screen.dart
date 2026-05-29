@@ -336,17 +336,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         ],
       ),
-      body: Center(
-        child: _isInitialized && _chewieController != null
-            ? Stack(
-                children: [
-                  Positioned.fill(
-                      child: Chewie(controller: _chewieController!)),
-                  // _PlaybackStatusOverlay removed (statusbar removed per chat session)
-                  const SizedBox.shrink(),
-                ],
-              )
-            : Container(
+      body: _isInitialized && _chewieController != null
+          ? Chewie(controller: _chewieController!)
+          : Center(
+              child: Container(
                 color: Colors.black54,
                 child: Center(
                   child: Container(
@@ -401,7 +394,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
               ),
-      ),
+            ),
     );
   }
 }
