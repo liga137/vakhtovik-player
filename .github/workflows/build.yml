@@ -74,18 +74,12 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-
       - name: Extract libbox from SFA APK
         run: |
           wget -q https://github.com/SagerNet/sing-box/releases/download/v1.13.12/SFA-1.13.12-arm64-v8a.apk
           unzip -q SFA-1.13.12-arm64-v8a.apk -d sfa-arm64
-          find sfa-arm64 -name "*.so" | head -20
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          cp $(find sfa-arm64 -name "libgojni.so" | head -1) android/app/src/main/jniLibs/arm64-v8a/
+          cp sfa-arm64/lib/arm64-v8a/libbox.so android/app/src/main/jniLibs/arm64-v8a/
 
       - name: Build release APK
         run: flutter build apk --release

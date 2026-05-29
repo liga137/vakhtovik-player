@@ -8,13 +8,11 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import android.system.OsConstants
 import androidx.core.app.NotificationCompat
+import libbox.BoxService
 
 /**
- * Android VPN-сервис поверх sing-box (libbox).
- *
- * Использует libgojni.so из SFA APK (загружается через System.loadLibrary).
+ * Android VPN-сервис поверх sing-box (libbox.so).
  */
 class VakhtovikVpnService : VpnService() {
 
@@ -24,15 +22,7 @@ class VakhtovikVpnService : VpnService() {
         const val EXTRA_CONFIG = "config"
         const val NOTIFICATION_ID = 4242
         const val CHANNEL_ID = "vakhtovik_vpn"
-
-        init {
-            System.loadLibrary("gojni")
-        }
     }
-
-    // JNI-функции libbox (объявлены в libgojni.so)
-    private external fun startInstance(configJson: String, tunFd: Int, workingDir: String): String?
-    private external fun stopInstance()
 
     private var running = false
     private var tunFd: ParcelFileDescriptor? = null
@@ -74,10 +64,8 @@ class VakhtovikVpnService : VpnService() {
             return
         }
 
-        val workingDir = filesDir.absolutePath
-
         try {
-            val error = startInstance(configJson, tunFd!!.fd, workingDir)
+            val error = BoxService.start(configJson, tunFd!!.fd, filesDir.absolutePath)
             if (error != null) {
                 sendStatus("Error: $error")
                 tunFd?.close()
@@ -85,7 +73,7 @@ class VakhtovikVpnService : VpnService() {
                 return
             }
         } catch (e: UnsatisfiedLinkError) {
-            sendStatus("Error: libgojni.so not found")
+            sendStatus("Error: libbox.so not found")
             tunFd?.close()
             tunFd = null
             return
@@ -103,13 +91,8 @@ class VakhtovikVpnService : VpnService() {
 
     private fun stopVpn() {
         if (!running) return
-        try {
-            stopInstance()
-        } catch (_: Exception) {}
-        try {
-            tunFd?.close()
-            tunFd = null
-        } catch (_: Exception) {}
+        try { BoxService.stop() } catch (_: Exception) {}
+        try { tunFd?.close(); tunFd = null } catch (_: Exception) {}
         running = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         sendStatus("Disconnected")
@@ -122,34 +105,23 @@ class VakhtovikVpnService : VpnService() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Vakhtovik VPN",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "Статус VPN-подключения" }
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
+            val ch = NotificationChannel(CHANNEL_ID, "Vakhtovik VPN", NotificationManager.IMPORTANCE_LOW)
+            ch.description = "Статус VPN-подключения"
+            getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
         }
     }
 
     private fun buildNotification(status: String): Notification {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
+        val intent = Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP }
+        val pi = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Vakhtovik VPN")
             .setContentText(status)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
-            .setContentIntent(pendingIntent)
+            .setContentIntent(pi)
             .setOngoing(true)
             .build()
     }
 
-    private fun sendStatus(status: String) {
-        // TODO: Broadcast статус в Dart через VpnPlugin
-    }
+    private fun sendStatus(status: String) {}
 }
