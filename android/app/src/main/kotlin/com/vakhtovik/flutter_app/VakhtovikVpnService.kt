@@ -8,15 +8,13 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.system.OsConstants
 import androidx.core.app.NotificationCompat
 
 /**
- * Android VPN-сервис поверх sing-box.
+ * Android VPN-сервис поверх sing-box (libbox).
  *
- * Принимает JSON-конфиг через Intent extra "config",
- * создаёт TUN-интерфейс и передаёт его в libbox.
- *
- * Требует libbox.aar в android/app/libs/ (собирается через gomobile).
+ * Использует libgojni.so из SFA APK (загружается через System.loadLibrary).
  */
 class VakhtovikVpnService : VpnService() {
 
@@ -26,12 +24,17 @@ class VakhtovikVpnService : VpnService() {
         const val EXTRA_CONFIG = "config"
         const val NOTIFICATION_ID = 4242
         const val CHANNEL_ID = "vakhtovik_vpn"
+
+        init {
+            System.loadLibrary("gojni")
+        }
     }
 
-    // libbox native interface (доступен после добавления libbox.aar)
-    // import libbox.BoxService
-    // import libbox.Instance
-    // private var instance: libbox.Instance? = null
+    // JNI-функции libbox (объявлены в libgojni.so)
+    private external fun startInstance(configJson: String, tunFd: Int, workingDir: String): String?
+    private external fun stopInstance()
+
+    private var running = false
     private var tunFd: ParcelFileDescriptor? = null
 
     override fun onCreate() {
@@ -54,9 +57,8 @@ class VakhtovikVpnService : VpnService() {
     }
 
     private fun startVpn(configJson: String) {
-        if (configJson.isEmpty()) return
+        if (configJson.isEmpty() || running) return
 
-        // 1. Создаём TUN через VpnService.Builder
         val builder = Builder()
             .setSession("Vakhtovik VPN")
             .setMtu(1500)
@@ -66,24 +68,24 @@ class VakhtovikVpnService : VpnService() {
             .addDnsServer("8.8.8.8")
             .setBlocking(true)
 
-        // Исключаем сам VPN-сервер из туннеля (чтобы не было петли)
-        // extractServerIp(configJson)?.let { builder.addDisallowedApplication(packageName) }
-
         tunFd = builder.establish()
         if (tunFd == null) {
             sendStatus("Error: TUN creation failed")
             return
         }
 
-        // 2. Запускаем sing-box через libbox
-        try {
-            // После добавления libbox.aar:
-            // val workingDir = filesDir.absolutePath
-            // instance = BoxService.newInstance(configJson, tunFd!!.fd, workingDir)
-            // instance?.start()
+        val workingDir = filesDir.absolutePath
 
-            // Заглушка: библиотека не подключена
-            sendStatus("Error: libbox not available (build libbox.aar first)")
+        try {
+            val error = startInstance(configJson, tunFd!!.fd, workingDir)
+            if (error != null) {
+                sendStatus("Error: $error")
+                tunFd?.close()
+                tunFd = null
+                return
+            }
+        } catch (e: UnsatisfiedLinkError) {
+            sendStatus("Error: libgojni.so not found")
             tunFd?.close()
             tunFd = null
             return
@@ -94,20 +96,21 @@ class VakhtovikVpnService : VpnService() {
             return
         }
 
-        // 3. Foreground-сервис с уведомлением
-        // startForeground(NOTIFICATION_ID, buildNotification("Connected"))
-        // sendStatus("Connected")
+        running = true
+        startForeground(NOTIFICATION_ID, buildNotification("Connected"))
+        sendStatus("Connected")
     }
 
     private fun stopVpn() {
+        if (!running) return
         try {
-            // instance?.close()
-            // instance = null
+            stopInstance()
         } catch (_: Exception) {}
         try {
             tunFd?.close()
             tunFd = null
         } catch (_: Exception) {}
+        running = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         sendStatus("Disconnected")
     }
@@ -123,9 +126,7 @@ class VakhtovikVpnService : VpnService() {
                 CHANNEL_ID,
                 "Vakhtovik VPN",
                 NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Статус VPN-подключения"
-            }
+            ).apply { description = "Статус VPN-подключения" }
             getSystemService(NotificationManager::class.java)
                 .createNotificationChannel(channel)
         }
@@ -149,6 +150,6 @@ class VakhtovikVpnService : VpnService() {
     }
 
     private fun sendStatus(status: String) {
-        // TODO: отправить статус в Dart через Broadcast или callback
+        // TODO: Broadcast статус в Dart через VpnPlugin
     }
 }
