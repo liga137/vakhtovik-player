@@ -146,19 +146,23 @@ class VpnService {
       {
         'type': 'hysteria2',
         'tag': 'proxy',
-        'server': '195.226.92.151',
+        'server': '2.26.16.130',
         'server_port': 443,
         'password': 'Vakh-37PWkJ6RvQfC95Rsnw8jzpP0',
         'tls': {
           'enabled': true,
-          'server_name': '195.226.92.151.nip.io',
+          'server_name': 'beavervpn.duckdns.org',
           'insecure': false,
         },
       },
       {'type': 'direct', 'tag': 'direct'},
     ],
     'route': {
-      'rules': [{'ip_is_private': true, 'outbound': 'direct'}],
+      'rules': [
+        {'ip_is_private': true, 'outbound': 'direct'},
+        {'ip_cidr': ['2.26.16.130/32'], 'outbound': 'direct'},
+      ],
+      'final': 'proxy',
       'auto_detect_interface': true,
     },
   });
