@@ -169,16 +169,20 @@ private:
 
     void StopVpn() {
         checkerRunning_ = false;
-        if (hProcess_) {
+        if (hProcess_ && processId_ != 0) {
+            // Мягкое завершение только если процесс реально запущен
             FreeConsole();
-            AttachConsole(processId_);
-            SetConsoleCtrlHandler(nullptr, TRUE);
-            GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
-            FreeConsole();
-
-            if (WaitForSingleObject(hProcess_, 5000) != WAIT_OBJECT_0) {
+            if (AttachConsole(processId_)) {
+                SetConsoleCtrlHandler(nullptr, TRUE);
+                GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+                FreeConsole();
+                if (WaitForSingleObject(hProcess_, 3000) != WAIT_OBJECT_0) {
+                    TerminateProcess(hProcess_, 0);
+                    WaitForSingleObject(hProcess_, 1000);
+                }
+            } else {
                 TerminateProcess(hProcess_, 0);
-                WaitForSingleObject(hProcess_, 2000);
+                WaitForSingleObject(hProcess_, 1000);
             }
             CloseHandle(hProcess_);
             hProcess_ = nullptr;
