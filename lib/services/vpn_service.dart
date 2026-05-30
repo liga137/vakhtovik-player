@@ -127,19 +127,26 @@ class VpnService {
     'log': {'level': 'info'},
     'inbounds': [{
       'type': 'tun',
-      'interface_name': 'tun0',
+      'interface_name': 'sing-box',
       'inet4_address': '172.19.0.1/30',
       'mtu': 1500,
       'auto_route': true,
-      'strict_route': true,
+      'strict_route': false,
+      'route_exclude_address': ['195.226.92.151/32'],
     }],
     'outbounds': [{
       'type': 'hysteria2',
-      'server': 'YOUR_SERVER',
+      'server': '195.226.92.151',
       'server_port': 443,
-      'password': 'YOUR_PASSWORD',
-      'tls': {'enabled': true, 'server_name': 'YOUR_SERVER'},
+      'password': 'Vakh-37PWkJ6RcQfC95Rsnw8jzpP0',
+      'tls': {
+        'enabled': true,
+        'server_name': '195.226.92.151.nip.io',
+        'insecure': false,
+      },
       'congestion_control': 'brutal',
+      'up_mbps': 30,
+      'down_mbps': 100,
     }],
   });
 
