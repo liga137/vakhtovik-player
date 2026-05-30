@@ -1,5 +1,5 @@
 // VPN plugin for sing-box on Windows.
-// Spawns sing-box.exe as a hidden subprocess with JSON config.
+// Spawns sing-box.exe as a hidden subprocess via SOCKS5 proxy.
 
 #define FLUTTER_PLUGIN_IMPL
 #include "vpn_plugin.h"
@@ -13,7 +13,8 @@
 #include <memory>
 #include <string>
 #include <fstream>
-#include <cstdio>
+#include <thread>
+#include <atomic>
 
 namespace {
 
@@ -53,16 +54,6 @@ std::wstring GetConfigDir() {
     return GetExeDir();
 }
 
-// Послать Ctrl+C процессу → sing-box корректно завершится и уберёт TUN
-BOOL SendCtrlC(DWORD pid) {
-    FreeConsole();
-    if (!AttachConsole(pid)) return FALSE;
-    SetConsoleCtrlHandler(nullptr, TRUE);
-    BOOL ok = GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
-    FreeConsole();
-    return ok;
-}
-
 class VpnPlugin : public flutter::Plugin {
 public:
     static void RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar) {
@@ -71,6 +62,7 @@ public:
             &flutter::StandardMethodCodec::GetInstance()
         );
         auto plugin = std::make_unique<VpnPlugin>(registrar);
+        plugin->channel_ = channel.get();
         channel->SetMethodCallHandler(
             [plugin_weak = plugin.get()](const auto& call, auto result) {
                 plugin_weak->HandleMethodCall(call, std::move(result));
@@ -100,7 +92,13 @@ public:
                 if (it != args->end()) config = std::get<std::string>(it->second);
             }
             if (config.empty()) { result->Error("NO_CONFIG", "Config is empty"); return; }
-            result->Success(flutter::EncodableValue(StartVpn(config)));
+
+            std::string error;
+            if (StartVpn(config, error)) {
+                result->Success(flutter::EncodableValue(true));
+            } else {
+                result->Error("START_FAILED", error);
+            }
         }
         else if (call.method_name() == "disconnect") {
             StopVpn();
@@ -110,20 +108,27 @@ public:
     }
 
 private:
-    bool StartVpn(const std::string& configJson) {
+    bool StartVpn(const std::string& configJson, std::string& error) {
         StopVpn();
 
+        // Проверяем, есть ли sing-box.exe
+        auto exeDir = GetExeDir();
+        auto singBoxPath = exeDir + L"\\sing-box.exe";
+        if (GetFileAttributesW(singBoxPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            error = "sing-box.exe не найден в " + WideToUtf8(exeDir);
+            return false;
+        }
+
+        // Пишем конфиг
         auto configDir = GetConfigDir();
         CreateDirectoryW(configDir.c_str(), nullptr);
         auto configPath = WideToUtf8(configDir) + "\\vpn_config.json";
         {
             std::ofstream f(configPath, std::ios::trunc);
-            if (!f) return false;
+            if (!f) { error = "Не могу записать конфиг в " + configPath; return false; }
             f << configJson;
         }
 
-        auto exeDir = GetExeDir();
-        auto singBoxPath = exeDir + L"\\sing-box.exe";
         auto configPathW = Utf8ToWide(configPath);
         std::wstring cmdLine = L"\"" + singBoxPath + L"\" run -c \"" + configPathW + L"\"";
 
@@ -135,6 +140,7 @@ private:
         if (!CreateProcessW(singBoxPath.c_str(), &cmdLine[0],
                 nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
                 nullptr, exeDir.c_str(), &si, &pi)) {
+            error = "Не удалось запустить sing-box.exe (ошибка " + std::to_string(GetLastError()) + ")";
             return false;
         }
 
@@ -142,21 +148,34 @@ private:
         processId_ = pi.dwProcessId;
         CloseHandle(pi.hThread);
 
-        // Не блокируем UI — проверяем в фоне через 5 секунд
-        // Если процесс упал — чистим
+        // Фоновая проверка через 3 сек — жив ли процесс?
+        checkerRunning_ = true;
+        std::thread([this]() {
+            Sleep(3000);
+            if (!checkerRunning_) return;
+            DWORD code = STILL_ACTIVE;
+            if (hProcess_ && GetExitCodeProcess(hProcess_, &code) && code != STILL_ACTIVE) {
+                // Процесс упал → ошибка
+                SendStatus("Error");
+            } else if (hProcess_) {
+                // Процесс жив → connected
+                SendStatus("Connected");
+            }
+            checkerRunning_ = false;
+        }).detach();
+
         return true;
     }
 
     void StopVpn() {
+        checkerRunning_ = false;
         if (hProcess_) {
-            // Мягкое завершение: Ctrl+C
             FreeConsole();
             AttachConsole(processId_);
             SetConsoleCtrlHandler(nullptr, TRUE);
             GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
             FreeConsole();
 
-            // Ждём до 5с
             if (WaitForSingleObject(hProcess_, 5000) != WAIT_OBJECT_0) {
                 TerminateProcess(hProcess_, 0);
                 WaitForSingleObject(hProcess_, 2000);
@@ -168,11 +187,21 @@ private:
 
         auto configPath = GetConfigDir() + L"\\vpn_config.json";
         DeleteFileW(configPath.c_str());
+        SendStatus("Disconnected");
+    }
+
+    void SendStatus(const std::string& status) {
+        if (channel_) {
+            channel_->InvokeMethod("onStatusChanged",
+                std::make_unique<flutter::EncodableValue>(status));
+        }
     }
 
     flutter::PluginRegistrarWindows* registrar_;
+    flutter::MethodChannel<flutter::EncodableValue>* channel_ = nullptr;
     HANDLE hProcess_ = nullptr;
     DWORD processId_ = 0;
+    std::atomic<bool> checkerRunning_{false};
 };
 
 } // namespace
