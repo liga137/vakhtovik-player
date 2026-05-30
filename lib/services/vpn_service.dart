@@ -125,29 +125,60 @@ class VpnService {
 
   static String _defaultConfig() => json.encode({
     'log': {'level': 'info'},
-    'inbounds': [{
-      'type': 'tun',
-      'interface_name': 'sing-box',
-      'inet4_address': '172.19.0.1/30',
-      'mtu': 1500,
-      'auto_route': true,
-      'strict_route': false,
-      'route_exclude_address': ['195.226.92.151/32'],
-    }],
-    'outbounds': [{
-      'type': 'hysteria2',
-      'server': '195.226.92.151',
-      'server_port': 443,
-      'password': 'Vakh-37PWkJ6RcQfC95Rsnw8jzpP0',
-      'tls': {
-        'enabled': true,
-        'server_name': '195.226.92.151.nip.io',
-        'insecure': false,
+    'dns': {
+      'independent_cache': true,
+      'servers': [
+        {'tag': 'dns-remote', 'address': 'https://dns.google/dns-query', 'detour': 'proxy'},
+        {'tag': 'dns-direct', 'address': 'https://doh.pub/dns-query', 'detour': 'direct'},
+        {'tag': 'dns-block', 'address': 'rcode://success'},
+        {'tag': 'dns-local', 'address': 'local', 'detour': 'direct'},
+      ],
+      'rules': [
+        {'outbound': 'any', 'server': 'dns-direct'},
+        {'query_type': [32, 33], 'server': 'dns-block'},
+        {'domain_suffix': '.lan', 'server': 'dns-block'},
+      ],
+    },
+    'inbounds': [
+      {
+        'type': 'tun',
+        'tag': 'tun-in',
+        'interface_name': 'sing-box',
+        'inet4_address': '172.19.0.1/28',
+        'mtu': 9000,
+        'auto_route': true,
+        'strict_route': false,
+        'stack': 'gvisor',
+        'sniff': true,
       },
-      'congestion_control': 'brutal',
-      'up_mbps': 30,
-      'down_mbps': 100,
-    }],
+    ],
+    'outbounds': [
+      {
+        'type': 'hysteria2',
+        'tag': 'proxy',
+        'server': '195.226.92.151',
+        'server_port': 443,
+        'password': 'Vakh-37PWkJ6RcQfC95Rsnw8jzpP0',
+        'tls': {
+          'enabled': true,
+          'server_name': '195.226.92.151.nip.io',
+          'insecure': false,
+        },
+      },
+      {'type': 'direct', 'tag': 'direct'},
+      {'type': 'dns', 'tag': 'dns-out'},
+      {'type': 'block', 'tag': 'block'},
+    ],
+    'route': {
+      'auto_detect_interface': true,
+      'final': 'proxy',
+      'rules': [
+        {'protocol': 'dns', 'outbound': 'dns-out'},
+        {'outbound': 'block', 'port': [135, 137, 138, 139, 5353], 'network': 'udp'},
+        {'outbound': 'block', 'ip_cidr': ['224.0.0.0/3', 'ff00::/8']},
+        {'outbound': 'block', 'source_ip_cidr': ['224.0.0.0/3', 'ff00::/8']},
+      ],
+    },
   });
 
   void dispose() => _stateController.close();
