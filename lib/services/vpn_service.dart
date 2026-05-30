@@ -132,28 +132,15 @@ class VpnService {
   Future<void> _handleMethod(MethodCall call) async {}
 
   static String _defaultConfig() => json.encode({
-    'log': {'level': 'info', 'timestamp': true},
-    'dns': {
-      'rules': [{'server': 'local-dns'}],
-      'servers': [
-        {
-          'tag': 'local-dns',
-          'address': 'https://8.8.8.8/dns-query',
-          'detour': 'proxy',
-        },
-      ],
-      'independent_cache': true,
-    },
+    'log': {'level': 'info'},
     'inbounds': [{
       'type': 'tun',
-      'tag': 'tun-in',
       'interface_name': 'BeaverVPN',
-      'inet4_address': '172.19.0.1/30',
+      'address': ['172.19.0.1/30'],
       'auto_route': true,
       'strict_route': true,
       'stack': 'system',
       'mtu': 1360,
-      'sniff': true,
     }],
     'outbounds': [
       {
@@ -169,14 +156,9 @@ class VpnService {
         },
       },
       {'type': 'direct', 'tag': 'direct'},
-      {'type': 'block', 'tag': 'block'},
-      {'type': 'dns', 'tag': 'dns-out'},
     ],
     'route': {
-      'rules': [
-        {'protocol': 'dns', 'outbound': 'dns-out'},
-        {'ip_is_private': true, 'outbound': 'direct'},
-      ],
+      'rules': [{'ip_is_private': true, 'outbound': 'direct'}],
       'auto_detect_interface': true,
     },
   });
