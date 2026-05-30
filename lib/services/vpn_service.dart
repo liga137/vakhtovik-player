@@ -3,40 +3,36 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 
-/// Состояния VPN-подключения
 enum VpnState { disconnected, connecting, connected, disconnecting, error }
 
-/// Сервис управления sing-box VPN через MethodChannel.
-///
-/// [Android] — MyVpnService.kt (Kotlin + libbox.aar)
-/// [Windows] — vpn_plugin.cpp (Wintun + libbox.dll)
 class VpnService {
   static const _channel = MethodChannel('vakhtovik/singbox');
-
   static final VpnService instance = VpnService._();
   factory VpnService() => instance;
-  VpnService._() {
-    _channel.setMethodCallHandler(_handleMethod);
-  }
 
+  Process? _process;
   final _stateController = StreamController<VpnState>.broadcast();
   Stream<VpnState> get stateStream => _stateController.stream;
 
   VpnState _state = VpnState.disconnected;
   VpnState get state => _state;
-
   String _lastError = '';
   String get lastError => _lastError;
 
-  // ── Управление конфигом ────────────────────────────────────
-
-  static String get configPath {
-    if (Platform.isWindows) {
-      final appData = Platform.environment['LOCALAPPDATA'] ?? '.';
-      return '$appData\\VakhtovikPlayer\\singbox_config.json';
-    }
-    return '/data/data/com.example.vakhtovik_player/files/singbox_config.json';
+  VpnService._() {
+    _channel.setMethodCallHandler(_handleMethod);
   }
+
+  // ── Config ───────────────────────────────────────────────
+
+  static String get configDir {
+    if (Platform.isWindows) {
+      return '${Platform.environment['LOCALAPPDATA']}\\VakhtovikPlayer';
+    }
+    return '${Platform.environment['HOME'] ?? '/tmp'}/.vakhtovik';
+  }
+
+  static String get configPath => '$configDir\\vpn_config.json';
 
   static Future<String> loadConfig() async {
     try {
@@ -46,82 +42,94 @@ class VpnService {
     return _defaultConfig();
   }
 
-  static Future<void> saveConfig(String jsonText) async {
+  static Future<void> saveConfig(String json) async {
     final f = File(configPath);
     await f.parent.create(recursive: true);
-    await f.writeAsString(jsonText);
+    await f.writeAsString(json);
   }
 
-  // ── Подключение/отключение ─────────────────────────────────
+  // ── Connect / Disconnect ─────────────────────────────────
 
   Future<void> connect(String configJson) async {
     if (_state == VpnState.connecting || _state == VpnState.connected) return;
-
     _setState(VpnState.connecting);
     _lastError = '';
 
-    // Валидация JSON
+    // Validate
     try { json.decode(configJson); }
-    catch (e) {
-      _lastError = 'Некорректный JSON: $e';
+    catch (e) { _lastError = 'Invalid JSON: $e'; _setState(VpnState.error); return; }
+
+    // Save config
+    await saveConfig(configJson);
+
+    // Kill old process
+    await disconnect();
+
+    // Find sing-box.exe
+    final exeDir = Directory(Platform.resolvedExecutable).parent.path;
+    final exePath = '$exeDir\\sing-box.exe';
+    if (!File(exePath).existsSync()) {
+      _lastError = 'sing-box.exe не найден в $exeDir';
       _setState(VpnState.error);
       return;
     }
 
+    // Start process
     try {
-      await _channel.invokeMethod('connect', {'config': configJson});
-    } on MissingPluginException {
-      _lastError = 'VPN-плагин не собран для ${Platform.operatingSystem}';
-      _setState(VpnState.error);
+      _process = await Process.start(
+        exePath,
+        ['run', '-c', configPath],
+        workingDirectory: exeDir,
+        mode: ProcessStartMode.normal,
+      );
+
+      // Check if it dies immediately
+      Future.delayed(const Duration(seconds: 3), () async {
+        if (_process == null) return;
+        try {
+          if (await _process!.exitCode.timeout(const Duration(milliseconds: 100)) != null) {
+            _lastError = 'sing-box упал при запуске';
+            _setState(VpnState.error);
+            _process = null;
+          } else {
+            _setState(VpnState.connected);
+          }
+        } catch (_) {
+          // Still running — OK
+          _setState(VpnState.connected);
+        }
+      });
     } catch (e) {
-      _lastError = 'Ошибка VPN: $e';
+      _lastError = 'Ошибка запуска: $e';
       _setState(VpnState.error);
     }
   }
 
   Future<void> disconnect() async {
-    if (_state != VpnState.connected && _state != VpnState.error) return;
     _setState(VpnState.disconnecting);
     try {
-      await _channel.invokeMethod('disconnect');
-    } on MissingPluginException {
-      // плагина нет — считаем отключённым
-    } catch (e) {
-      _lastError = 'Ошибка отключения: $e';
+      _process?.kill(ProcessSignal.sigterm);
+      await _process?.exitCode.timeout(const Duration(seconds: 3));
+    } catch (_) {
+      _process?.kill(ProcessSignal.sigkill);
     }
+    _process = null;
     _setState(VpnState.disconnected);
   }
 
-  /// Есть ли нативный плагин на этой платформе.
   Future<bool> isAvailable() async {
-    try {
-      return await _channel.invokeMethod<bool>('isAvailable') ?? false;
-    } on MissingPluginException {
-      return false;
-    } catch (_) {
-      return false;
-    }
+    final exeDir = Directory(Platform.resolvedExecutable).parent.path;
+    return File('$exeDir\\sing-box.exe').existsSync();
   }
 
-  // ── Внутреннее ────────────────────────────────────────────
+  // ── Internal ─────────────────────────────────────────────
 
   void _setState(VpnState s) {
     _state = s;
     _stateController.add(s);
   }
 
-  Future<void> _handleMethod(MethodCall call) async {
-    switch (call.method) {
-      case 'onStatusChanged':
-        final s = call.arguments?.toString() ?? '';
-        if (s == 'Connected') _setState(VpnState.connected);
-        else if (s == 'Disconnected') _setState(VpnState.disconnected);
-        else if (s == 'Error') {
-          _lastError = 'Ошибка VPN-сервиса';
-          _setState(VpnState.error);
-        }
-    }
-  }
+  Future<void> _handleMethod(MethodCall call) async {}
 
   static String _defaultConfig() => json.encode({
     'log': {'level': 'info', 'timestamp': true},
