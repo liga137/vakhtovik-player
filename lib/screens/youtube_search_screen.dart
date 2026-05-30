@@ -119,21 +119,13 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingFresh) return;
     setState(() => _loadingFresh = true);
     try {
-      final result = await ApiService.getYoutubeHome();
-      final videos = ApiService.parseInnerTubeVideos(result);
-      if (mounted && videos.isNotEmpty) setState(() => _fresh = videos);
-      if (videos.isEmpty) throw Exception('InnerTube вернул пустой список');
+      // yt-dlp напрямую — InnerTube парсер сломан после изменений YouTube
+      final fallback = await ApiService.youtubePopular(limit: 24);
+      if (mounted) setState(() => _fresh = fallback);
+      if (fallback.isEmpty) throw Exception('yt-dlp вернул пустой список');
     } catch (e) {
-      LogService.error(LogService.youtube, 'Ошибка "Главная" (InnerTube)', e);
-      // Fallback: yt-dlp популярное
-      try {
-        final fallback = await ApiService.youtubePopular(limit: 24);
-        if (mounted) setState(() => _fresh = fallback);
-        if (mounted) _snack('Главная недоступна — показываю популярное');
-      } catch (e2) {
-        LogService.error(LogService.youtube, 'Ошибка fallback "Главная"', e2);
-        if (mounted) _snack('Ошибка загрузки: $e2');
-      }
+      LogService.error(LogService.youtube, 'Ошибка загрузки Главной', e);
+      if (mounted) _snack('Не удалось загрузить Главную: проверь подключение');
     } finally {
       if (mounted) setState(() => _loadingFresh = false);
     }
