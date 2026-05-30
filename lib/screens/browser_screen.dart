@@ -2340,11 +2340,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
                           // Перехват медиа-запросов
                           if (method.toUpperCase() == "GET" && isMedia) {
-                            if (_isFilmixContext(uri) ||
-                                _isFilmixContext(_currentRealUrl)) {
-                              _applyFilmixHintFromMediaUrl(
-                                  request.url.toString());
-                            }
+                            // Filmix hint extraction disabled
                             // Режим авто-переключения серий: сразу сжимаем без шторки
                             if (_waitingForNextEpisode) {
                               _interceptedAlready = false;
