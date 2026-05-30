@@ -1,83 +1,89 @@
 #EXTM3U
-#EXTINF:-1 group-title="Общероссийские",Первый канал
-http://bethoven.af-stream.com:8080/s/pyxm92zq/pervyj/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",Россия 1
-http://bethoven.af-stream.com:8080/s/pyxm92zq/rossija/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",НТВ
-http://bethoven.af-stream.com:8080/s/pyxm92zq/ntv/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",ТНТ
-http://bethoven.af-stream.com:8080/s/pyxm92zq/TNT/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",СТС
-http://bethoven.af-stream.com:8080/s/pyxm92zq/CTC/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",ТВ3
-http://bethoven.af-stream.com:8080/s/pyxm92zq/tv3/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",РЕН ТВ
-http://bethoven.af-stream.com:8080/s/pyxm92zq/ren-tv/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",ТВЦ
-http://bethoven.af-stream.com:8080/s/pyxm92zq/tvc/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",Звезда
-http://bethoven.af-stream.com:8080/s/pyxm92zq/zvezda/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",5 канал
-http://bethoven.af-stream.com:8080/s/pyxm92zq/5kanal/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",Пятница
-http://bethoven.af-stream.com:8080/s/pyxm92zq/piatnica/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",Домашний
-http://bethoven.af-stream.com:8080/s/pyxm92zq/domashnij/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",Мир
-http://bethoven.af-stream.com:8080/s/pyxm92zq/mir/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",ОТР
-http://bethoven.af-stream.com:8080/s/pyxm92zq/otp/video.m3u8
-#EXTINF:-1 group-title="Общероссийские",Ю ТВ
-http://bethoven.af-stream.com:8080/s/pyxm92zq/yu-tv/video.m3u8
-#EXTINF:-1 group-title="Новости",Россия 24
-http://bethoven.af-stream.com:8080/s/pyxm92zq/rossija24/video.m3u8
-#EXTINF:-1 group-title="Новости",РБК
-http://bethoven.af-stream.com:8080/s/pyxm92zq/rbk/video.m3u8
-#EXTINF:-1 group-title="Новости",Мир 24
-http://bethoven.af-stream.com:8080/s/pyxm92zq/mir-24/video.m3u8
-#EXTINF:-1 group-title="Кино",Кинопремьера HD
-http://bethoven.af-stream.com:8080/s/pyxm92zq/kinopremiera-hd/video.m3u8
-#EXTINF:-1 group-title="Кино",Кинохит
-http://bethoven.af-stream.com:8080/s/pyxm92zq/kinohit/video.m3u8
-#EXTINF:-1 group-title="Кино",Киномикс
-http://bethoven.af-stream.com:8080/s/pyxm92zq/kinomix/video.m3u8
-#EXTINF:-1 group-title="Кино",Дом Кино
-http://bethoven.af-stream.com:8080/s/pyxm92zq/dom-kino/video.m3u8
-#EXTINF:-1 group-title="Кино",Русский Иллюзион
-http://bethoven.af-stream.com:8080/s/pyxm92zq/russkij-iluzion/video.m3u8
-#EXTINF:-1 group-title="Спорт",Матч ТВ
-http://bethoven.af-stream.com:8080/s/pyxm92zq/match-tv/video.m3u8
-#EXTINF:-1 group-title="Спорт",Матч! Арена
-http://bethoven.af-stream.com:8080/s/pyxm92zq/match-arena/video.m3u8
-#EXTINF:-1 group-title="Спорт",Eurosport 1
-http://bethoven.af-stream.com:8080/s/pyxm92zq/eurosport/video.m3u8
-#EXTINF:-1 group-title="Мультфильмы",Карусель
-http://bethoven.af-stream.com:8080/s/pyxm92zq/karusel/video.m3u8
-#EXTINF:-1 group-title="Мультфильмы",Мульт
-http://bethoven.af-stream.com:8080/s/pyxm92zq/mult/video.m3u8
-#EXTINF:-1 group-title="Мультфильмы",Детский мир
-http://bethoven.af-stream.com:8080/s/pyxm92zq/detskij-mir/video.m3u8
-#EXTINF:-1 group-title="Познавательные",National Geographic
-http://bethoven.af-stream.com:8080/s/pyxm92zq/nat-geo/video.m3u8
-#EXTINF:-1 group-title="Познавательные",Discovery
-http://bethoven.af-stream.com:8080/s/pyxm92zq/discovery/video.m3u8
-#EXTINF:-1 group-title="Познавательные",Моя планета
-http://bethoven.af-stream.com:8080/s/pyxm92zq/moya-planeta/video.m3u8
-#EXTINF:-1 group-title="Музыка",Муз-ТВ
-http://bethoven.af-stream.com:8080/s/pyxm92zq/muz-tv/video.m3u8
-#EXTINF:-1 group-title="Музыка",Europa Plus TV
-http://bethoven.af-stream.com:8080/s/pyxm92zq/evropa-plus-tv/video.m3u8
-#EXTINF:-1 group-title="Беларусь",ОНТ
-http://bethoven.af-stream.com:8080/s/pyxm92zq/ont-by/video.m3u8
-#EXTINF:-1 group-title="Беларусь",Беларусь 1
-http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus1-by/video.m3u8
-#EXTINF:-1 group-title="Беларусь",Беларусь 2
-http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus2-by/video.m3u8
-#EXTINF:-1 group-title="Беларусь",Беларусь 3
-http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus3-by/video.m3u8
-#EXTINF:-1 group-title="Беларусь",Беларусь 24
-http://bethoven.af-stream.com:8080/s/pyxm92zq/belarus-24/video.m3u8
-#EXTINF:-1 group-title="Беларусь",НТВ Беларусь
-http://bethoven.af-stream.com:8080/s/pyxm92zq/ntv-by-hd/video.m3u8
-#EXTINF:-1 group-title="Беларусь",СТВ
-http://bethoven.af-stream.com:8080/s/pyxm92zq/stv-by-hd/video.m3u8
+#EXTVLCOPT:http-referrer=https://CrocoUser.github.io/zabava-project/
+
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Первый%20канал.png" group-title="Федеральные",Первый канал
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Россия%201.png" group-title="Федеральные",Россия 1
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Россия%20К.png" group-title="Федеральные",Россия К (Культура)
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/НТВ.png" group-title="Федеральные",НТВ
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Пятый%20канал.png" group-title="Федеральные",Пятый канал
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/РЕН%20ТВ.png" group-title="Федеральные",РЕН ТВ
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/ТВ%20Центр.png" group-title="Федеральные",ТВ Центр
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Спас.png" group-title="Федеральные",Спас
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Звезда.png" group-title="Федеральные",Звезда
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/МИР.png" group-title="Федеральные",МИР
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/ОТР.png" group-title="Федеральные",ОТР
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Матч%20ТВ.png" group-title="Спорт",Матч ТВ
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Россия%2024.png" group-title="Новости",Россия 24
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Москва%2024.png" group-title="Новости",Москва 24 HD
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Инфоканал.png" group-title="Новости",ИНФОКАНАЛ
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Карусель.png" group-title="Детские",Карусель
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/СТС%20Kids.png" group-title="Детские",СТС Kids
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/СТС.png" group-title="Развлекательные",СТС
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Домашний.png" group-title="Развлекательные",Домашний
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/ТВ-3.png" group-title="Развлекательные",ТВ3
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Пятница!.png" group-title="Развлекательные",Пятница
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/ТНТ.png" group-title="Развлекательные",ТНТ
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/ТНТ4.png" group-title="Развлекательные",ТНТ4
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Че.png" group-title="Развлекательные",Че!
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Ю.png" group-title="Развлекательные",Ю
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/2x2.png" group-title="Развлекательные",2x2
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/СТС%20Love.png" group-title="Развлекательные",СТС Love
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Солнце.png" group-title="Развлекательные",Солнце
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Суббота!.png" group-title="Развлекательные",Суббота
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Всё%20ТВ.png" group-title="Развлекательные",Всё ТВ HD
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/МУЗ-ТВ.png" group-title="Музыка",МУЗ-ТВ
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Крым%2024.png" group-title="Региональные",Крым 24 HD
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/СТВ24.png" group-title="Региональные",СТВ24
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Крым%201.png" group-title="Региональные",Телеканал Крым 1
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Миллет.png" group-title="Региональные",Миллет
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Первый%20Севастопольский.png" group-title="Региональные",Первый Севастопольский
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/НТС.png" group-title="Региональные",НТС
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/СТВ.png" group-title="Региональные",СТВ
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Евпатория%2024.png" group-title="Региональные",Евпатория 24
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/ТРК-555.png" group-title="Региональные",ТРК-555 HD
+https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
