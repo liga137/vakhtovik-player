@@ -134,9 +134,13 @@ class VpnService {
   static String _defaultConfig() => json.encode({
     'log': {'level': 'info', 'timestamp': true},
     'dns': {
+      'rules': [{'server': 'local-dns'}],
       'servers': [
-        {'tag': 'remote-dns', 'address': '8.8.8.8', 'detour': 'proxy'},
-        {'tag': 'local-dns', 'address': 'local', 'detour': 'direct'},
+        {
+          'tag': 'local-dns',
+          'address': 'https://8.8.8.8/dns-query',
+          'detour': 'proxy',
+        },
       ],
       'independent_cache': true,
     },
