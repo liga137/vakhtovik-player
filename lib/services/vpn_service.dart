@@ -141,14 +141,10 @@ class VpnService {
     },
     'inbounds': [
       {
-        'type': 'tun',
-        'tag': 'tun-in',
-        'interface_name': 'sing-box',
-        'inet4_address': '172.19.0.1/28',
-        'mtu': 9000,
-        'auto_route': true,
-        'strict_route': false,
-        'stack': 'gvisor',
+        'type': 'mixed',
+        'tag': 'mixed-in',
+        'listen': '127.0.0.1',
+        'listen_port': 2080,
         'sniff': true,
       },
     ],

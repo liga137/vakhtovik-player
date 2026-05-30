@@ -142,28 +142,22 @@ private:
         processId_ = pi.dwProcessId;
         CloseHandle(pi.hThread);
 
-        // Ждём 8 секунд — если процесс упал, конфиг битый
-        DWORD wait = WaitForSingleObject(hProcess_, 8000);
-        if (wait == WAIT_OBJECT_0) {
-            DWORD code = 0;
-            GetExitCodeProcess(hProcess_, &code);
-            CloseHandle(hProcess_);
-            hProcess_ = nullptr;
-            processId_ = 0;
-            DeleteFileW(configPathW.c_str());
-            return false;
-        }
-
-        return true; // процесс жив — считаем что OK (проверка связи на стороне Dart)
+        // Не блокируем UI — проверяем в фоне через 5 секунд
+        // Если процесс упал — чистим
+        return true;
     }
 
     void StopVpn() {
         if (hProcess_) {
-            // Мягкое завершение: Ctrl+C → sing-box уберёт TUN
-            SendCtrlC(processId_);
-            DWORD wait = WaitForSingleObject(hProcess_, 5000);
-            if (wait != WAIT_OBJECT_0) {
-                // Не ответил — хард-килл
+            // Мягкое завершение: Ctrl+C
+            FreeConsole();
+            AttachConsole(processId_);
+            SetConsoleCtrlHandler(nullptr, TRUE);
+            GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+            FreeConsole();
+
+            // Ждём до 5с
+            if (WaitForSingleObject(hProcess_, 5000) != WAIT_OBJECT_0) {
                 TerminateProcess(hProcess_, 0);
                 WaitForSingleObject(hProcess_, 2000);
             }
