@@ -124,37 +124,32 @@ class VpnService {
   }
 
   static String _defaultConfig() => json.encode({
-    'log': {'level': 'info'},
+    'log': {'level': 'info', 'timestamp': true},
     'dns': {
-      'independent_cache': true,
       'servers': [
-        {'tag': 'dns-remote', 'address': 'https://dns.google/dns-query', 'detour': 'proxy'},
-        {'tag': 'dns-direct', 'address': 'https://doh.pub/dns-query', 'detour': 'direct'},
-        {'tag': 'dns-block', 'address': 'rcode://success'},
-        {'tag': 'dns-local', 'address': 'local', 'detour': 'direct'},
+        {'tag': 'remote-dns', 'address': '8.8.8.8', 'detour': 'proxy'},
+        {'tag': 'local-dns', 'address': 'local', 'detour': 'direct'},
       ],
-      'rules': [
-        {'outbound': 'any', 'server': 'dns-direct'},
-        {'query_type': [32, 33], 'server': 'dns-block'},
-        {'domain_suffix': '.lan', 'server': 'dns-block'},
-      ],
+      'independent_cache': true,
     },
-    'inbounds': [
-      {
-        'type': 'mixed',
-        'tag': 'mixed-in',
-        'listen': '127.0.0.1',
-        'listen_port': 2080,
-        'sniff': true,
-      },
-    ],
+    'inbounds': [{
+      'type': 'tun',
+      'tag': 'tun-in',
+      'interface_name': 'BeaverVPN',
+      'inet4_address': '172.19.0.1/30',
+      'auto_route': true,
+      'strict_route': true,
+      'stack': 'system',
+      'mtu': 1360,
+      'sniff': true,
+    }],
     'outbounds': [
       {
         'type': 'hysteria2',
         'tag': 'proxy',
         'server': '195.226.92.151',
         'server_port': 443,
-        'password': 'Vakh-37PWkJ6RcQfC95Rsnw8jzpP0',
+        'password': 'Vakh-37PWkJ6RvQfC95Rsnw8jzpP0',
         'tls': {
           'enabled': true,
           'server_name': '195.226.92.151.nip.io',
@@ -162,18 +157,15 @@ class VpnService {
         },
       },
       {'type': 'direct', 'tag': 'direct'},
-      {'type': 'dns', 'tag': 'dns-out'},
       {'type': 'block', 'tag': 'block'},
+      {'type': 'dns', 'tag': 'dns-out'},
     ],
     'route': {
-      'auto_detect_interface': true,
-      'final': 'proxy',
       'rules': [
         {'protocol': 'dns', 'outbound': 'dns-out'},
-        {'outbound': 'block', 'port': [135, 137, 138, 139, 5353], 'network': 'udp'},
-        {'outbound': 'block', 'ip_cidr': ['224.0.0.0/3', 'ff00::/8']},
-        {'outbound': 'block', 'source_ip_cidr': ['224.0.0.0/3', 'ff00::/8']},
+        {'ip_is_private': true, 'outbound': 'direct'},
       ],
+      'auto_detect_interface': true,
     },
   });
 
