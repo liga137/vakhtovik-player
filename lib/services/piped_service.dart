@@ -73,25 +73,17 @@ class PipedService {
   }
 
   static YouTubeVideo _fromPiped(dynamic v) {
+    final id = (v['url'] ?? '').toString().replaceAll('/watch?v=', '');
     return YouTubeVideo(
-      id: (v['url'] ?? '').toString().replaceAll('/watch?v=', ''),
+      id: id,
       title: (v['title'] ?? '').toString(),
       channel: (v['uploaderName'] ?? v['uploader'] ?? '').toString(),
       thumbnail: (v['thumbnail'] ?? '').toString(),
-      durationText: _fmtDuration(v['duration']),
-      views: _fmtViews(v['views']),
-      url: 'https://www.youtube.com${v['url'] ?? '/watch?v=${v['id']}'}',
-      published: (v['uploadedDate'] ?? v['uploaded'] ?? '').toString(),
+      duration: v['duration'] is int ? v['duration'] as int : 0,
+      viewsText: _fmtViews(v['views']),
+      publishedText: (v['uploadedDate'] ?? v['uploaded'] ?? '').toString(),
+      url: 'https://www.youtube.com/watch?v=$id',
     );
-  }
-
-  static String _fmtDuration(dynamic d) {
-    if (d == null) return '';
-    final s = d is int ? d : int.tryParse(d.toString()) ?? 0;
-    if (s <= 0) return '';
-    final m = s ~/ 60;
-    final sec = s % 60;
-    return '${m}:${sec.toString().padLeft(2, '0')}';
   }
 
   static String _fmtViews(dynamic v) {
