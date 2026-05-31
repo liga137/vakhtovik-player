@@ -26,16 +26,80 @@ class IptvService {
         LogService.warn(LogService.iptv, 'IPTV: asset ${entry.key}', e);
       }
     }
+    // Раскрываем мета-плейлисты (.m3u) — скачиваем и сопоставляем каналы по имени
+    final resolved = await _resolveMetaPlaylists(all);
     if (forceRefresh) {
       for (final url in ['https://sat-portal.com/upload/rus_22.05.2026.m3u8']) {
         try {
           final body = await _download(url);
-          if (body.isNotEmpty) all.addAll(parseM3u(body, source: url));
+          if (body.isNotEmpty) resolved.addAll(parseM3u(body, source: url));
         } catch (_) {}
       }
     }
-    final cleaned = _dedupe(all);
+    final cleaned = _dedupe(resolved);
     return cleaned.isNotEmpty ? cleaned : fallbackChannels;
+  }
+
+  /// Скачивает мета-плейлисты (.m3u) и подменяет URL каналов на реальные потоки
+  static Future<List<IptvChannel>> _resolveMetaPlaylists(List<IptvChannel> channels) async {
+    // Находим каналы с мета-плейлистами (URL заканчивается на .m3u, но не .m3u8)
+    final metaUrls = <String>{};
+    for (final ch in channels) {
+      final u = ch.url.toLowerCase();
+      if (u.endsWith('.m3u') && !u.endsWith('.m3u8')) {
+        metaUrls.add(ch.url);
+      }
+    }
+    if (metaUrls.isEmpty) return channels;
+
+    // Скачиваем и парсим каждый мета-плейлист
+    final metaCache = <String, Map<String, String>>{}; // url -> {name: streamUrl}
+    for (final url in metaUrls) {
+      try {
+        final body = await _download(url);
+        final entries = parseM3u(body, source: url);
+        final map = <String, String>{};
+        for (final e in entries) {
+          map[e.name.toLowerCase()] = e.url;
+          // Добавляем вариации имён для лучшего совпадения
+          final simple = e.name.toLowerCase().replaceAll(RegExp(r'\s*\(.*?\)\s*'), '').trim();
+          if (simple != e.name.toLowerCase()) map[simple] = e.url;
+        }
+        metaCache[url] = map;
+      } catch (_) {}
+    }
+
+    // Подменяем URL для каналов, у которых нашёлся реальный поток
+    final result = <IptvChannel>[];
+    for (final ch in channels) {
+      final map = metaCache[ch.url];
+      if (map != null) {
+        // Ищем совпадение по имени
+        final nameKey = ch.name.toLowerCase();
+        final simpleKey = nameKey.replaceAll(RegExp(r'\s*\(.*?\)\s*'), '').trim();
+        var streamUrl = map[nameKey] ?? map[simpleKey];
+        if (streamUrl == null) {
+          // Частичное совпадение
+          for (final k in map.keys) {
+            if (k.contains(nameKey) || nameKey.contains(k)) {
+              streamUrl = map[k];
+              break;
+            }
+          }
+        }
+        if (streamUrl != null) {
+          result.add(IptvChannel(
+            name: ch.name, url: streamUrl, category: ch.category,
+            logo: ch.logo, country: ch.country, language: ch.language, source: ch.source,
+          ));
+        } else {
+          result.add(ch); // не нашли — оставляем как есть
+        }
+      } else {
+        result.add(ch);
+      }
+    }
+    return result;
   }
 
   static List<String> categoriesFor(List<IptvChannel> channels) {

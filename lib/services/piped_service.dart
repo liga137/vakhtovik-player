@@ -25,7 +25,7 @@ class PipedService {
     for (var attempt = 0; attempt < _instances.length; attempt++) {
       try {
         final uri = Uri.parse('$_baseUrl/trending?region=$region');
-        final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+        final resp = await http.get(uri).timeout(const Duration(seconds: 25));
         if (resp.statusCode == 200) {
           final data = json.decode(resp.body) as List<dynamic>;
           return data.map((v) => _fromPiped(v)).toList();
@@ -41,7 +41,7 @@ class PipedService {
     for (var attempt = 0; attempt < _instances.length; attempt++) {
       try {
         final uri = Uri.parse('$_baseUrl/search?q=${Uri.encodeComponent(query)}&filter=videos');
-        final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+        final resp = await http.get(uri).timeout(const Duration(seconds: 25));
         if (resp.statusCode == 200) {
           final data = json.decode(resp.body) as Map<String, dynamic>;
           final items = (data['items'] as List<dynamic>?)
@@ -61,7 +61,7 @@ class PipedService {
     for (var attempt = 0; attempt < _instances.length; attempt++) {
       try {
         final uri = Uri.parse('$_baseUrl/feed/unauthenticated?region=$region');
-        final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+        final resp = await http.get(uri).timeout(const Duration(seconds: 25));
         if (resp.statusCode == 200) {
           final data = json.decode(resp.body) as List<dynamic>;
           return data.map((v) => _fromPiped(v)).toList();
