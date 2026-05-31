@@ -78,10 +78,18 @@ class VpnService {
     try {
       _process = await Process.start(
         exePath,
-        ['run', '-c', configPath],
-        workingDirectory: exeDir,
+        ['run', '-c', configPath],  // без кавычек — Dart сам экранирует
+        workingDirectory: exeDir,    // чтобы sing-box нашёл wintun.dll
         mode: ProcessStartMode.normal,
       );
+
+      // Ловим stdout для диагностики
+      _process!.stdout.transform(utf8.decoder).listen((data) {
+        print('[sing-box] $data');
+      });
+      _process!.stderr.transform(utf8.decoder).listen((data) {
+        print('[sing-box ERR] $data');
+      });
 
       // Check if it dies immediately
       Future.delayed(const Duration(seconds: 3), () async {
