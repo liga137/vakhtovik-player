@@ -4,7 +4,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/youtube_video.dart';
 import '../services/api_service.dart';
 import '../services/log_service.dart';
-import '../services/piped_service.dart';
 import 'player_screen.dart';
 
 class YouTubeSearchScreen extends StatefulWidget {
@@ -120,11 +119,10 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingFresh) return;
     setState(() => _loadingFresh = true);
     try {
-      final videos = await PipedService.getHome();
-      if (mounted) setState(() => _fresh = videos);
-      if (videos.isEmpty && mounted) _snack('Piped не ответил — проверь VPN');
+      final items = await ApiService.youtubePopular(limit: 24);
+      if (mounted) setState(() => _fresh = items);
     } catch (e) {
-      LogService.error(LogService.youtube, 'Ошибка Главной (Piped)', e);
+      LogService.error(LogService.youtube, 'Ошибка Главной', e);
       if (mounted) _snack('Ошибка загрузки: $e');
     } finally {
       if (mounted) setState(() => _loadingFresh = false);
@@ -137,7 +135,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (q.isEmpty || _loadingSearch) return;
     setState(() => _loadingSearch = true);
     try {
-      final items = await PipedService.search(q, limit: 12);
+      final items = await ApiService.searchYouTube(q, limit: 12);
       if (mounted) setState(() => _searchResults = items);
     } catch (e) {
       if (mounted) _snack('Ошибка поиска: $e');
@@ -164,7 +162,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingPopular) return;
     setState(() => _loadingPopular = true);
     try {
-      final items = await PipedService.getTrending();
+      final items = await ApiService.youtubePopular(limit: 24);
       if (mounted) setState(() => _popular = items);
     } catch (e) {
       if (mounted) _snack('Ошибка популярного: $e');
