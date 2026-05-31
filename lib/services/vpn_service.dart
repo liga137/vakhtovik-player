@@ -133,6 +133,10 @@ class VpnService {
 
   static String _defaultConfig() => json.encode({
     'log': {'level': 'info'},
+    'dns': {
+      'rules': [{'server': 'dns-proxy'}],
+      'servers': [{'tag': 'dns-proxy', 'address': 'tls://1.1.1.1', 'detour': 'proxy'}],
+    },
     'inbounds': [{
       'type': 'tun',
       'interface_name': 'BeaverVPN',
@@ -160,7 +164,7 @@ class VpnService {
     'route': {
       'rules': [
         {'ip_is_private': true, 'outbound': 'direct'},
-        {'ip_cidr': ['2.26.16.130/32'], 'outbound': 'direct'},
+        {'ip_cidr': ['195.226.92.151/32'], 'outbound': 'direct'},
       ],
       'final': 'proxy',
       'auto_detect_interface': true,
