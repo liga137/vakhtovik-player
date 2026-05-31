@@ -146,12 +146,12 @@ class VpnService {
       {
         'type': 'hysteria2',
         'tag': 'proxy',
-        'server': '2.26.16.130',
+        'server': '195.226.92.151',
         'server_port': 443,
         'password': 'Vakh-37PWkJ6RvQfC95Rsnw8jzpP0',
         'tls': {
           'enabled': true,
-          'server_name': 'beavervpn.duckdns.org',
+          'server_name': '195.226.92.151.nip.io',
           'insecure': false,
         },
       },
