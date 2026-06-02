@@ -460,6 +460,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       return TextButton.icon(
         onPressed: () => setState(() {
           ApiService.youtubeLogout();
+          _fresh = const [];
           _feed = const [];
           _subs = const [];
         }),
@@ -469,9 +470,9 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       );
     }
     return TextButton.icon(
-      onPressed: _showLoginDialog,
-      icon: const Icon(Icons.person, color: Colors.orange),
-      label: const Text('Войти', style: TextStyle(color: Colors.white)),
+      onPressed: _importGoogleSubscriptions,
+      icon: const Icon(Icons.login, color: Colors.orange),
+      label: const Text('Войти через Google', style: TextStyle(color: Colors.white)),
     );
   }
 
