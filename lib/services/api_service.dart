@@ -113,6 +113,13 @@ class ApiService {
     }
   }
 
+  /// Сохранить YouTube-авторизацию (Google OAuth).
+  static Future<void> saveYoutubeAuth(String token, String username) async {
+    _ytToken = token;
+    _ytUsername = username;
+    await _saveAuthState();
+  }
+
   /// Получить список пресетов качества
   static Future<List<Preset>> getPresets() async {
     return _withRetry((c) async {

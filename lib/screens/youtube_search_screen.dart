@@ -247,9 +247,15 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
             if (err.isNotEmpty) {
               _snack('Ошибка импорта: $err');
             } else {
-              _snack('Импортировано подписок: ${status['imported'] ?? 0}');
+              // Сохраняем Google OAuth как основной вход
+              final ytToken = (status['token'] ?? '').toString();
+              final ytUser = (status['username'] ?? '').toString();
+              if (ytToken.isNotEmpty) {
+                await ApiService.saveYoutubeAuth(ytToken, ytUser);
+              }
+              _snack('Вход выполнен: ${ytUser.isNotEmpty ? ytUser : "YouTube"} | Импортировано подписок: ${status['imported'] ?? 0}');
               await _loadSubs();
-              await _loadFeed();
+              await _loadFresh();
             }
             if (mounted) setState(() => _googleImporting = false);
           }
