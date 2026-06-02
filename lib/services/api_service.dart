@@ -481,10 +481,6 @@ class ApiService {
       throw Exception('YouTube shorts: ${response.statusCode}');
     }, operation: 'youtubeShorts');
   }
-      if (response.statusCode == 200) return json.decode(response.body);
-      throw Exception('InnerTube popular: ${response.statusCode}');
-    }, operation: 'youtubePopularInnerTube');
-  }
 
   /// Парсит ответ InnerTube в список YouTubeVideo.
   static List<YouTubeVideo> parseInnerTubeVideos(Map<String, dynamic> result) {
