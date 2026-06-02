@@ -119,11 +119,22 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingFresh) return;
     setState(() => _loadingFresh = true);
     try {
-      final items = await ApiService.youtubePopular(limit: 24);
-      if (mounted) setState(() => _fresh = items);
+      if (ApiService.isYouTubeLoggedIn) {
+        final result = await ApiService.getYoutubeHome();
+        final videos = ApiService.parseInnerTubeVideos(result);
+        if (mounted) setState(() => _fresh = videos);
+      } else {
+        // Fallback: yt-dlp popular
+        final items = await ApiService.youtubePopular(limit: 24);
+        if (mounted) setState(() => _fresh = items);
+      }
     } catch (e) {
       LogService.error(LogService.youtube, 'Ошибка Главной', e);
-      if (mounted) _snack('Ошибка загрузки: $e');
+      // Fallback
+      try {
+        final items = await ApiService.youtubePopular(limit: 24);
+        if (mounted) setState(() => _fresh = items);
+      } catch (_) {}
     } finally {
       if (mounted) setState(() => _loadingFresh = false);
     }
@@ -175,21 +186,9 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingShorts) return;
     setState(() => _loadingShorts = true);
     try {
-      final items = await ApiService.searchYouTube('youtube shorts', limit: 30);
-      final normalized = items.map((v) {
-        if (v.id.isNotEmpty) {
-          return YouTubeVideo(
-            id: v.id,
-            title: v.title,
-            channel: v.channel,
-            duration: v.duration,
-            thumbnail: v.thumbnail,
-            url: 'https://www.youtube.com/shorts/${v.id}',
-          );
-        }
-        return v;
-      }).toList();
-      if (mounted) setState(() => _shorts = normalized);
+      final result = await ApiService.getYoutubeShorts();
+      final videos = ApiService.parseInnerTubeVideos(result);
+      if (mounted) setState(() => _shorts = videos);
     } catch (e) {
       if (mounted) _snack('Ошибка Shorts: $e');
     } finally {

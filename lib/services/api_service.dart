@@ -453,25 +453,27 @@ class ApiService {
     return output;
   }
 
-  /// Лента «Главная» YouTube через InnerTube API.
+  /// Персонализированная лента через YouTube Data API v3 (OAuth).
   static Future<Map<String, dynamic>> getYoutubeHome({String? continuation}) async {
     await initLocalState();
     return _withRetry((c) async {
-      final body = <String, dynamic>{};
-      if (continuation != null && continuation.isNotEmpty) body['continuation_token'] = continuation;
-      final response = await c.post(Uri.parse('$baseUrl/youtube/home'),
-          headers: {'Content-Type': 'application/json'}, body: json.encode(body));
+      final response = await c.get(Uri.parse('$baseUrl/yt/home'),
+          headers: _ytHeaders);
       if (response.statusCode == 200) return json.decode(response.body);
-      throw Exception('InnerTube home: ${response.statusCode}');
+      throw Exception('YouTube home: ${response.statusCode}');
     }, operation: 'youtubeHome');
   }
 
-  /// Российское «В тренде» через InnerTube.
-  static Future<Map<String, dynamic>> getYoutubePopularInnerTube() async {
+  /// Shorts через YouTube Data API v3 (OAuth).
+  static Future<Map<String, dynamic>> getYoutubeShorts() async {
     await initLocalState();
     return _withRetry((c) async {
-      final response = await c.post(Uri.parse('$baseUrl/youtube/popular'),
-          headers: {'Content-Type': 'application/json'}, body: '{}');
+      final response = await c.get(Uri.parse('$baseUrl/yt/shorts'),
+          headers: _ytHeaders);
+      if (response.statusCode == 200) return json.decode(response.body);
+      throw Exception('YouTube shorts: ${response.statusCode}');
+    }, operation: 'youtubeShorts');
+  }
       if (response.statusCode == 200) return json.decode(response.body);
       throw Exception('InnerTube popular: ${response.statusCode}');
     }, operation: 'youtubePopularInnerTube');
