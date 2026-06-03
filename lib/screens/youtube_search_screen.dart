@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/youtube_video.dart';
 import '../services/api_service.dart';
 import '../services/log_service.dart';
+import '../services/youtube_innertube.dart';
 import 'player_screen.dart';
 
 class YouTubeSearchScreen extends StatefulWidget {
@@ -16,20 +17,17 @@ class YouTubeSearchScreen extends StatefulWidget {
 class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     with SingleTickerProviderStateMixin {
   final _searchController = TextEditingController();
-  final _subController = TextEditingController();
   late final TabController _tabController;
   List<YouTubeVideo> _searchResults = const [];
   List<YouTubeVideo> _fresh = const [];
   List<YouTubeVideo> _feed = const [];
   List<YouTubeVideo> _popular = const [];
   List<YouTubeVideo> _shorts = const [];
-  List<Map<String, dynamic>> _subs = const [];
   bool _loadingFresh = false;
   bool _loadingSearch = false;
   bool _loadingFeed = false;
   bool _loadingPopular = false;
   bool _loadingShorts = false;
-  bool _loadingSubs = false;
   bool _starting = false;
   bool _googleImporting = false;
   Timer? _googlePollTimer;
@@ -51,7 +49,6 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     _googlePollTimer?.cancel();
     _tabController.dispose();
     _searchController.dispose();
-    _subController.dispose();
     super.dispose();
   }
 
@@ -65,7 +62,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       setState(() {});
       _ensureFreshLoadedIfPossible();
       if (ApiService.isYouTubeLoggedIn) {
-        await _loadSubs();
+        await _loadFeed();
       }
     }));
     _loadPopular();
@@ -120,8 +117,10 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     setState(() => _loadingFresh = true);
     try {
       if (ApiService.isYouTubeLoggedIn) {
-        final result = await ApiService.getYoutubeHome();
-        final videos = ApiService.parseInnerTubeVideos(result);
+        final videos = await YouTubeInnerTube.fetchVideos(
+          token: ApiService.youtubeToken ?? '',
+          browseId: 'FEwhat_to_watch',
+        );
         if (mounted) setState(() => _fresh = videos);
       } else {
         // Fallback: yt-dlp popular
@@ -160,8 +159,11 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (!await _ensureLogin()) return;
     setState(() => _loadingFeed = true);
     try {
-      final items = await ApiService.youtubeFeed(limit: 40);
-      if (mounted) setState(() => _feed = items);
+      final videos = await YouTubeInnerTube.fetchVideos(
+        token: ApiService.youtubeToken ?? '',
+        browseId: 'FEsubscriptions',
+      );
+      if (mounted) setState(() => _feed = videos);
     } catch (e) {
       if (mounted) _snack('Ошибка ленты: $e');
     } finally {
@@ -186,41 +188,15 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingShorts) return;
     setState(() => _loadingShorts = true);
     try {
-      final result = await ApiService.getYoutubeShorts();
-      final videos = ApiService.parseInnerTubeVideos(result);
+      final videos = await YouTubeInnerTube.fetchVideos(
+        token: ApiService.youtubeToken ?? '',
+        browseId: 'FEshorts',
+      );
       if (mounted) setState(() => _shorts = videos);
     } catch (e) {
       if (mounted) _snack('Ошибка Shorts: $e');
     } finally {
       if (mounted) setState(() => _loadingShorts = false);
-    }
-  }
-
-  Future<void> _loadSubs() async {
-    if (_loadingSubs) return;
-    if (!await _ensureLogin()) return;
-    setState(() => _loadingSubs = true);
-    try {
-      final items = await ApiService.youtubeSubscriptions();
-      if (mounted) setState(() => _subs = items);
-    } catch (e) {
-      if (mounted) _snack('Ошибка подписок: $e');
-    } finally {
-      if (mounted) setState(() => _loadingSubs = false);
-    }
-  }
-
-  Future<void> _addSub() async {
-    if (!await _ensureLogin()) return;
-    final text = _subController.text.trim();
-    if (text.isEmpty) return;
-    try {
-      await ApiService.youtubeAddSubscription(text);
-      _subController.clear();
-      await _loadSubs();
-      _snack('Подписка добавлена');
-    } catch (e) {
-      _snack('Ошибка: $e');
     }
   }
 
@@ -254,7 +230,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
                 await ApiService.saveYoutubeAuth(ytToken, ytUser);
               }
               _snack('Вход выполнен: ${ytUser.isNotEmpty ? ytUser : "YouTube"} | Импортировано подписок: ${status['imported'] ?? 0}');
-              await _loadSubs();
+              await _loadFeed();
               await _loadFresh();
             }
             if (mounted) setState(() => _googleImporting = false);
@@ -300,90 +276,9 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
 
   Future<bool> _ensureLogin() async {
     if (ApiService.isYouTubeLoggedIn) return true;
-    final ok = await _showLoginDialog();
-    return ok == true;
-  }
-
-  Future<bool?> _showLoginDialog() async {
-    final user = TextEditingController();
-    final pass = TextEditingController();
-    var busy = false;
-    Future<void> auth(BuildContext context,
-        void Function(void Function()) setDialogState, bool register) async {
-      setDialogState(() => busy = true);
-      try {
-        if (register) {
-          await ApiService.youtubeRegister(user.text, pass.text);
-        } else {
-          await ApiService.youtubeLogin(user.text, pass.text);
-        }
-        if (context.mounted) Navigator.pop(context, true);
-      } catch (e) {
-        final msg = e.toString().contains('401')
-            ? 'Аккаунт не найден. Нажми «Создать» если впервые.'
-            : e.toString().contains('400') && e.toString().contains('exists')
-                ? 'Аккаунт уже существует. Нажми «Войти».'
-                : 'Ошибка: $e';
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(msg), duration: const Duration(seconds: 5)));
-        }
-      } finally {
-        setDialogState(() => busy = false);
-      }
-    }
-
-    final result = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Аккаунт YouTube-раздела'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                  controller: user,
-                  decoration: const InputDecoration(labelText: 'Логин')),
-              TextField(
-                  controller: pass,
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: 'Пароль')),
-              const SizedBox(height: 12),
-              const Text(
-                'Это локальный аккаунт Плеера Вахтовика, не Google. Первый раз нажми «Создать».',
-                style: TextStyle(fontSize: 12, color: Colors.white70),
-              ),
-              if (busy) const LinearProgressIndicator(color: Colors.orange),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Отмена')),
-            TextButton(
-              onPressed:
-                  busy ? null : () => auth(context, setDialogState, true),
-              child: const Text('Создать'),
-            ),
-            FilledButton(
-              onPressed:
-                  busy ? null : () => auth(context, setDialogState, false),
-              child: const Text('Войти'),
-            ),
-          ],
-        ),
-      ),
-    );
-    user.dispose();
-    pass.dispose();
-    if (mounted) setState(() {});
-    if (result == true) {
-      _ensureFreshLoadedIfPossible();
-      _ensureFeedLoadedIfPossible();
-      unawaited(_loadSubs());
-    }
-    return result;
+    _snack('Нужен вход через Google');
+    _importGoogleSubscriptions();
+    return false;
   }
 
   Future<void> _play(YouTubeVideo video) async {
@@ -462,7 +357,6 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
           ApiService.youtubeLogout();
           _fresh = const [];
           _feed = const [];
-          _subs = const [];
         }),
         icon: const Icon(Icons.logout, color: Colors.orange),
         label: Text(ApiService.youtubeUsername ?? 'Выйти',
@@ -733,82 +627,6 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     );
   }
 
-  Widget _subsTab() {
-    return Column(children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-        child: SizedBox(
-          width: double.infinity,
-          child: Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed:
-                      _googleImporting ? null : _importGoogleSubscriptions,
-                  icon: _googleImporting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.cloud_download),
-                  label: Text(_googleImporting
-                      ? 'Жду вход Google...'
-                      : 'Импортировать подписки из Google'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                onPressed: _showOAuthProductionHelp,
-                tooltip: 'Как вывести OAuth в Production',
-                icon: const Icon(Icons.info_outline, color: Colors.orange),
-              ),
-            ],
-          ),
-        ),
-      ),
-      Padding(
-          padding: const EdgeInsets.all(8),
-          child: Row(children: [
-            Expanded(
-                child: TextField(
-                    controller: _subController,
-                    decoration: const InputDecoration(
-                        hintText: 'channel_id или ссылка /channel/UC...',
-                        border: OutlineInputBorder()))),
-            const SizedBox(width: 8),
-            IconButton(
-                onPressed: _addSub,
-                icon: const Icon(Icons.add, color: Colors.orange)),
-            IconButton(
-                onPressed: _loadSubs,
-                icon: const Icon(Icons.refresh, color: Colors.white)),
-          ])),
-      Expanded(
-          child: _loadingSubs
-              ? const Center(
-                  child: CircularProgressIndicator(color: Colors.orange))
-              : _subs.isEmpty
-                  ? Center(
-                      child: Text(
-                          ApiService.isYouTubeLoggedIn
-                              ? 'Подписок нет. Добавь channel_id.'
-                              : 'Нужен вход.',
-                          style: const TextStyle(color: Colors.white70)))
-                  : ListView.builder(
-                      itemCount: _subs.length,
-                      itemBuilder: (_, i) {
-                        final s = _subs[i];
-                        return ListTile(
-                            leading: const Icon(Icons.subscriptions,
-                                color: Colors.orange),
-                            title: Text((s['channel_name'] ?? s['channel_id'])
-                                .toString()),
-                            subtitle: Text((s['channel_id'] ?? '').toString()),
-                            onTap: _loadFeed);
-                      })),
-    ]);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -834,7 +652,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
             _searchTab(),
             _popularTab(),
             _shortsTab(),
-            _subsTab()
+            _feedTab()
           ],
         ),
         if (_starting)

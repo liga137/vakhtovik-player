@@ -1,5 +1,4 @@
 #EXTM3U
-#EXTVLCOPT:http-referrer=https://CrocoUser.github.io/zabava-project/
 
 #EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Первый%20канал.png" group-title="Федеральные",Первый канал
 https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
@@ -69,21 +68,21 @@ https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabav
 #EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/МУЗ-ТВ.png" group-title="Музыка",МУЗ-ТВ
 https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
 
-#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Крым%2024.png" group-title="Региональные",Крым 24 HD
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Крым%2024.png" group-title="Региональные (Крым/Севастополь)",Крым 24 HD
 https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
-#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/СТВ24.png" group-title="Региональные",СТВ24
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/СТВ24.png" group-title="Региональные (Крым/Севастополь)",СТВ24
 https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
-#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Крым%201.png" group-title="Региональные",Телеканал Крым 1
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Крым%201.png" group-title="Региональные (Крым/Севастополь)",Телеканал Крым 1
 https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
-#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Миллет.png" group-title="Региональные",Миллет
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Миллет.png" group-title="Региональные (Крым/Севастополь)",Миллет
 https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
-#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Первый%20Севастопольский.png" group-title="Региональные",Первый Севастопольский
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Первый%20Севастопольский.png" group-title="Региональные (Крым/Севастополь)",Первый Севастопольский
 https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
-#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/НТС.png" group-title="Региональные",НТС
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/НТС.png" group-title="Региональные (Крым/Севастополь)",НТС
 https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
-#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/СТВ.png" group-title="Региональные",СТВ
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/СТВ.png" group-title="Региональные (Крым/Севастополь)",СТВ
 https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
-#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Евпатория%2024.png" group-title="Региональные",Евпатория 24
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/Евпатория%2024.png" group-title="Региональные (Крым/Севастополь)",Евпатория 24
 https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u
-#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/ТРК-555.png" group-title="Региональные",ТРК-555 HD
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/logo/ТРК-555.png" group-title="Региональные (Крым/Севастополь)",ТРК-555 HD
 https://raw.githubusercontent.com/CrocoUser/zabava-project/refs/heads/main/zabava-ef.m3u

@@ -6,8 +6,8 @@ import 'log_service.dart';
 
 class IptvService {
   static const _embeddedAssets = <String, String>{
-    'belarus': 'assets/iptv/belarus.m3u',
-    'russia': 'assets/iptv/russia.m3u',
+    'belarus': 'assets/iptv/Bel.m3u',
+    'russia': 'assets/iptv/rus.m3u',
   };
 
   static const categoryOrder = [

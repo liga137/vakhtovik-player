@@ -2,7 +2,7 @@
 
 #EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/BY/Belarus%2024.png" group-title="Новости",Беларусь 24
 https://ngtrk.dc.beltelecom.by/ngtrk/smil:belarus24.smil/playlist.m3u8
-#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/BY/ONT.png" group-title="Новости",ОНТ
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/BY/ONT.png" group-title="Новости",ОНТ 
 https://raw.githubusercontent.com/smolnp/IPTVru/refs/heads/gh-pages/IPTVru.m3u
 #EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/RU/NTV.png" group-title="Новости",НТВ-Беларусь
 http://31.148.48.15/NTV/index.m3u8
@@ -11,7 +11,7 @@ http://live2.mediacdn.ru/sr1/tro/playlist_1.5M.m3u8
 #EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/INT/Mir%2024.png" group-title="Новости",МИР 24
 http://hls.mirtv.cdnvideo.ru/mirtv-parampublish/mir24_2500/playlist.m3u8
 
-#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/BY/Belarus%203.png" group-title="Кино и Культура",Беларусь 3
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/BY/Belarus%203.png" group-title="Кино и Культура",Беларусь 3 
 https://raw.githubusercontent.com/smolnp/IPTVru/refs/heads/gh-pages/IPTVru.m3u
 #EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/BY/CTV.png" group-title="Кино и Культура",СТВ
 https://ctv.dc.beltelecom.by/ctv/ctv.stream/playlist.m3u8
@@ -27,5 +27,5 @@ http://hz1.teleport.cc/HLS/HD.m3u8
 http://hz1.teleport.cc/HLS/SD.m3u8
 #EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/BY/First%20Music%20Channel.png" group-title="Музыка",Первый музыкальный HD (замена)
 http://31.148.48.15/Pervii_kanal_HD/index.m3u8
-#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/RU/RU.TV.png" group-title="Музыка",RU.TV Беларусь
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/RU/RU.TV.png" group-title="Музыка",RU.TV Беларусь (альтернативная ссылка)
 https://webcaramba.com/rutv/live_1080/index.m3u8
