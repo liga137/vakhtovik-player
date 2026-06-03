@@ -201,7 +201,6 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   }
 
   Future<void> _importGoogleSubscriptions() async {
-    if (!await _ensureLogin()) return;
     final state = DateTime.now().millisecondsSinceEpoch.toString();
     setState(() => _googleImporting = true);
     try {
