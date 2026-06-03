@@ -13,9 +13,9 @@ class YouTubeInnerTube {
     final payload = {
       "context": {
         "client": {
-          "clientName": "ANDROID",
-          "clientVersion": "17.31.35",
-          "osName": "Android",
+          "clientName": "WEB",
+          "clientVersion": "2.20230728.00.00",
+          "osName": "Windows",
           "hl": "ru",
           "gl": "RU"
         }

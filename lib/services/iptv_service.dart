@@ -202,8 +202,9 @@ class IptvService {
     final out = <IptvChannel>[];
     for (final ch in channels) {
       final url = ch.url.trim();
-      if (url.isEmpty || seen.contains(url)) continue;
-      seen.add(url); out.add(ch);
+      final key = url.toLowerCase().endsWith('.m3u') ? '${ch.name.toLowerCase()}|$url' : url;
+      if (url.isEmpty || seen.contains(key)) continue;
+      seen.add(key); out.add(ch);
     }
     out.sort((a, b) {
       final ca = categoryOrder.indexOf(a.category), cb = categoryOrder.indexOf(b.category);

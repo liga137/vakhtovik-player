@@ -277,7 +277,6 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   Future<bool> _ensureLogin() async {
     if (ApiService.isYouTubeLoggedIn) return true;
     _snack('Нужен вход через Google');
-    _importGoogleSubscriptions();
     return false;
   }
 
@@ -530,7 +529,7 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   Widget _feedTab() {
     if (ApiService.isYouTubeLoggedIn && _feed.isEmpty && !_loadingFeed) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _tabController.index == 1) {
+        if (mounted && _tabController.index == 4) {
           _ensureFeedLoadedIfPossible();
         }
       });
