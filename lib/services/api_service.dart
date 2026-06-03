@@ -254,10 +254,10 @@ class ApiService {
   }
 
   static String youtubeGoogleStartUrl(String state) {
-    final token = _ytToken;
-    if (token == null) throw Exception('Сначала войдите во внутренний аккаунт');
+    // Поскольку мы вырезали локальную регистрацию, передаем заглушку,
+    // так как бэкенд все еще ожидает параметр token для старого роута.
     return Uri.parse('$baseUrl/yt/google/start').replace(
-      queryParameters: {'token': token, 'state': state},
+      queryParameters: {'token': 'oauth_only', 'state': state},
     ).toString();
   }
 
