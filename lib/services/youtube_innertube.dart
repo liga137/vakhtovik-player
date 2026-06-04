@@ -4,7 +4,8 @@ import '../models/youtube_video.dart';
 import 'log_service.dart';
 
 class YouTubeInnerTube {
-  static const String _baseUrl = 'https://www.youtube.com/youtubei/v1/browse';
+  // Используем ключ от Web-клиента, чтобы InnerTube принимал Bearer токен
+  static const String _baseUrl = 'https://www.youtube.com/youtubei/v1/browse?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
 
   static Future<List<YouTubeVideo>> fetchVideos({
     required String token,
@@ -13,9 +14,8 @@ class YouTubeInnerTube {
     final payload = {
       "context": {
         "client": {
-          "clientName": "WEB",
-          "clientVersion": "2.20230728.00.00",
-          "osName": "Windows",
+          "clientName": "TVHTML5",
+          "clientVersion": "7.20230412.00.00",
           "hl": "ru",
           "gl": "RU"
         }
@@ -25,6 +25,8 @@ class YouTubeInnerTube {
 
     final headers = {
       'Content-Type': 'application/json',
+      'Origin': 'https://www.youtube.com',
+      'Referer': 'https://www.youtube.com/',
     };
     if (token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
