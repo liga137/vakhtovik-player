@@ -97,6 +97,15 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     _ytToken = prefs.getString(_ytTokenKey);
     _ytUsername = prefs.getString(_ytUsernameKey);
+    
+    // Миграция: если сохранен старый OAuth токен (не содержит SAPISID), сбрасываем его
+    if (_ytToken != null && !_ytToken!.contains('SAPISID=')) {
+      _ytToken = null;
+      _ytUsername = null;
+      await prefs.remove(_ytTokenKey);
+      await prefs.remove(_ytUsernameKey);
+    }
+    
     _ytStateLoaded = true;
   }
 

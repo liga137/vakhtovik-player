@@ -54,18 +54,18 @@ class YouTubeInnerTube {
       'Referer': 'https://www.youtube.com/',
     };
 
-    if (token.isNotEmpty) {
-      if (token.contains('SAPISID=')) {
-        // Это Cookie
-        headers['Cookie'] = token;
-        final match = RegExp(r'SAPISID=([^;]+)').firstMatch(token);
-        if (match != null) {
-          final sapisid = match.group(1)!;
-          final time = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-          final input = '$time $sapisid https://www.youtube.com';
-          final hash = sha1.convert(utf8.encode(input)).toString();
-          headers['Authorization'] = 'SAPISIDHASH ${time}_$hash';
-        }
+    if (token.isNotEmpty && token.contains('SAPISID=')) {
+      // Это Cookie
+      headers['Cookie'] = token;
+      final match = RegExp(r'\bSAPISID=([^;]+)').firstMatch(token);
+      if (match != null) {
+        final sapisid = match.group(1)!;
+        final time = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        final input = '$time $sapisid https://www.youtube.com';
+        final hash = sha1.convert(utf8.encode(input)).toString();
+        headers['Authorization'] = 'SAPISIDHASH ${time}_$hash';
+      }
+    }
       } else {
         // Это Bearer токен
         headers['Authorization'] = 'Bearer $token';
