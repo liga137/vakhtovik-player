@@ -3,7 +3,7 @@
 #EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/BY/Belarus%2024.png" group-title="Новости",Беларусь 24
 https://ngtrk.dc.beltelecom.by/ngtrk/smil:belarus24.smil/playlist.m3u8
 #EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/BY/ONT.png" group-title="Новости",ОНТ 
-https://raw.githubusercontent.com/smolnp/IPTVru/refs/heads/gh-pages/IPTVru.m3u
+https://stream.dc.beltelecom.by/ont/ont/playlist.m3u8
 #EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/RU/NTV.png" group-title="Новости",НТВ-Беларусь
 http://31.148.48.15/NTV/index.m3u8
 #EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/iptv-org/iptv/master/logos/BY/Belarus%20Russia.png" group-title="Новости",БелРос / Беларусь-Россия

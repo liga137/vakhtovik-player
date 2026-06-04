@@ -7,6 +7,8 @@ import 'log_service.dart';
 class YouTubeInnerTube {
   static const String _baseUrl = 'https://www.youtube.com/youtubei/v1/browse?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
 
+  static const String _searchUrl = 'https://www.youtube.com/youtubei/v1/search?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
+
   static Future<List<YouTubeVideo>> fetchVideos({
     required String token,
     required String browseId,
@@ -23,6 +25,29 @@ class YouTubeInnerTube {
       "browseId": browseId
     };
 
+    return _sendRequest(token, payload, _baseUrl);
+  }
+
+  static Future<List<YouTubeVideo>> searchVideos({
+    required String token,
+    required String query,
+  }) async {
+    final payload = {
+      "context": {
+        "client": {
+          "clientName": "WEB",
+          "clientVersion": "2.20230728.00.00",
+          "hl": "ru",
+          "gl": "RU"
+        }
+      },
+      "query": query
+    };
+
+    return _sendRequest(token, payload, _searchUrl);
+  }
+
+  static Future<List<YouTubeVideo>> _sendRequest(String token, Map<String, dynamic> payload, String url) async {
     final headers = {
       'Content-Type': 'application/json',
       'Origin': 'https://www.youtube.com',
@@ -42,14 +67,14 @@ class YouTubeInnerTube {
           headers['Authorization'] = 'SAPISIDHASH ${time}_$hash';
         }
       } else {
-        // Это Bearer токен (на случай, если когда-то вернемся к OAuth)
+        // Это Bearer токен
         headers['Authorization'] = 'Bearer $token';
       }
     }
 
     try {
       final response = await http.post(
-        Uri.parse(_baseUrl),
+        Uri.parse(url),
         headers: headers,
         body: jsonEncode(payload),
       );
@@ -61,7 +86,7 @@ class YouTubeInnerTube {
       final data = jsonDecode(response.body);
       return _extractVideos(data);
     } catch (e) {
-      LogService.error(LogService.youtube, 'InnerTube error for $browseId', e);
+      LogService.error(LogService.youtube, 'InnerTube error for payload $payload', e);
       rethrow;
     }
   }

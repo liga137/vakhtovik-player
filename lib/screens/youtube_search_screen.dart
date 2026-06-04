@@ -189,11 +189,13 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingShorts) return;
     setState(() => _loadingShorts = true);
     try {
-      final videos = await YouTubeInnerTube.fetchVideos(
+      final videos = await YouTubeInnerTube.searchVideos(
         token: ApiService.youtubeToken ?? '',
-        browseId: 'FEshorts',
+        query: 'Shorts',
       );
-      if (mounted) setState(() => _shorts = videos);
+      // Оставляем только те, что похожи на shorts (< 60 сек)
+      final filtered = videos.where((v) => v.duration > 0 && v.duration <= 60).toList();
+      if (mounted) setState(() => _shorts = filtered.isNotEmpty ? filtered : videos);
     } catch (e) {
       if (mounted) _snack('Ошибка Shorts: $e');
     } finally {
