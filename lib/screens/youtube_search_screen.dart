@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/log_service.dart';
 import '../services/youtube_innertube.dart';
 import 'player_screen.dart';
+import 'youtube_login_screen.dart';
 
 class YouTubeSearchScreen extends StatefulWidget {
   const YouTubeSearchScreen({super.key});
@@ -201,51 +202,16 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   }
 
   Future<void> _importGoogleSubscriptions() async {
-    final state = DateTime.now().millisecondsSinceEpoch.toString();
-    setState(() => _googleImporting = true);
-    try {
-      final url = ApiService.youtubeGoogleStartUrl(state);
-      final ok =
-          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-      if (!ok) throw Exception('Не удалось открыть браузер');
+    final result = await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const YouTubeLoginScreen(),
+    ));
 
-      _googlePollTimer?.cancel();
-      var ticks = 0;
-      _googlePollTimer =
-          Timer.periodic(const Duration(seconds: 3), (timer) async {
-        ticks++;
-        try {
-          final status = await ApiService.youtubeGoogleStatus(state);
-          if (status['done'] == true) {
-            timer.cancel();
-            final err = (status['error'] ?? '').toString();
-            if (err.isNotEmpty) {
-              _snack('Ошибка импорта: $err');
-            } else {
-              // Сохраняем Google OAuth как основной вход
-              final ytToken = (status['token'] ?? '').toString();
-              final ytUser = (status['username'] ?? '').toString();
-              if (ytToken.isNotEmpty) {
-                await ApiService.saveYoutubeAuth(ytToken, ytUser);
-              }
-              _snack('Вход выполнен: ${ytUser.isNotEmpty ? ytUser : "YouTube"} | Импортировано подписок: ${status['imported'] ?? 0}');
-              await _loadFeed();
-              await _loadFresh();
-            }
-            if (mounted) setState(() => _googleImporting = false);
-          }
-          if (ticks > 120) {
-            timer.cancel();
-            if (mounted) setState(() => _googleImporting = false);
-            _snack(
-                'Импорт не завершён. Проверь OAuth Production в Google Console.');
-          }
-        } catch (_) {}
-      });
-    } catch (e) {
-      if (mounted) setState(() => _googleImporting = false);
-      _snack(
-          'Ошибка: $e. Если видишь "app not verified", переведи OAuth в Production.');
+    if (result == true) {
+      // Успешный вход
+      _snack('Вход выполнен: ${ApiService.youtubeUsername ?? "YouTube"}');
+      await _loadFeed();
+      await _loadFresh();
+      await _loadShorts();
     }
   }
 

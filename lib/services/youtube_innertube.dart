@@ -1,10 +1,10 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import '../models/youtube_video.dart';
 import 'log_service.dart';
 
 class YouTubeInnerTube {
-  // Используем ключ от Web-клиента, чтобы InnerTube принимал Bearer токен
   static const String _baseUrl = 'https://www.youtube.com/youtubei/v1/browse?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
 
   static Future<List<YouTubeVideo>> fetchVideos({
@@ -14,8 +14,8 @@ class YouTubeInnerTube {
     final payload = {
       "context": {
         "client": {
-          "clientName": "TVHTML5",
-          "clientVersion": "7.20230412.00.00",
+          "clientName": "WEB",
+          "clientVersion": "2.20230728.00.00",
           "hl": "ru",
           "gl": "RU"
         }
@@ -28,8 +28,23 @@ class YouTubeInnerTube {
       'Origin': 'https://www.youtube.com',
       'Referer': 'https://www.youtube.com/',
     };
+
     if (token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
+      if (token.contains('SAPISID=')) {
+        // Это Cookie
+        headers['Cookie'] = token;
+        final match = RegExp(r'SAPISID=([^;]+)').firstMatch(token);
+        if (match != null) {
+          final sapisid = match.group(1)!;
+          final time = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+          final input = '$time $sapisid https://www.youtube.com';
+          final hash = sha1.convert(utf8.encode(input)).toString();
+          headers['Authorization'] = 'SAPISIDHASH ${time}_$hash';
+        }
+      } else {
+        // Это Bearer токен (на случай, если когда-то вернемся к OAuth)
+        headers['Authorization'] = 'Bearer $token';
+      }
     }
 
     try {
