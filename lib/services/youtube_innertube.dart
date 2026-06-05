@@ -71,7 +71,8 @@ class YouTubeInnerTube {
         headers['Cookie'] = token;
         final match = RegExp(r'\bSAPISID=([^;]+)').firstMatch(token);
         if (match != null) {
-          final sapisid = match.group(1)!;
+          String sapisid = match.group(1)!;
+          sapisid = sapisid.replaceAll('"', '').trim();
           final time = DateTime.now().millisecondsSinceEpoch ~/ 1000;
           final input = '$time $sapisid https://www.youtube.com';
           final hash = sha1.convert(utf8.encode(input)).toString();

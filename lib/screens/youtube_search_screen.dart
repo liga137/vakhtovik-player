@@ -122,7 +122,12 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
           token: ApiService.youtubeToken ?? '',
           browseId: 'FEwhat_to_watch',
         );
-        if (mounted) setState(() => _fresh = videos);
+        if (videos.isEmpty) {
+          ApiService.youtubeLogout();
+          if (mounted) _snack('Сессия устарела. Войдите заново.');
+        } else {
+          if (mounted) setState(() => _fresh = videos);
+        }
       } else {
         // Fallback: yt-dlp popular
         final items = await ApiService.youtubePopular(limit: 24);
@@ -164,7 +169,12 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
         token: ApiService.youtubeToken ?? '',
         browseId: 'FEsubscriptions',
       );
-      if (mounted) setState(() => _feed = videos);
+      if (videos.isEmpty) {
+        ApiService.youtubeLogout();
+        if (mounted) _snack('Сессия устарела. Войдите заново.');
+      } else {
+        if (mounted) setState(() => _feed = videos);
+      }
     } catch (e) {
       if (mounted) _snack('Ошибка ленты: $e');
     } finally {

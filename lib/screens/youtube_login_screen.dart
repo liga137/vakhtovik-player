@@ -79,7 +79,8 @@ class _YouTubeLoginScreenState extends State<YouTubeLoginScreen> {
       bool hasSapisid = false;
       
       for (var cookie in cookies) {
-        cookieString += '${cookie.name}=${cookie.value}; ';
+        final String rawValue = Uri.decodeComponent(cookie.value.toString());
+        cookieString += '${cookie.name}=$rawValue; ';
         if (cookie.name == 'SAPISID') {
           hasSapisid = true;
         }

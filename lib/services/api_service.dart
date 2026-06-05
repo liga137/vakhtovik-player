@@ -98,8 +98,8 @@ class ApiService {
     _ytToken = prefs.getString(_ytTokenKey);
     _ytUsername = prefs.getString(_ytUsernameKey);
     
-    // Миграция: если сохранен старый OAuth токен (не содержит SAPISID), сбрасываем его
-    if (_ytToken != null && !_ytToken!.contains('SAPISID=')) {
+    // Миграция: если сохранен старый OAuth токен или токен без декодированных % (url-encoded), сбрасываем его
+    if (_ytToken != null && (!_ytToken!.contains('SAPISID=') || _ytToken!.contains('%2F') || _ytToken!.contains('%3D'))) {
       _ytToken = null;
       _ytUsername = null;
       await prefs.remove(_ytTokenKey);
