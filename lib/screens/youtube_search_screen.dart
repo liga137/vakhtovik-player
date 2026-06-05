@@ -170,13 +170,24 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
         browseId: 'FEsubscriptions',
       );
       if (videos.isEmpty) {
-        ApiService.youtubeLogout();
-        if (mounted) _snack('Сессия устарела. Войдите заново.');
+        // Пустой список — возможно просто нет подписок или временная ошибка.
+        // НЕ делаем logout автоматически, чтобы не сбрасывать сессию зря.
+        if (mounted) _snack('Лента пуста — возможно, нет подписок или ошибка сервера.');
       } else {
         if (mounted) setState(() => _feed = videos);
       }
     } catch (e) {
-      if (mounted) _snack('Ошибка ленты: $e');
+      final msg = e.toString();
+      // Разлогиниваем только при явных auth-ошибках (401, 403)
+      if (msg.contains('401') || msg.contains('403')) {
+        ApiService.youtubeLogout();
+        if (mounted) {
+          setState(() => _feed = const []);
+          _snack('Сессия истекла. Войдите заново.');
+        }
+      } else {
+        if (mounted) _snack('Ошибка ленты: ${msg.split(":").first}');
+      }
     } finally {
       if (mounted) setState(() => _loadingFeed = false);
     }
@@ -199,15 +210,14 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingShorts) return;
     setState(() => _loadingShorts = true);
     try {
-      final videos = await YouTubeInnerTube.fetchVideos(
+      // Используем специализированный метод с двойным fallback
+      final videos = await YouTubeInnerTube.fetchShorts(
         token: ApiService.youtubeToken ?? '',
-        browseId: 'FEwhat_to_watch',
       );
-      // Извлекаем только те, что похожи на shorts (< 60 сек) из личной ленты
-      final filtered = videos.where((v) => v.duration > 0 && v.duration <= 60).toList();
-      if (mounted) setState(() => _shorts = filtered.isNotEmpty ? filtered : videos);
+      if (mounted) setState(() => _shorts = videos);
     } catch (e) {
-      if (mounted) _snack('Ошибка Shorts: $e');
+      LogService.error(LogService.youtube, 'Ошибка загрузки Shorts', e);
+      if (mounted) _snack('Shorts: ${e.toString().split(":").first}');
     } finally {
       if (mounted) setState(() => _loadingShorts = false);
     }
@@ -480,26 +490,56 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   }
 
   Widget _freshTab() {
+    final isLoggedIn = ApiService.isYouTubeLoggedIn;
+    final headerText = isLoggedIn
+        ? 'Персональная лента: ${ApiService.youtubeUsername ?? "YouTube"}'
+        : 'YouTube — популярные видео';
     return Column(children: [
       Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
           child: Row(children: [
-            const Expanded(
-                child: Text('Главная страница YouTube',
-                    style: TextStyle(color: Colors.white70))),
-            FilledButton.icon(
-                onPressed: _loadFresh,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Обновить')),
+            Expanded(
+                child: Text(headerText,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    overflow: TextOverflow.ellipsis)),
+            if (_loadingFresh)
+              const Padding(
+                  padding: EdgeInsets.only(right: 8),
+                  child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.orange))),
+            TextButton.icon(
+                onPressed: _loadingFresh ? null : _loadFresh,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Обновить'),
+                style: TextButton.styleFrom(foregroundColor: Colors.orange)),
           ])),
       Expanded(
           child: _videoGrid(_fresh,
-              loading: _loadingFresh,
-              empty: const Center(
-                  child: Text(
-                      'Пока пусто. Открой несколько видео, и здесь появятся новинки.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white70))))),
+              loading: _loadingFresh && _fresh.isEmpty,
+              empty: Center(
+                  child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.home_outlined, size: 48, color: Colors.white24),
+                  const SizedBox(height: 12),
+                  Text(
+                    isLoggedIn
+                        ? 'Загрузка персональной ленты...\nПоробуйте обновить.'
+                        : 'Войдите через Google для персональной ленты\nили подождите загрузки популярных.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white54, fontSize: 13),
+                  ),
+                  if (!isLoggedIn) ...[const SizedBox(height: 16), FilledButton.icon(
+                    onPressed: _importGoogleSubscriptions,
+                    icon: const Icon(Icons.login, size: 18),
+                    label: const Text('Войти через Google'),
+                    style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                  )]
+                ],
+              )))),
     ]);
   }
 
@@ -513,28 +553,58 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     }
     return Column(children: [
       Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
           child: Row(children: [
             Expanded(
                 child: Text(
                     ApiService.isYouTubeLoggedIn
-                        ? 'Лента подписок'
-                        : 'Войди, чтобы видеть свою ленту',
-                    style: const TextStyle(color: Colors.white70))),
-            FilledButton.icon(
-                onPressed: _loadFeed,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Обновить')),
+                        ? 'Подписки: ${ApiService.youtubeUsername ?? "YouTube"}'
+                        : 'Подписки (нужен вход)',
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    overflow: TextOverflow.ellipsis)),
+            if (_loadingFeed)
+              const Padding(
+                  padding: EdgeInsets.only(right: 8),
+                  child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.orange))),
+            TextButton.icon(
+                onPressed: _loadingFeed ? null : _loadFeed,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Обновить'),
+                style: TextButton.styleFrom(foregroundColor: Colors.orange)),
           ])),
       Expanded(
           child: _videoGrid(_feed,
-              loading: _loadingFeed,
+              loading: _loadingFeed && _feed.isEmpty,
               empty: Center(
-                  child: Text(
+                  child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
                       ApiService.isYouTubeLoggedIn
-                          ? 'Нет видео. Добавь подписки.'
-                          : 'Нужен вход.',
-                      style: const TextStyle(color: Colors.white70))))),
+                          ? Icons.subscriptions_outlined
+                          : Icons.login,
+                      size: 48,
+                      color: Colors.white24),
+                  const SizedBox(height: 12),
+                  Text(
+                    ApiService.isYouTubeLoggedIn
+                        ? 'Нет видео в ленте подписок.\nПроверьте подписки на YouTube.'
+                        : 'Войдите через Google,\nчтобы видеть свои подписки.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white54, fontSize: 13),
+                  ),
+                  if (!ApiService.isYouTubeLoggedIn) ...[const SizedBox(height: 16), FilledButton.icon(
+                    onPressed: _importGoogleSubscriptions,
+                    icon: const Icon(Icons.login, size: 18),
+                    label: const Text('Войти через Google'),
+                    style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                  )]
+                ],
+              )))),
     ]);
   }
 
@@ -575,31 +645,168 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
           child: Row(
             children: [
+              const Icon(Icons.smart_display, color: Colors.redAccent, size: 20),
+              const SizedBox(width: 6),
               const Expanded(
                 child: Text('YouTube Shorts',
-                    style: TextStyle(color: Colors.white70)),
+                    style: TextStyle(color: Colors.white70, fontSize: 13)),
               ),
-              FilledButton.icon(
-                onPressed: _loadShorts,
-                icon: const Icon(Icons.refresh),
+              if (_loadingShorts)
+                const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.orange))),
+              TextButton.icon(
+                onPressed: _loadingShorts ? null : _loadShorts,
+                icon: const Icon(Icons.refresh, size: 18),
                 label: const Text('Обновить'),
+                style: TextButton.styleFrom(foregroundColor: Colors.orange),
               ),
             ],
           ),
         ),
         Expanded(
-          child: _videoGrid(
-            _shorts,
-            loading: _loadingShorts,
-            empty: const Center(
-                child: Text('Shorts пока пусто',
-                    style: TextStyle(color: Colors.white70))),
-          ),
+          child: _shorts.isEmpty && !_loadingShorts
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.smart_display_outlined,
+                          size: 48, color: Colors.white24),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Shorts пока не загружены.\nНажмите «Обновить».',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white54, fontSize: 13),
+                      ),
+                      const SizedBox(height: 16),
+                      TextButton.icon(
+                        onPressed: _loadShorts,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Загрузить Shorts'),
+                        style: TextButton.styleFrom(
+                            foregroundColor: Colors.orange),
+                      ),
+                    ],
+                  ),
+                )
+              : _shortsGrid(),
         ),
       ],
+    );
+  }
+
+  Widget _shortsGrid() {
+    if (_loadingShorts && _shorts.isEmpty) {
+      return const Center(
+          child: CircularProgressIndicator(color: Colors.orange));
+    }
+    return LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      // Shorts — вертикальный формат 9:16
+      var crossAxisCount = 2;
+      if (width >= 900) crossAxisCount = 4;
+      else if (width >= 600) crossAxisCount = 3;
+
+      return GridView.builder(
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 24),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          childAspectRatio: 9 / 16,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+        ),
+        itemCount: _shorts.length,
+        itemBuilder: (_, i) => _shortCard(_shorts[i]),
+      );
+    });
+  }
+
+  Widget _shortCard(YouTubeVideo v) {
+    final dur = _formatDuration(v.duration);
+    return InkWell(
+      onTap: () => _play(v),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+            color: const Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white10)),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Превью
+            v.thumbnail.isEmpty
+                ? Container(
+                    color: Colors.black26,
+                    child: const Icon(Icons.play_circle,
+                        color: Colors.orange, size: 40))
+                : Image.network(v.thumbnail,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        Container(color: Colors.black38)),
+            // Градиент снизу
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.black87],
+                  ),
+                ),
+                padding: const EdgeInsets.fromLTRB(8, 24, 8, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(v.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600)),
+                    if (dur.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(dur,
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 11)),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            // Shorts-значок
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(4)),
+                child: const Text('SHORT',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

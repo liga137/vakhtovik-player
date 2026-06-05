@@ -11,6 +11,8 @@ class YouTubeInnerTube {
   static const String _searchUrl =
       'https://www.youtube.com/youtubei/v1/search?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
 
+  static const int _maxRetries = 2;
+
   static Future<List<YouTubeVideo>> fetchVideos({
     required String token,
     required String browseId,
@@ -52,6 +54,53 @@ class YouTubeInnerTube {
     return _sendRequest(token, payload, _searchUrl);
   }
 
+  /// Загружает Shorts: сначала пробует MWEB browse FEshorts,
+  /// при ошибке fallback на поиск по запросу «#shorts» с фильтрацией по длительности.
+  static Future<List<YouTubeVideo>> fetchShorts({required String token}) async {
+    // Попытка 1: MWEB client + FEshorts browseId
+    try {
+      final payload = {
+        "context": {
+          "client": {
+            "clientName": "MWEB",
+            "clientVersion": "2.20230727.01.00",
+            "hl": "ru",
+            "gl": "RU"
+          }
+        },
+        "browseId": "FEshorts"
+      };
+      final videos = await _sendRequest(token, payload, _baseUrl);
+      if (videos.isNotEmpty) return videos;
+    } catch (e) {
+      LogService.error(LogService.youtube, 'fetchShorts MWEB failed, trying search fallback', e);
+    }
+
+    // Попытка 2: search по запросу «shorts» + фильтр по длительности
+    try {
+      final payload = {
+        "context": {
+          "client": {
+            "clientName": "WEB",
+            "clientVersion": "2.20230728.00.00",
+            "hl": "ru",
+            "gl": "RU"
+          }
+        },
+        "query": "shorts",
+        "params": "EgIQAQ%3D%3D" // фильтр: тип видео = видео
+      };
+      final all = await _sendRequest(token, payload, _searchUrl);
+      // Оставляем только до 60 сек, если duration известен; иначе берём все
+      final filtered = all.where((v) => v.duration > 0 && v.duration <= 60).toList();
+      return filtered.isNotEmpty ? filtered : all.take(20).toList();
+    } catch (e) {
+      LogService.error(LogService.youtube, 'fetchShorts search fallback failed', e);
+    }
+
+    return [];
+  }
+
   static Future<List<YouTubeVideo>> _sendRequest(
       String token, Map<String, dynamic> payload, String url) async {
     final headers = {
@@ -84,25 +133,42 @@ class YouTubeInnerTube {
       }
     }
 
-    try {
-      final response = await http.post(
-        Uri.parse(url),
-        headers: headers,
-        body: jsonEncode(payload),
-      );
+    Object? lastError;
+    for (int attempt = 0; attempt <= _maxRetries; attempt++) {
+      try {
+        final response = await http
+            .post(
+              Uri.parse(url),
+              headers: headers,
+              body: jsonEncode(payload),
+            )
+            .timeout(const Duration(seconds: 30));
 
-      if (response.statusCode != 200) {
-        throw Exception(
-            'InnerTube error: ${response.statusCode} - ${response.body}');
+        if (response.statusCode == 429) {
+          // Rate-limit — ждём дольше
+          await Future<void>.delayed(Duration(seconds: 5 * (attempt + 1)));
+          continue;
+        }
+
+        if (response.statusCode != 200) {
+          throw Exception(
+              'InnerTube ${response.statusCode}: ${response.body.substring(0, response.body.length.clamp(0, 200))}');
+        }
+
+        final data = jsonDecode(response.body);
+        return _extractVideos(data);
+      } catch (e) {
+        lastError = e;
+        if (attempt < _maxRetries) {
+          await Future<void>.delayed(Duration(seconds: 3 * (attempt + 1)));
+          continue;
+        }
+        LogService.error(
+            LogService.youtube, 'InnerTube error for $url after ${attempt + 1} attempts', e);
+        rethrow;
       }
-
-      final data = jsonDecode(response.body);
-      return _extractVideos(data);
-    } catch (e) {
-      LogService.error(
-          LogService.youtube, 'InnerTube error for payload $payload', e);
-      rethrow;
     }
+    throw lastError ?? Exception('InnerTube: unexpected exit from retry loop');
   }
 
   static List<YouTubeVideo> _extractVideos(Map<String, dynamic> data) {
