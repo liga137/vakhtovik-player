@@ -14,12 +14,15 @@ class YouTubeInnerTube {
   static Future<List<YouTubeVideo>> fetchVideos({
     required String token,
     required String browseId,
+    String? clientOverride,
   }) async {
     final payload = {
       "context": {
         "client": {
-          "clientName": "WEB",
-          "clientVersion": "2.20230728.00.00",
+          "clientName": clientOverride ?? "WEB",
+          "clientVersion": clientOverride == "TVHTML5"
+              ? "7.20230412.00.00"
+              : "2.20230728.00.00",
           "hl": "ru",
           "gl": "RU"
         }
@@ -55,6 +58,11 @@ class YouTubeInnerTube {
       'Content-Type': 'application/json',
       'Origin': 'https://www.youtube.com',
       'Referer': 'https://www.youtube.com/',
+      'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+      'X-Youtube-Client-Name': '1',
+      'X-Youtube-Client-Version': '2.20230728.00.00',
     };
 
     if (token.isNotEmpty) {
