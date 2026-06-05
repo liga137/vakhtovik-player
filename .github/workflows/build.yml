@@ -1,142 +1,193 @@
-name: Build Flutter Apps
+name: Build VakhtovikPlayer
 
 on:
   push:
     branches: [main, master]
+    tags: ['v*']
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
+  # ─────────────────────────────────────────────────────────
+  # Сборка под Windows (EXE / MSIX)
+  # ─────────────────────────────────────────────────────────
   build-windows:
+    name: Windows Build
     runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
+    defaults:
+      run:
+        working-directory: client/flutter_app
 
-      - name: Setup Flutter 3.24.3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.3'
-          channel: 'stable'
+          flutter-version: '3.22.x'
+          channel: stable
           cache: true
 
-      - name: Enable Windows Desktop
-        run: flutter config --enable-windows-desktop
-
-      - name: Install Flutter dependencies
+      - name: Flutter pub get
         run: flutter pub get
 
-      - name: Download sing-box.exe
-        shell: pwsh
-        run: |
-          $url = "https://github.com/SagerNet/sing-box/releases/download/v1.13.12/sing-box-1.13.12-windows-amd64.zip"
-          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\sing-box.zip"
-          Expand-Archive -Path "$env:RUNNER_TEMP\sing-box.zip" -DestinationPath "$env:RUNNER_TEMP\sing-box" -Force
-          $extracted = Get-ChildItem "$env:RUNNER_TEMP\sing-box" -Directory | Select-Object -First 1
-          Copy-Item "$($extracted.FullName)\sing-box.exe" windows\ -Force
-          Copy-Item "$($extracted.FullName)\libcronet.dll" windows\ -Force
+      - name: Flutter analyze (non-fatal)
+        run: flutter analyze --no-fatal-infos || true
 
       - name: Build Windows Release
         run: flutter build windows --release
 
-      - name: Compress Windows Build
-        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath Vakhtovik-Player-Windows.zip
+      # Скачиваем sing-box.exe (VPN) для включения в сборку
+      - name: Download sing-box for Windows
+        shell: pwsh
+        run: |
+          $version = "1.13.12"
+          $url = "https://github.com/SagerNet/sing-box/releases/download/v$version/sing-box-$version-windows-amd64.zip"
+          Invoke-WebRequest -Uri $url -OutFile sing-box.zip
+          Expand-Archive sing-box.zip -DestinationPath sing-box-extracted -Force
+          $exe = Get-ChildItem -Recurse sing-box-extracted -Filter "sing-box.exe" | Select-Object -First 1
+          if ($exe) {
+            Copy-Item $exe.FullName "build\windows\x64\runner\Release\sing-box.exe"
+            Write-Host "sing-box.exe copied to release dir"
+          } else {
+            Write-Warning "sing-box.exe not found in archive"
+          }
 
-      - name: Upload Windows
+      - name: Package Windows artifacts
+        shell: pwsh
+        run: |
+          $version = "0.2.22"
+          $relDir = "build\windows\x64\runner\Release"
+          Compress-Archive -Path "$relDir\*" -DestinationPath "VakhtovikPlayer-v$version-windows.zip" -Force
+          Write-Host "Packed: VakhtovikPlayer-v$version-windows.zip"
+
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Vakhtovik-Player-Windows
-          path: Vakhtovik-Player-Windows.zip
+          name: VakhtovikPlayer-windows
+          path: client/flutter_app/VakhtovikPlayer-v*-windows.zip
           retention-days: 30
 
+  # ─────────────────────────────────────────────────────────
+  # Сборка под Android (APK)
+  # ─────────────────────────────────────────────────────────
   build-android:
+    name: Android Build
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client/flutter_app
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Setup Flutter 3.24.3
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.3'
-          channel: 'stable'
+          flutter-version: '3.22.x'
+          channel: stable
           cache: true
 
-      - name: Install Flutter dependencies
+      - name: Flutter pub get
         run: flutter pub get
 
-      - name: Extract libbox from SFA APK
+      - name: Flutter analyze (non-fatal)
+        run: flutter analyze --no-fatal-infos || true
+
+      # Подпись APK (опционально, если секреты настроены)
+      - name: Setup keystore (if configured)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          wget -q https://github.com/SagerNet/sing-box/releases/download/v1.13.12/SFA-1.13.12-arm64-v8a.apk
-          unzip -q SFA-1.13.12-arm64-v8a.apk -d sfa-arm64
-          mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          cp sfa-arm64/lib/arm64-v8a/libbox.so android/app/src/main/jniLibs/arm64-v8a/
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/vakhtovik.keystore
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storeFile=vakhtovik.keystore
+          EOF
 
-      - name: Build release APK
-        run: flutter build apk --release
+      - name: Build Android APK (debug, unsigned)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
+        run: flutter build apk --release --split-per-abi
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Vakhtovik-Player-Android
-          path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 30
+      - name: Build Android APK (signed)
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: flutter build apk --release --split-per-abi
 
-  release:
-    runs-on: ubuntu-latest
-    needs: [build-windows]
-    if: github.ref == 'refs/heads/master'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Read app version
-        id: version
+      - name: Rename APKs
         shell: bash
         run: |
-          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          VERSION="0.2.22"
+          mkdir -p apk_out
+          for f in build/app/outputs/flutter-apk/*.apk; do
+            base=$(basename "$f" .apk)
+            cp "$f" "apk_out/VakhtovikPlayer-v${VERSION}-${base}.apk"
+          done
+          ls -la apk_out/
 
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: VakhtovikPlayer-android
+          path: client/flutter_app/apk_out/*.apk
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────
+  # Создание GitHub Release (только при пуше тега v*)
+  # ─────────────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: [build-windows, build-android]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
-          name: Vakhtovik-Player-Windows
-          path: release-assets/windows
+          name: VakhtovikPlayer-windows
+          path: release-assets/
 
       - name: Download Android artifact
         uses: actions/download-artifact@v4
         with:
-          name: Vakhtovik-Player-Android
-          path: release-assets/android
+          name: VakhtovikPlayer-android
+          path: release-assets/
 
-      - name: Rename APK
-        shell: bash
-        run: mv release-assets/android/app-release.apk release-assets/android/Vakhtovik-Player-Android.apk
+      - name: List release assets
+        run: ls -la release-assets/
 
-      - name: Publish GitHub Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: Vakhtovik Player v${{ steps.version.outputs.version }}
-          target_commitish: ${{ github.sha }}
-          make_latest: true
-          overwrite_files: true
+          name: "VakhtovikPlayer ${{ github.ref_name }}"
           body: |
-            Автоматическая сборка Плеера Вахтовика.
+            ## VakhtovikPlayer ${{ github.ref_name }}
 
-            v${{ steps.version.outputs.version }}:
-            - YouTube «Главная» через InnerTube API
-            - IPTV: Беларусь + Россия, кэш-first
-            - WebView: исправлены циклические перезагрузки
-            - Исправлены YouTube search/feed/popular
-          files: |
-            release-assets/windows/Vakhtovik-Player-Windows.zip
-            release-assets/android/Vakhtovik-Player-Android.apk
+            ### Платформы
+            - **Windows** (x64): исполняемый файл + sing-box VPN
+            - **Android**: APK по архитектурам (arm64-v8a, armeabi-v7a, x86_64)
+
+            ### Установка
+            **Windows**: распакуй zip, запусти `vakhtovik_player.exe` от имени администратора.
+            **Android**: установи нужный APK по архитектуре устройства.
+
+            ### Изменения v0.2.22
+            - Улучшен вывод Главной страницы YouTube: показывается имя пользователя, inline-индикатор загрузки
+            - Shorts: отдельный специализированный endpoint (MWEB FEshorts + fallback), карточки в формате 9:16 с gradient-оверлеем
+            - Подписки: logout только при явной 401/403 ошибке, не при пустом ответе; кнопка входа прямо в теле вкладки
+            - InnerTube: retry-логика (2 попытки) и обработка 429 rate-limit
+          files: release-assets/**
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
