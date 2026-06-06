@@ -4,7 +4,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/youtube_video.dart';
 import '../services/api_service.dart';
 import '../services/log_service.dart';
-import '../services/youtube_innertube.dart';
 import 'player_screen.dart';
 import 'youtube_login_screen.dart';
 
@@ -117,29 +116,24 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingFresh) return;
     setState(() => _loadingFresh = true);
     try {
-      if (ApiService.isYouTubeLoggedIn) {
-        final videos = await YouTubeInnerTube.fetchVideos(
-          token: ApiService.youtubeToken ?? '',
-          browseId: 'FEwhat_to_watch',
-        );
-        if (videos.isEmpty) {
-          ApiService.youtubeLogout();
-          if (mounted) _snack('Сессия устарела. Войдите заново.');
-        } else {
-          if (mounted) setState(() => _fresh = videos);
-        }
+      // Серверный InnerTube: с токеном — персональная, без — популярное
+      final videos = await ApiService.youtubeHome(limit: 24);
+      if (videos.isEmpty && ApiService.isYouTubeLoggedIn) {
+        // Пустой ответ при авторизации — не разлогиниваем, просто сообщаем
+        if (mounted) _snack('Главная: пустой ответ сервера. Попробуйте позже.');
       } else {
-        // Fallback: yt-dlp popular
-        final items = await ApiService.youtubePopular(limit: 24);
-        if (mounted) setState(() => _fresh = items);
+        if (mounted) setState(() => _fresh = videos);
       }
     } catch (e) {
+      final msg = e.toString();
       LogService.error(LogService.youtube, 'Ошибка Главной', e);
-      // Fallback
-      try {
-        final items = await ApiService.youtubePopular(limit: 24);
-        if (mounted) setState(() => _fresh = items);
-      } catch (_) {}
+      // Fallback: популярное через yt-dlp
+      if (!msg.contains('AUTH')) {
+        try {
+          final items = await ApiService.youtubePopular(limit: 24);
+          if (mounted) setState(() => _fresh = items);
+        } catch (_) {}
+      }
     } finally {
       if (mounted) setState(() => _loadingFresh = false);
     }
@@ -165,28 +159,25 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (!await _ensureLogin()) return;
     setState(() => _loadingFeed = true);
     try {
-      final videos = await YouTubeInnerTube.fetchVideos(
-        token: ApiService.youtubeToken ?? '',
-        browseId: 'FEsubscriptions',
-      );
+      // Серверный InnerTube для подписок
+      final videos = await ApiService.youtubeSubscriptions(limit: 30);
       if (videos.isEmpty) {
-        // Пустой список — возможно просто нет подписок или временная ошибка.
-        // НЕ делаем logout автоматически, чтобы не сбрасывать сессию зря.
         if (mounted) _snack('Лента пуста — возможно, нет подписок или ошибка сервера.');
       } else {
         if (mounted) setState(() => _feed = videos);
       }
     } catch (e) {
       final msg = e.toString();
-      // Разлогиниваем только при явных auth-ошибках (401, 403)
-      if (msg.contains('401') || msg.contains('403')) {
+      if (msg.contains('AUTH_ERROR') || msg.contains('401')) {
         ApiService.youtubeLogout();
         if (mounted) {
           setState(() => _feed = const []);
           _snack('Сессия истекла. Войдите заново.');
         }
+      } else if (msg.contains('AUTH_REQUIRED')) {
+        if (mounted) _snack('Нужен вход через Google.');
       } else {
-        if (mounted) _snack('Ошибка ленты: ${msg.split(":").first}');
+        if (mounted) _snack('Ошибка подписок: ${msg.split(":").first}');
       }
     } finally {
       if (mounted) setState(() => _loadingFeed = false);
@@ -210,10 +201,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingShorts) return;
     setState(() => _loadingShorts = true);
     try {
-      // Используем специализированный метод с двойным fallback
-      final videos = await YouTubeInnerTube.fetchShorts(
-        token: ApiService.youtubeToken ?? '',
-      );
+      // Серверный InnerTube для Shorts — MWEB FEshorts + fallback
+      final videos = await ApiService.youtubeShorts(limit: 20);
       if (mounted) setState(() => _shorts = videos);
     } catch (e) {
       LogService.error(LogService.youtube, 'Ошибка загрузки Shorts', e);

@@ -238,6 +238,72 @@ class ApiService {
     });
   }
 
+  /// Главная страница YouTube (серверный InnerTube).
+  /// С token (SAPISID) — персональная лента, без — анонимная/популярная.
+  static Future<List<YouTubeVideo>> youtubeHome({int limit = 24}) async {
+    await initLocalState();
+    return _withRetry((c) async {
+      final params = <String, String>{'limit': limit.toString()};
+      if (_ytToken != null && _ytToken!.isNotEmpty) {
+        params['token'] = _ytToken!;
+      }
+      final uri = Uri.parse('$baseUrl/yt/home').replace(queryParameters: params);
+      final response = await c.get(uri).timeout(const Duration(seconds: 35));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List<dynamic>;
+        return data
+            .whereType<Map<String, dynamic>>()
+            .map(YouTubeVideo.fromJson)
+            .toList();
+      }
+      throw Exception('Ошибка Главной YouTube: ${response.statusCode}');
+    });
+  }
+
+  /// Shorts (серверный InnerTube — MWEB FEshorts + fallback).
+  static Future<List<YouTubeVideo>> youtubeShorts({int limit = 20}) async {
+    await initLocalState();
+    return _withRetry((c) async {
+      final params = <String, String>{'limit': limit.toString()};
+      if (_ytToken != null && _ytToken!.isNotEmpty) {
+        params['token'] = _ytToken!;
+      }
+      final uri = Uri.parse('$baseUrl/yt/shorts').replace(queryParameters: params);
+      final response = await c.get(uri).timeout(const Duration(seconds: 35));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List<dynamic>;
+        return data
+            .whereType<Map<String, dynamic>>()
+            .map(YouTubeVideo.fromJson)
+            .toList();
+      }
+      throw Exception('Ошибка Shorts YouTube: ${response.statusCode}');
+    });
+  }
+
+  /// Лента подписок (серверный InnerTube, требует авторизации).
+  static Future<List<YouTubeVideo>> youtubeSubscriptions({int limit = 30}) async {
+    await initLocalState();
+    if (_ytToken == null || _ytToken!.isEmpty) {
+      throw Exception('AUTH_REQUIRED');
+    }
+    return _withRetry((c) async {
+      final uri = Uri.parse('$baseUrl/yt/subscriptions').replace(
+        queryParameters: {'token': _ytToken!, 'limit': limit.toString()},
+      );
+      final response = await c.get(uri).timeout(const Duration(seconds: 35));
+      if (response.statusCode == 401) throw Exception('AUTH_ERROR_401');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List<dynamic>;
+        return data
+            .whereType<Map<String, dynamic>>()
+            .map(YouTubeVideo.fromJson)
+            .toList();
+      }
+      throw Exception('Ошибка подписок YouTube: ${response.statusCode}');
+    });
+  }
+
   static void youtubeLogout() {
     _ytToken = null;
     _ytUsername = null;
