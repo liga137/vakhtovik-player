@@ -56,7 +56,7 @@ jobs:
       - name: Package Windows artifacts
         shell: pwsh
         run: |
-          $version = "0.2.22"
+          $version = "0.2.23"
           $relDir = "build\windows\x64\runner\Release"
           Compress-Archive -Path "$relDir\*" -DestinationPath "VakhtovikPlayer-v$version-windows.zip" -Force
           Write-Host "Packed: VakhtovikPlayer-v$version-windows.zip"
@@ -74,6 +74,8 @@ jobs:
   build-android:
     name: Android Build
     runs-on: ubuntu-latest
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     defaults:
       run:
         working-directory: client/flutter_app
@@ -103,7 +105,7 @@ jobs:
 
       # Подпись APK (опционально, если секреты настроены)
       - name: Setup keystore (if configured)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: env.HAS_KEYSTORE == 'true'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
@@ -116,17 +118,17 @@ jobs:
           EOF
 
       - name: Build Android APK (debug, unsigned)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
+        if: env.HAS_KEYSTORE != 'true'
         run: flutter build apk --release --split-per-abi
 
       - name: Build Android APK (signed)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: env.HAS_KEYSTORE == 'true'
         run: flutter build apk --release --split-per-abi
 
       - name: Rename APKs
         shell: bash
         run: |
-          VERSION="0.2.22"
+          VERSION="0.2.23"
           mkdir -p apk_out
           for f in build/app/outputs/flutter-apk/*.apk; do
             base=$(basename "$f" .apk)
@@ -181,11 +183,11 @@ jobs:
             **Windows**: распакуй zip, запусти `vakhtovik_player.exe` от имени администратора.
             **Android**: установи нужный APK по архитектуре устройства.
 
-            ### Изменения v0.2.22
-            - Улучшен вывод Главной страницы YouTube: показывается имя пользователя, inline-индикатор загрузки
-            - Shorts: отдельный специализированный endpoint (MWEB FEshorts + fallback), карточки в формате 9:16 с gradient-оверлеем
-            - Подписки: logout только при явной 401/403 ошибке, не при пустом ответе; кнопка входа прямо в теле вкладки
-            - InnerTube: retry-логика (2 попытки) и обработка 429 rate-limit
+            ### Изменения v0.2.23
+            - Глобальный рефакторинг: логика взаимодействия с YouTube InnerTube полностью перенесена с клиента на наш сервер.
+            - Сервер сам генерирует SAPISIDHASH и выполняет MWEB/search запросы для "Главной", "Shorts", "Подписок".
+            - Клиент (Flutter) больше не содержит сложной логики парсинга YouTube и просто обращается к нашему API.
+            - Это позволит оперативно чинить YouTube-запросы на сервере без необходимости выпускать новое обновление APK/EXE.
           files: release-assets/**
           draft: false
           prerelease: false
