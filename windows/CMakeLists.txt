@@ -97,9 +97,6 @@ install(DIRECTORY "${NATIVE_ASSETS_DIR}"
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/sing-box.exe"
   DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/libcronet.dll"
-  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-  COMPONENT Runtime)
 
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
