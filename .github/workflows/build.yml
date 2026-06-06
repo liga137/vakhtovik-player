@@ -31,10 +31,7 @@ jobs:
       - name: Flutter analyze (non-fatal)
         run: flutter analyze --no-fatal-infos || true
 
-      - name: Build Windows Release
-        run: flutter build windows --release
-
-      # Скачиваем sing-box.exe (VPN) для включения в сборку
+      # Скачиваем sing-box.exe (VPN) до сборки, чтобы CMake смог скопировать его в релизную папку
       - name: Download sing-box for Windows
         shell: pwsh
         run: |
@@ -44,11 +41,14 @@ jobs:
           Expand-Archive sing-box.zip -DestinationPath sing-box-extracted -Force
           $exe = Get-ChildItem -Recurse sing-box-extracted -Filter "sing-box.exe" | Select-Object -First 1
           if ($exe) {
-            Copy-Item $exe.FullName "build\windows\x64\runner\Release\sing-box.exe"
-            Write-Host "sing-box.exe copied to release dir"
+            Copy-Item $exe.FullName "windows\sing-box.exe"
+            Write-Host "sing-box.exe copied to windows dir for CMake"
           } else {
             Write-Warning "sing-box.exe not found in archive"
           }
+
+      - name: Build Windows Release
+        run: flutter build windows --release
 
       - name: Package Windows artifacts
         shell: pwsh
