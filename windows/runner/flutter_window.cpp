@@ -3,7 +3,6 @@
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
-#include "../vpn_plugin.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -26,8 +25,6 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
-  VpnPluginRegisterWithRegistrar(
-      flutter_controller_->engine()->GetRegistrarForPlugin("VpnPlugin"));
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
