@@ -41,3 +41,6 @@ flutter:
   assets:
     - assets/logo.png
     - assets/iptv/
+
+dependency_overrides:
+  flutter_inappwebview_windows: 0.6.0
