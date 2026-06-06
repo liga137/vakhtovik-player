@@ -10,7 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.0
-  flutter_inappwebview: ^6.1.5
+  flutter_inappwebview: ^6.0.0
   video_player: ^2.9.3
   package_info_plus: ^8.0.0
   webview_flutter: ^4.5.0
