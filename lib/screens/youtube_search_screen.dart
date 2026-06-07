@@ -116,24 +116,27 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingFresh) return;
     setState(() => _loadingFresh = true);
     try {
-      // Серверный InnerTube: с токеном — персональная, без — популярное
-      final videos = await ApiService.youtubeHome(limit: 24);
-      if (videos.isEmpty && ApiService.isYouTubeLoggedIn) {
-        // Пустой ответ при авторизации — не разлогиниваем, просто сообщаем
-        if (mounted) _snack('Главная: пустой ответ сервера. Попробуйте позже.');
+      if (ApiService.isYouTubeLoggedIn) {
+        final videos = await YouTubeInnerTube.fetchVideos(
+          token: ApiService.youtubeToken ?? '',
+          browseId: 'FEwhat_to_watch',
+        );
+        if (videos.isEmpty) {
+          if (mounted) _snack('Главная: пустой ответ. Проверьте подписки.');
+        } else {
+          if (mounted) setState(() => _fresh = videos);
+        }
       } else {
-        if (mounted) setState(() => _fresh = videos);
+        // Fallback: yt-dlp popular
+        final items = await ApiService.youtubePopular(limit: 24);
+        if (mounted) setState(() => _fresh = items);
       }
     } catch (e) {
-      final msg = e.toString();
       LogService.error(LogService.youtube, 'Ошибка Главной', e);
-      // Fallback: популярное через yt-dlp
-      if (!msg.contains('AUTH')) {
-        try {
-          final items = await ApiService.youtubePopular(limit: 24);
-          if (mounted) setState(() => _fresh = items);
-        } catch (_) {}
-      }
+      try {
+        final items = await ApiService.youtubePopular(limit: 24);
+        if (mounted) setState(() => _fresh = items);
+      } catch (_) {}
     } finally {
       if (mounted) setState(() => _loadingFresh = false);
     }
@@ -159,26 +162,17 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (!await _ensureLogin()) return;
     setState(() => _loadingFeed = true);
     try {
-      // Серверный InnerTube для подписок
-      final videos = await ApiService.youtubeSubscriptions(limit: 30);
+      final videos = await YouTubeInnerTube.fetchVideos(
+        token: ApiService.youtubeToken ?? '',
+        browseId: 'FEsubscriptions',
+      );
       if (videos.isEmpty) {
-        if (mounted) _snack('Лента пуста — возможно, нет подписок или ошибка сервера.');
+        if (mounted) _snack('Лента пуста. Возможно, нет подписок.');
       } else {
         if (mounted) setState(() => _feed = videos);
       }
     } catch (e) {
-      final msg = e.toString();
-      if (msg.contains('AUTH_ERROR') || msg.contains('401')) {
-        ApiService.youtubeLogout();
-        if (mounted) {
-          setState(() => _feed = const []);
-          _snack('Сессия истекла. Войдите заново.');
-        }
-      } else if (msg.contains('AUTH_REQUIRED')) {
-        if (mounted) _snack('Нужен вход через Google.');
-      } else {
-        if (mounted) _snack('Ошибка подписок: ${msg.split(":").first}');
-      }
+      if (mounted) _snack('Ошибка ленты: $e');
     } finally {
       if (mounted) setState(() => _loadingFeed = false);
     }
@@ -201,12 +195,14 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingShorts) return;
     setState(() => _loadingShorts = true);
     try {
-      // Серверный InnerTube для Shorts — MWEB FEshorts + fallback
-      final videos = await ApiService.youtubeShorts(limit: 20);
-      if (mounted) setState(() => _shorts = videos);
+      final videos = await YouTubeInnerTube.searchVideos(
+        token: ApiService.youtubeToken ?? '',
+        query: 'Shorts',
+      );
+      final filtered = videos.where((v) => v.duration > 0 && v.duration <= 60).toList();
+      if (mounted) setState(() => _shorts = filtered.isNotEmpty ? filtered : videos);
     } catch (e) {
-      LogService.error(LogService.youtube, 'Ошибка загрузки Shorts', e);
-      if (mounted) _snack('Shorts: ${e.toString().split(":").first}');
+      if (mounted) _snack('Ошибка Shorts: $e');
     } finally {
       if (mounted) setState(() => _loadingShorts = false);
     }
