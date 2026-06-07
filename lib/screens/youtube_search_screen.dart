@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/youtube_video.dart';
 import '../services/api_service.dart';
 import '../services/log_service.dart';
+import '../services/youtube_innertube.dart';
 import 'player_screen.dart';
 import 'youtube_login_screen.dart';
 
