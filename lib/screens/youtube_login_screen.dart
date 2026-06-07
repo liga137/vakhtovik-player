@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../services/api_service.dart';
@@ -12,6 +13,13 @@ class YouTubeLoginScreen extends StatefulWidget {
 class _YouTubeLoginScreenState extends State<YouTubeLoginScreen> {
   late InAppWebViewController _webViewController;
   bool _isLoading = true;
+  Timer? _cookieTimer;
+
+  @override
+  void dispose() {
+    _cookieTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +47,7 @@ class _YouTubeLoginScreenState extends State<YouTubeLoginScreen> {
           url: WebUri('https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com/'),
         ),
         initialSettings: InAppWebViewSettings(
-          userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+          userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           clearCache: false,
           javaScriptEnabled: true,
           domStorageEnabled: true,
@@ -66,34 +74,44 @@ class _YouTubeLoginScreenState extends State<YouTubeLoginScreen> {
   Future<void> _checkUrl(WebUri? url) async {
     if (url == null) return;
     final urlString = url.toString();
-    // Если после входа нас редиректит на сам YouTube
+    
     if (urlString.startsWith('https://www.youtube.com') && 
         !urlString.contains('ServiceLogin') && 
         !urlString.contains('signin')) {
           
-      // Извлекаем куки
-      final cookieManager = CookieManager.instance();
-      final cookies = await cookieManager.getCookies(url: WebUri('https://www.youtube.com'));
-      
-      String cookieString = '';
-      bool hasSapisid = false;
-      
-      for (var cookie in cookies) {
-        final String rawValue = Uri.decodeComponent(cookie.value.toString());
-        cookieString += '${cookie.name}=$rawValue; ';
-        if (cookie.name == 'SAPISID') {
-          hasSapisid = true;
+      _cookieTimer?.cancel();
+      _cookieTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+        if (!mounted) {
+          timer.cancel();
+          return;
         }
-      }
-      
-      if (hasSapisid) {
-        // Успешно вошли!
-        // Сохраняем куки как токен (у нас в API Service токен это просто строка)
-        await ApiService.saveYoutubeAuth(cookieString, 'Мой YouTube');
-        if (mounted) {
-          Navigator.of(context).pop(true); // Возвращаемся с успехом
+
+        final cookieManager = CookieManager.instance();
+        final cookies = await cookieManager.getCookies(url: WebUri('https://www.youtube.com'));
+        
+        String cookieString = '';
+        bool hasSapisid = false;
+        bool hasLoginInfo = false;
+        
+        for (var cookie in cookies) {
+          cookieString += '${cookie.name}=${cookie.value}; ';
+          if (cookie.name == 'SAPISID') {
+            hasSapisid = true;
+          }
+          if (cookie.name == 'LOGIN_INFO') {
+            hasLoginInfo = true;
+          }
         }
-      }
+        
+        // YouTube API считает запрос анонимным без LOGIN_INFO, даже если есть SAPISID
+        if (hasSapisid && hasLoginInfo) {
+          timer.cancel();
+          await ApiService.saveYoutubeAuth(cookieString, 'Мой YouTube');
+          if (mounted) {
+            Navigator.of(context).pop(true);
+          }
+        }
+      });
     }
   }
 }
