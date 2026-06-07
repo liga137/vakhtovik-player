@@ -118,9 +118,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     setState(() => _loadingFresh = true);
     try {
       if (ApiService.isYouTubeLoggedIn) {
-        final videos = await YouTubeInnerTube.fetchVideos(
+        final videos = await YouTubeInnerTube.fetchHome(
           token: ApiService.youtubeToken ?? '',
-          browseId: 'FEwhat_to_watch',
         );
         if (videos.isEmpty) {
           if (mounted) _snack('Главная: пустой ответ. Проверьте подписки.');
@@ -163,9 +162,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (!await _ensureLogin()) return;
     setState(() => _loadingFeed = true);
     try {
-      final videos = await YouTubeInnerTube.fetchVideos(
+      final videos = await YouTubeInnerTube.fetchSubscriptions(
         token: ApiService.youtubeToken ?? '',
-        browseId: 'FEsubscriptions',
       );
       if (videos.isEmpty) {
         if (mounted) _snack('Лента пуста. Возможно, нет подписок.');
@@ -196,9 +194,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingShorts) return;
     setState(() => _loadingShorts = true);
     try {
-      final videos = await YouTubeInnerTube.searchVideos(
+      final videos = await YouTubeInnerTube.fetchShorts(
         token: ApiService.youtubeToken ?? '',
-        query: 'Shorts',
       );
       final filtered = videos.where((v) => v.duration > 0 && v.duration <= 60).toList();
       if (mounted) setState(() => _shorts = filtered.isNotEmpty ? filtered : videos);
