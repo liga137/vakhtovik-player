@@ -15,7 +15,7 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        working-directory: client/flutter_app
+        working-directory: .
 
     steps:
       - name: Checkout
@@ -65,7 +65,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: VakhtovikPlayer-windows
-          path: client/flutter_app/VakhtovikPlayer-v*-windows.zip
+          path: VakhtovikPlayer-v*-windows.zip
           retention-days: 30
 
   # ─────────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: client/flutter_app
+        working-directory: .
 
     steps:
       - name: Checkout
@@ -135,7 +135,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: VakhtovikPlayer-android
-          path: client/flutter_app/apk_out/*.apk
+          path: apk_out/*.apk
           retention-days: 30
 
   # ─────────────────────────────────────────────────────────
