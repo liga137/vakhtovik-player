@@ -226,30 +226,6 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     }
   }
 
-  void _showOAuthProductionHelp() {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Google OAuth Production'),
-        content: const SingleChildScrollView(
-          child: Text(
-            '1. Google Cloud Console → OAuth consent screen → Publish app.\n'
-            '2. Добавь домен сервера в Authorized domains.\n'
-            '3. Проверь Redirect URI сервера (эндпоинт /yt/google/start использует серверный callback).\n'
-            '4. Добавь тестовые/боевые YouTube scope и отправь на верификацию, если требуется.\n'
-            '5. После публикации перепроверь импорт подписок из этого экрана.',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Закрыть'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<bool> _ensureLogin() async {
     if (ApiService.isYouTubeLoggedIn) return true;
     _snack('Нужен вход через Google');

@@ -87,11 +87,6 @@ class ApiService {
   static String? get youtubeUsername => _ytUsername;
   static String? get youtubeToken => _ytToken;
 
-  static Map<String, String> get _ytHeaders => {
-        'Content-Type': 'application/json',
-        if (_ytToken != null) 'Authorization': 'Bearer $_ytToken',
-      };
-
   static Future<void> initLocalState() async {
     if (_ytStateLoaded) return;
     final prefs = await SharedPreferences.getInstance();
@@ -122,7 +117,7 @@ class ApiService {
     }
   }
 
-  /// Сохранить YouTube-авторизацию (Google OAuth).
+  /// Сохранить YouTube-авторизацию (куки из WebView).
   static Future<void> saveYoutubeAuth(String token, String username) async {
     _ytToken = token;
     _ytUsername = username;
@@ -325,28 +320,6 @@ class ApiService {
             .toList();
       }
       throw Exception('Ошибка популярного: ${response.statusCode}');
-    });
-  }
-
-  static String youtubeGoogleStartUrl(String state) {
-    // Поскольку мы вырезали локальную регистрацию, передаем заглушку,
-    // так как бэкенд все еще ожидает параметр token для старого роута.
-    return Uri.parse('$baseUrl/yt/google/start').replace(
-      queryParameters: {'token': 'oauth_only', 'state': state},
-    ).toString();
-  }
-
-  static Future<Map<String, dynamic>> youtubeGoogleStatus(String state) async {
-    await initLocalState();
-    return _withRetry((c) async {
-      final uri = Uri.parse('$baseUrl/yt/google/status').replace(
-        queryParameters: {'state': state},
-      );
-      final response = await c.get(uri);
-      if (response.statusCode == 200) {
-        return json.decode(response.body) as Map<String, dynamic>;
-      }
-      throw Exception('Ошибка статуса Google: ${response.statusCode}');
     });
   }
 
