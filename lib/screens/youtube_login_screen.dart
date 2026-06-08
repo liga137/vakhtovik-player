@@ -68,9 +68,9 @@ class _YouTubeLoginScreenState extends State<YouTubeLoginScreen> {
           await _checkUrl(url);
         },
       ),
-    );
-  }
-
+      );
+    }
+  
   Future<void> _checkUrl(WebUri? url) async {
     if (url == null) return;
     final urlString = url.toString();
@@ -87,21 +87,17 @@ class _YouTubeLoginScreenState extends State<YouTubeLoginScreen> {
         }
 
         final cookieManager = CookieManager.instance();
-        final cookies = await cookieManager.getCookies(url: WebUri('https://www.youtube.com'));
+        final cookies1 = await cookieManager.getCookies(url: WebUri('https://www.youtube.com'));
+        final cookies2 = await cookieManager.getCookies(url: WebUri('https://youtube.com'));
         
-        String cookieString = '';
-        bool hasSapisid = false;
-        bool hasLoginInfo = false;
+        final Map<String, String> uniqueCookies = {};
+        for (var c in cookies1) uniqueCookies[c.name] = c.value.toString();
+        for (var c in cookies2) uniqueCookies[c.name] = c.value.toString();
         
-        for (var cookie in cookies) {
-          cookieString += '${cookie.name}=${cookie.value}; ';
-          if (cookie.name == 'SAPISID') {
-            hasSapisid = true;
-          }
-          if (cookie.name == 'LOGIN_INFO') {
-            hasLoginInfo = true;
-          }
-        }
+        String cookieString = uniqueCookies.entries.map((e) => '${e.key}=${e.value}').join('; ');
+        
+        bool hasSapisid = uniqueCookies.containsKey('SAPISID');
+        bool hasLoginInfo = uniqueCookies.containsKey('LOGIN_INFO');
         
         // YouTube API считает запрос анонимным без LOGIN_INFO, даже если есть SAPISID
         if (hasSapisid && hasLoginInfo) {

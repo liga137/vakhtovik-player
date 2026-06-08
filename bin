@@ -1,0 +1,7 @@
+void main() {
+  final html = 'var ytInitialData = {"foo": "bar"};\n</script>';
+  final match1 = RegExp(r'var ytInitialData = (\{.*?\});</script>').firstMatch(html);
+  final match2 = RegExp(r'ytInitialData\s*=\s*(\{.*?\});').firstMatch(html);
+  print(match1 != null);
+  print(match2 != null);
+}

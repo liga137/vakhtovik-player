@@ -16,7 +16,6 @@ class _IptvScreenState extends State<IptvScreen> {
   final _searchController = TextEditingController();
   List<IptvChannel> _channels = const [];
   String _category = 'Все';
-  String _country = 'Все';
   String _quality = '240p';
   String _query = '';
   bool _loading = true;
@@ -64,16 +63,8 @@ class _IptvScreenState extends State<IptvScreen> {
   List<IptvChannel> get _filtered {
     return _channels.where((ch) {
       final catOk = _category == 'Все' || ch.category == _category;
-      final countryOk = _country == 'Все' || ch.country == _country;
-      return catOk && countryOk && ch.matches(_query);
+      return catOk && ch.matches(_query);
     }).toList();
-  }
-
-  List<String> get _countries {
-    final set = _channels.map((e) => e.country).where((e) => e.isNotEmpty).toSet();
-    final result = <String>['Все'];
-    for (final c in ['Россия', 'Беларусь']) { if (set.contains(c)) result.add(c); }
-    return result;
   }
 
   Future<void> _play(IptvChannel channel) async {
@@ -166,26 +157,6 @@ class _IptvScreenState extends State<IptvScreen> {
               onChanged: (v) => setState(() => _query = v),
             ),
           ),
-          if (_countries.length > 1)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Wrap(
-                spacing: 6,
-                children: [
-                  const Text('Страна:', style: TextStyle(color: Colors.white54, fontSize: 11)),
-                  for (final c in _countries)
-                    ChoiceChip(
-                      selected: c == _country,
-                      label: Text(c, style: const TextStyle(fontSize: 11)),
-                      selectedColor: Colors.orange,
-                      backgroundColor: const Color(0xFF1A1A1A),
-                      labelStyle: TextStyle(color: c == _country ? Colors.black : Colors.white70),
-                      onSelected: (_) => setState(() => _country = c),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                ],
-              ),
-            ),
           SizedBox(
             height: 48,
             child: ListView(

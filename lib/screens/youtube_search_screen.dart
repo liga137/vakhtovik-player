@@ -3,10 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/youtube_video.dart';
 import '../services/api_service.dart';
-import '../services/log_service.dart';
-import '../services/youtube_innertube.dart';
 import 'player_screen.dart';
-import 'youtube_login_screen.dart';
 
 class YouTubeSearchScreen extends StatefulWidget {
   const YouTubeSearchScreen({super.key});
@@ -18,17 +15,20 @@ class YouTubeSearchScreen extends StatefulWidget {
 class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     with SingleTickerProviderStateMixin {
   final _searchController = TextEditingController();
+  final _subController = TextEditingController();
   late final TabController _tabController;
   List<YouTubeVideo> _searchResults = const [];
   List<YouTubeVideo> _fresh = const [];
   List<YouTubeVideo> _feed = const [];
   List<YouTubeVideo> _popular = const [];
   List<YouTubeVideo> _shorts = const [];
+  List<Map<String, dynamic>> _subs = const [];
   bool _loadingFresh = false;
   bool _loadingSearch = false;
   bool _loadingFeed = false;
   bool _loadingPopular = false;
   bool _loadingShorts = false;
+  bool _loadingSubs = false;
   bool _starting = false;
   bool _googleImporting = false;
   Timer? _googlePollTimer;
@@ -50,26 +50,29 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     _googlePollTimer?.cancel();
     _tabController.dispose();
     _searchController.dispose();
+    _subController.dispose();
     super.dispose();
   }
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _tabController.addListener(_onTabChanged);
     unawaited(ApiService.initLocalState().then((_) async {
       if (!mounted) return;
       setState(() {});
       _ensureFreshLoadedIfPossible();
+      _ensureFeedLoadedIfPossible();
       if (ApiService.isYouTubeLoggedIn) {
-        await _loadFeed();
+        await _loadSubs();
       }
     }));
     _loadPopular();
     _loadShorts();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ensureFreshLoadedIfPossible();
+      _ensureFeedLoadedIfPossible();
     });
   }
 
@@ -77,6 +80,9 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (!mounted || _tabController.indexIsChanging) return;
     if (_tabController.index == 0) {
       _ensureFreshLoadedIfPossible();
+    }
+    if (_tabController.index == 1) {
+      _ensureFeedLoadedIfPossible();
     }
   }
 
@@ -117,26 +123,10 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingFresh) return;
     setState(() => _loadingFresh = true);
     try {
-      if (ApiService.isYouTubeLoggedIn) {
-        final videos = await YouTubeInnerTube.fetchHome(
-          token: ApiService.youtubeToken ?? '',
-        );
-        if (videos.isEmpty) {
-          if (mounted) _snack('Главная: пустой ответ. Проверьте подписки.');
-        } else {
-          if (mounted) setState(() => _fresh = videos);
-        }
-      } else {
-        // Fallback: yt-dlp popular
-        final items = await ApiService.youtubePopular(limit: 24);
-        if (mounted) setState(() => _fresh = items);
-      }
+      final items = await ApiService.youtubeFresh(limit: 48);
+      if (mounted) setState(() => _fresh = items);
     } catch (e) {
-      LogService.error(LogService.youtube, 'Ошибка Главной', e);
-      try {
-        final items = await ApiService.youtubePopular(limit: 24);
-        if (mounted) setState(() => _fresh = items);
-      } catch (_) {}
+      if (mounted) _snack('Ошибка "Новое": $e');
     } finally {
       if (mounted) setState(() => _loadingFresh = false);
     }
@@ -162,14 +152,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (!await _ensureLogin()) return;
     setState(() => _loadingFeed = true);
     try {
-      final videos = await YouTubeInnerTube.fetchSubscriptions(
-        token: ApiService.youtubeToken ?? '',
-      );
-      if (videos.isEmpty) {
-        if (mounted) _snack('Лента пуста. Возможно, нет подписок.');
-      } else {
-        if (mounted) setState(() => _feed = videos);
-      }
+      final items = await ApiService.youtubeFeed(limit: 40);
+      if (mounted) setState(() => _feed = items);
     } catch (e) {
       if (mounted) _snack('Ошибка ленты: $e');
     } finally {
@@ -194,11 +178,21 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     if (_loadingShorts) return;
     setState(() => _loadingShorts = true);
     try {
-      final videos = await YouTubeInnerTube.fetchShorts(
-        token: ApiService.youtubeToken ?? '',
-      );
-      final filtered = videos.where((v) => v.duration > 0 && v.duration <= 60).toList();
-      if (mounted) setState(() => _shorts = filtered.isNotEmpty ? filtered : videos);
+      final items = await ApiService.searchYouTube('youtube shorts', limit: 30);
+      final normalized = items.map((v) {
+        if (v.id.isNotEmpty) {
+          return YouTubeVideo(
+            id: v.id,
+            title: v.title,
+            channel: v.channel,
+            duration: v.duration,
+            thumbnail: v.thumbnail,
+            url: 'https://www.youtube.com/shorts/${v.id}',
+          );
+        }
+        return v;
+      }).toList();
+      if (mounted) setState(() => _shorts = normalized);
     } catch (e) {
       if (mounted) _snack('Ошибка Shorts: $e');
     } finally {
@@ -206,17 +200,75 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     }
   }
 
-  Future<void> _importGoogleSubscriptions() async {
-    final result = await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => const YouTubeLoginScreen(),
-    ));
+  Future<void> _loadSubs() async {
+    if (_loadingSubs) return;
+    if (!await _ensureLogin()) return;
+    setState(() => _loadingSubs = true);
+    try {
+      final items = await ApiService.youtubeSubscriptions();
+      if (mounted) setState(() => _subs = items);
+    } catch (e) {
+      if (mounted) _snack('Ошибка подписок: $e');
+    } finally {
+      if (mounted) setState(() => _loadingSubs = false);
+    }
+  }
 
-    if (result == true) {
-      // Успешный вход
-      _snack('Вход выполнен: ${ApiService.youtubeUsername ?? "YouTube"}');
-      await _loadFeed();
-      await _loadFresh();
-      await _loadShorts();
+  Future<void> _addSub() async {
+    if (!await _ensureLogin()) return;
+    final text = _subController.text.trim();
+    if (text.isEmpty) return;
+    try {
+      await ApiService.youtubeAddSubscription(text);
+      _subController.clear();
+      await _loadSubs();
+      _snack('Подписка добавлена');
+    } catch (e) {
+      _snack('Ошибка: $e');
+    }
+  }
+
+  Future<void> _importGoogleSubscriptions() async {
+    if (!await _ensureLogin()) return;
+    final state = DateTime.now().millisecondsSinceEpoch.toString();
+    setState(() => _googleImporting = true);
+    try {
+      final url = ApiService.youtubeGoogleStartUrl(state);
+      final ok =
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!ok) throw Exception('Не удалось открыть браузер');
+
+      _googlePollTimer?.cancel();
+      var ticks = 0;
+      _googlePollTimer =
+          Timer.periodic(const Duration(seconds: 3), (timer) async {
+        ticks++;
+        try {
+          final status = await ApiService.youtubeGoogleStatus(state);
+          if (status['done'] == true) {
+            timer.cancel();
+            final err = (status['error'] ?? '').toString();
+            if (err.isNotEmpty) {
+              _snack('Ошибка импорта: $err');
+            } else {
+              _snack('Импортировано подписок: ${status['imported'] ?? 0}');
+              await _loadSubs();
+              await _loadFeed();
+            }
+            if (mounted) setState(() => _googleImporting = false);
+          }
+          if (ticks > 120) {
+            timer.cancel();
+            if (mounted) setState(() => _googleImporting = false);
+            _snack(
+                'Импорт не завершён. Проверь OAuth Production в Google Console.');
+          }
+        } catch (_) {}
+      });
+    } catch (e) {
+      if (mounted) setState(() => _googleImporting = false);
+      _snack(
+          'Ошибка: $e. Если видишь "app not verified", переведи OAuth в Production.');
     }
   }
 
@@ -246,8 +298,90 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
 
   Future<bool> _ensureLogin() async {
     if (ApiService.isYouTubeLoggedIn) return true;
-    _snack('Нужен вход через Google');
-    return false;
+    final ok = await _showLoginDialog();
+    return ok == true;
+  }
+
+  Future<bool?> _showLoginDialog() async {
+    final user = TextEditingController();
+    final pass = TextEditingController();
+    var busy = false;
+    Future<void> auth(BuildContext context,
+        void Function(void Function()) setDialogState, bool register) async {
+      setDialogState(() => busy = true);
+      try {
+        if (register) {
+          await ApiService.youtubeRegister(user.text, pass.text);
+        } else {
+          await ApiService.youtubeLogin(user.text, pass.text);
+        }
+        if (context.mounted) Navigator.pop(context, true);
+      } catch (e) {
+        final msg = e.toString().contains('401')
+            ? 'Аккаунт не найден. Нажми «Создать» если впервые.'
+            : e.toString().contains('400') && e.toString().contains('exists')
+                ? 'Аккаунт уже существует. Нажми «Войти».'
+                : 'Ошибка: $e';
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(msg), duration: const Duration(seconds: 5)));
+        }
+      } finally {
+        setDialogState(() => busy = false);
+      }
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Аккаунт YouTube-раздела'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                  controller: user,
+                  decoration: const InputDecoration(labelText: 'Логин')),
+              TextField(
+                  controller: pass,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Пароль')),
+              const SizedBox(height: 12),
+              const Text(
+                'Это локальный аккаунт Плеера Вахтовика, не Google. Первый раз нажми «Создать».',
+                style: TextStyle(fontSize: 12, color: Colors.white70),
+              ),
+              if (busy) const LinearProgressIndicator(color: Colors.orange),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Отмена')),
+            TextButton(
+              onPressed:
+                  busy ? null : () => auth(context, setDialogState, true),
+              child: const Text('Создать'),
+            ),
+            FilledButton(
+              onPressed:
+                  busy ? null : () => auth(context, setDialogState, false),
+              child: const Text('Войти'),
+            ),
+          ],
+        ),
+      ),
+    );
+    user.dispose();
+    pass.dispose();
+    if (mounted) setState(() {});
+    if (result == true) {
+      _ensureFreshLoadedIfPossible();
+      _ensureFeedLoadedIfPossible();
+      unawaited(_loadSubs());
+    }
+    return result;
   }
 
   Future<void> _play(YouTubeVideo video) async {
@@ -324,8 +458,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       return TextButton.icon(
         onPressed: () => setState(() {
           ApiService.youtubeLogout();
-          _fresh = const [];
           _feed = const [];
+          _subs = const [];
         }),
         icon: const Icon(Icons.logout, color: Colors.orange),
         label: Text(ApiService.youtubeUsername ?? 'Выйти',
@@ -333,9 +467,9 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
       );
     }
     return TextButton.icon(
-      onPressed: _importGoogleSubscriptions,
-      icon: const Icon(Icons.login, color: Colors.orange),
-      label: const Text('Войти через Google', style: TextStyle(color: Colors.white)),
+      onPressed: _showLoginDialog,
+      icon: const Icon(Icons.person, color: Colors.orange),
+      label: const Text('Войти', style: TextStyle(color: Colors.white)),
     );
   }
 
@@ -473,121 +607,61 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
   }
 
   Widget _freshTab() {
-    final isLoggedIn = ApiService.isYouTubeLoggedIn;
-    final headerText = isLoggedIn
-        ? 'Персональная лента: ${ApiService.youtubeUsername ?? "YouTube"}'
-        : 'YouTube — популярные видео';
     return Column(children: [
       Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
+          padding: const EdgeInsets.all(8),
           child: Row(children: [
-            Expanded(
-                child: Text(headerText,
-                    style: const TextStyle(color: Colors.white70, fontSize: 13),
-                    overflow: TextOverflow.ellipsis)),
-            if (_loadingFresh)
-              const Padding(
-                  padding: EdgeInsets.only(right: 8),
-                  child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.orange))),
-            TextButton.icon(
-                onPressed: _loadingFresh ? null : _loadFresh,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Обновить'),
-                style: TextButton.styleFrom(foregroundColor: Colors.orange)),
+            const Expanded(
+                child: Text('Новое по просмотренным каналам',
+                    style: TextStyle(color: Colors.white70))),
+            FilledButton.icon(
+                onPressed: _loadFresh,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Обновить')),
           ])),
       Expanded(
           child: _videoGrid(_fresh,
-              loading: _loadingFresh && _fresh.isEmpty,
-              empty: Center(
-                  child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.home_outlined, size: 48, color: Colors.white24),
-                  const SizedBox(height: 12),
-                  Text(
-                    isLoggedIn
-                        ? 'Загрузка персональной ленты...\nПоробуйте обновить.'
-                        : 'Войдите через Google для персональной ленты\nили подождите загрузки популярных.',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white54, fontSize: 13),
-                  ),
-                  if (!isLoggedIn) ...[const SizedBox(height: 16), FilledButton.icon(
-                    onPressed: _importGoogleSubscriptions,
-                    icon: const Icon(Icons.login, size: 18),
-                    label: const Text('Войти через Google'),
-                    style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                  )]
-                ],
-              )))),
+              loading: _loadingFresh,
+              empty: const Center(
+                  child: Text(
+                      'Пока пусто. Открой несколько видео, и здесь появятся новинки.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white70))))),
     ]);
   }
 
   Widget _feedTab() {
     if (ApiService.isYouTubeLoggedIn && _feed.isEmpty && !_loadingFeed) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _tabController.index == 4) {
+        if (mounted && _tabController.index == 1) {
           _ensureFeedLoadedIfPossible();
         }
       });
     }
     return Column(children: [
       Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
+          padding: const EdgeInsets.all(8),
           child: Row(children: [
             Expanded(
                 child: Text(
                     ApiService.isYouTubeLoggedIn
-                        ? 'Подписки: ${ApiService.youtubeUsername ?? "YouTube"}'
-                        : 'Подписки (нужен вход)',
-                    style: const TextStyle(color: Colors.white70, fontSize: 13),
-                    overflow: TextOverflow.ellipsis)),
-            if (_loadingFeed)
-              const Padding(
-                  padding: EdgeInsets.only(right: 8),
-                  child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.orange))),
-            TextButton.icon(
-                onPressed: _loadingFeed ? null : _loadFeed,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Обновить'),
-                style: TextButton.styleFrom(foregroundColor: Colors.orange)),
+                        ? 'Лента подписок'
+                        : 'Войди, чтобы видеть свою ленту',
+                    style: const TextStyle(color: Colors.white70))),
+            FilledButton.icon(
+                onPressed: _loadFeed,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Обновить')),
           ])),
       Expanded(
           child: _videoGrid(_feed,
-              loading: _loadingFeed && _feed.isEmpty,
+              loading: _loadingFeed,
               empty: Center(
-                  child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
+                  child: Text(
                       ApiService.isYouTubeLoggedIn
-                          ? Icons.subscriptions_outlined
-                          : Icons.login,
-                      size: 48,
-                      color: Colors.white24),
-                  const SizedBox(height: 12),
-                  Text(
-                    ApiService.isYouTubeLoggedIn
-                        ? 'Нет видео в ленте подписок.\nПроверьте подписки на YouTube.'
-                        : 'Войдите через Google,\nчтобы видеть свои подписки.',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white54, fontSize: 13),
-                  ),
-                  if (!ApiService.isYouTubeLoggedIn) ...[const SizedBox(height: 16), FilledButton.icon(
-                    onPressed: _importGoogleSubscriptions,
-                    icon: const Icon(Icons.login, size: 18),
-                    label: const Text('Войти через Google'),
-                    style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                  )]
-                ],
-              )))),
+                          ? 'Нет видео. Добавь подписки.'
+                          : 'Нужен вход.',
+                      style: const TextStyle(color: Colors.white70))))),
     ]);
   }
 
@@ -628,169 +702,108 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
+          padding: const EdgeInsets.all(8),
           child: Row(
             children: [
-              const Icon(Icons.smart_display, color: Colors.redAccent, size: 20),
-              const SizedBox(width: 6),
               const Expanded(
                 child: Text('YouTube Shorts',
-                    style: TextStyle(color: Colors.white70, fontSize: 13)),
+                    style: TextStyle(color: Colors.white70)),
               ),
-              if (_loadingShorts)
-                const Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.orange))),
-              TextButton.icon(
-                onPressed: _loadingShorts ? null : _loadShorts,
-                icon: const Icon(Icons.refresh, size: 18),
+              FilledButton.icon(
+                onPressed: _loadShorts,
+                icon: const Icon(Icons.refresh),
                 label: const Text('Обновить'),
-                style: TextButton.styleFrom(foregroundColor: Colors.orange),
               ),
             ],
           ),
         ),
         Expanded(
-          child: _shorts.isEmpty && !_loadingShorts
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.smart_display_outlined,
-                          size: 48, color: Colors.white24),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Shorts пока не загружены.\nНажмите «Обновить».',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white54, fontSize: 13),
-                      ),
-                      const SizedBox(height: 16),
-                      TextButton.icon(
-                        onPressed: _loadShorts,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Загрузить Shorts'),
-                        style: TextButton.styleFrom(
-                            foregroundColor: Colors.orange),
-                      ),
-                    ],
-                  ),
-                )
-              : _shortsGrid(),
+          child: _videoGrid(
+            _shorts,
+            loading: _loadingShorts,
+            empty: const Center(
+                child: Text('Shorts пока пусто',
+                    style: TextStyle(color: Colors.white70))),
+          ),
         ),
       ],
     );
   }
 
-  Widget _shortsGrid() {
-    if (_loadingShorts && _shorts.isEmpty) {
-      return const Center(
-          child: CircularProgressIndicator(color: Colors.orange));
-    }
-    return LayoutBuilder(builder: (context, constraints) {
-      final width = constraints.maxWidth;
-      // Shorts — вертикальный формат 9:16
-      var crossAxisCount = 2;
-      if (width >= 900) crossAxisCount = 4;
-      else if (width >= 600) crossAxisCount = 3;
-
-      return GridView.builder(
-        padding: const EdgeInsets.fromLTRB(8, 4, 8, 24),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: crossAxisCount,
-          childAspectRatio: 9 / 16,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-        ),
-        itemCount: _shorts.length,
-        itemBuilder: (_, i) => _shortCard(_shorts[i]),
-      );
-    });
-  }
-
-  Widget _shortCard(YouTubeVideo v) {
-    final dur = _formatDuration(v.duration);
-    return InkWell(
-      onTap: () => _play(v),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white10)),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Превью
-            v.thumbnail.isEmpty
-                ? Container(
-                    color: Colors.black26,
-                    child: const Icon(Icons.play_circle,
-                        color: Colors.orange, size: 40))
-                : Image.network(v.thumbnail,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        Container(color: Colors.black38)),
-            // Градиент снизу
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Colors.black87],
-                  ),
-                ),
-                padding: const EdgeInsets.fromLTRB(8, 24, 8, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(v.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600)),
-                    if (dur.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(dur,
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 11)),
-                      ),
-                  ],
+  Widget _subsTab() {
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+        child: SizedBox(
+          width: double.infinity,
+          child: Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed:
+                      _googleImporting ? null : _importGoogleSubscriptions,
+                  icon: _googleImporting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.cloud_download),
+                  label: Text(_googleImporting
+                      ? 'Жду вход Google...'
+                      : 'Импортировать подписки из Google'),
                 ),
               ),
-            ),
-            // Shorts-значок
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(4)),
-                child: const Text('SHORT',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold)),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: _showOAuthProductionHelp,
+                tooltip: 'Как вывести OAuth в Production',
+                icon: const Icon(Icons.info_outline, color: Colors.orange),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    );
+      Padding(
+          padding: const EdgeInsets.all(8),
+          child: Row(children: [
+            Expanded(
+                child: TextField(
+                    controller: _subController,
+                    decoration: const InputDecoration(
+                        hintText: 'channel_id или ссылка /channel/UC...',
+                        border: OutlineInputBorder()))),
+            const SizedBox(width: 8),
+            IconButton(
+                onPressed: _addSub,
+                icon: const Icon(Icons.add, color: Colors.orange)),
+            IconButton(
+                onPressed: _loadSubs,
+                icon: const Icon(Icons.refresh, color: Colors.white)),
+          ])),
+      Expanded(
+          child: _loadingSubs
+              ? const Center(
+                  child: CircularProgressIndicator(color: Colors.orange))
+              : _subs.isEmpty
+                  ? Center(
+                      child: Text(
+                          ApiService.isYouTubeLoggedIn
+                              ? 'Подписок нет. Добавь channel_id.'
+                              : 'Нужен вход.',
+                          style: const TextStyle(color: Colors.white70)))
+                  : ListView.builder(
+                      itemCount: _subs.length,
+                      itemBuilder: (_, i) {
+                        final s = _subs[i];
+                        return ListTile(
+                            leading: const Icon(Icons.subscriptions,
+                                color: Colors.orange),
+                            title: Text((s['channel_name'] ?? s['channel_id'])
+                                .toString()),
+                            subtitle: Text((s['channel_id'] ?? '').toString()),
+                            onTap: _loadFeed);
+                      })),
+    ]);
   }
 
   @override
@@ -803,7 +816,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
         foregroundColor: Colors.white,
         actions: [_qualityButton(), _loginButton()],
         bottom: TabBar(controller: _tabController, tabs: const [
-          Tab(icon: Icon(Icons.home), text: 'Главная'),
+          Tab(icon: Icon(Icons.auto_awesome), text: 'Новое'),
+          Tab(icon: Icon(Icons.home), text: 'Лента'),
           Tab(icon: Icon(Icons.search), text: 'Поиск'),
           Tab(icon: Icon(Icons.trending_up), text: 'Популярное'),
           Tab(icon: Icon(Icons.smart_display), text: 'Shorts'),
@@ -815,10 +829,11 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
           controller: _tabController,
           children: [
             _freshTab(),
+            _feedTab(),
             _searchTab(),
             _popularTab(),
             _shortsTab(),
-            _feedTab()
+            _subsTab()
           ],
         ),
         if (_starting)

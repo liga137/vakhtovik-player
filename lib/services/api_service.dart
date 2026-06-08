@@ -42,7 +42,7 @@ class ApiService {
   /// Выполняет [fn] с автоматическими повторами при сетевых ошибках.
   /// На каждой повторной попытке создаётся новый HttpClient (свежие сокеты).
   static Future<T> _withRetry<T>(Future<T> Function(http.Client client) fn,
-      {int maxRetries = _maxRetries, String operation = 'API'}) async {
+      {int maxRetries = _maxRetries}) async {
     var attempt = 0;
     Object? lastError;
     while (true) {
@@ -97,15 +97,6 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     _ytToken = prefs.getString(_ytTokenKey);
     _ytUsername = prefs.getString(_ytUsernameKey);
-    
-    // Миграция: если сохранен старый OAuth токен или токен без декодированных % (url-encoded), сбрасываем его
-    if (_ytToken != null && (!_ytToken!.contains('SAPISID=') || _ytToken!.contains('%2F') || _ytToken!.contains('%3D'))) {
-      _ytToken = null;
-      _ytUsername = null;
-      await prefs.remove(_ytTokenKey);
-      await prefs.remove(_ytUsernameKey);
-    }
-    
     _ytStateLoaded = true;
   }
 
@@ -122,7 +113,6 @@ class ApiService {
     }
   }
 
-  /// Сохранить YouTube-авторизацию (Google OAuth).
   static Future<void> saveYoutubeAuth(String token, String username) async {
     _ytToken = token;
     _ytUsername = username;
@@ -238,69 +228,33 @@ class ApiService {
     });
   }
 
-  /// Главная страница YouTube (серверный InnerTube).
-  /// С token (SAPISID) — персональная лента, без — анонимная/популярная.
-  static Future<List<YouTubeVideo>> youtubeHome({int limit = 24}) async {
+  static Future<void> youtubeRegister(String username, String password) async {
     await initLocalState();
-    return _withRetry((c) async {
-      final params = <String, String>{'limit': limit.toString()};
-      if (_ytToken != null && _ytToken!.isNotEmpty) {
-        params['token'] = _ytToken!;
-      }
-      final uri = Uri.parse('$baseUrl/yt/home').replace(queryParameters: params);
-      final response = await c.get(uri).timeout(const Duration(seconds: 35));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List<dynamic>;
-        return data
-            .whereType<Map<String, dynamic>>()
-            .map(YouTubeVideo.fromJson)
-            .toList();
-      }
-      throw Exception('Ошибка Главной YouTube: ${response.statusCode}');
-    });
+    await _youtubeAuth('/yt/auth/register', username, password);
   }
 
-  /// Shorts (серверный InnerTube — MWEB FEshorts + fallback).
-  static Future<List<YouTubeVideo>> youtubeShorts({int limit = 20}) async {
+  static Future<void> youtubeLogin(String username, String password) async {
     await initLocalState();
-    return _withRetry((c) async {
-      final params = <String, String>{'limit': limit.toString()};
-      if (_ytToken != null && _ytToken!.isNotEmpty) {
-        params['token'] = _ytToken!;
-      }
-      final uri = Uri.parse('$baseUrl/yt/shorts').replace(queryParameters: params);
-      final response = await c.get(uri).timeout(const Duration(seconds: 35));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List<dynamic>;
-        return data
-            .whereType<Map<String, dynamic>>()
-            .map(YouTubeVideo.fromJson)
-            .toList();
-      }
-      throw Exception('Ошибка Shorts YouTube: ${response.statusCode}');
-    });
+    await _youtubeAuth('/yt/auth/login', username, password);
   }
 
-  /// Лента подписок (серверный InnerTube, требует авторизации).
-  static Future<List<YouTubeVideo>> youtubeSubscriptions({int limit = 30}) async {
-    await initLocalState();
-    if (_ytToken == null || _ytToken!.isEmpty) {
-      throw Exception('AUTH_REQUIRED');
-    }
-    return _withRetry((c) async {
-      final uri = Uri.parse('$baseUrl/yt/subscriptions').replace(
-        queryParameters: {'token': _ytToken!, 'limit': limit.toString()},
+  static Future<void> _youtubeAuth(
+      String path, String username, String password) async {
+    await _withRetry((c) async {
+      final response = await c.post(
+        Uri.parse('$baseUrl$path'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'username': username, 'password': password}),
       );
-      final response = await c.get(uri).timeout(const Duration(seconds: 35));
-      if (response.statusCode == 401) throw Exception('AUTH_ERROR_401');
       if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List<dynamic>;
-        return data
-            .whereType<Map<String, dynamic>>()
-            .map(YouTubeVideo.fromJson)
-            .toList();
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        _ytToken = data['token'] as String?;
+        _ytUsername = data['username'] as String? ?? username;
+        await _saveAuthState();
+        return;
       }
-      throw Exception('Ошибка подписок YouTube: ${response.statusCode}');
+      throw Exception(
+          'Ошибка авторизации: ${response.statusCode} ${response.body}');
     });
   }
 
@@ -308,6 +262,52 @@ class ApiService {
     _ytToken = null;
     _ytUsername = null;
     unawaited(_saveAuthState());
+  }
+
+  static Future<List<Map<String, dynamic>>> youtubeSubscriptions() async {
+    await initLocalState();
+    return _withRetry((c) async {
+      final response = await c.get(
+        Uri.parse('$baseUrl/yt/subscriptions'),
+        headers: _ytHeaders,
+      );
+      if (response.statusCode == 200) {
+        return List<Map<String, dynamic>>.from(json.decode(response.body));
+      }
+      throw Exception('Ошибка подписок: ${response.statusCode}');
+    });
+  }
+
+  static Future<void> youtubeAddSubscription(String input,
+      {String channelName = ''}) async {
+    await initLocalState();
+    await _withRetry((c) async {
+      final response = await c.post(
+        Uri.parse('$baseUrl/yt/subscriptions/add'),
+        headers: _ytHeaders,
+        body: json.encode({'text': input, 'channel_name': channelName}),
+      );
+      if (response.statusCode == 200) return;
+      throw Exception(
+          'Ошибка добавления: ${response.statusCode} ${response.body}');
+    });
+  }
+
+  static Future<List<YouTubeVideo>> youtubeFeed({int limit = 30}) async {
+    await initLocalState();
+    return _withRetry((c) async {
+      final uri = Uri.parse('$baseUrl/yt/feed')
+          .replace(queryParameters: {'limit': limit.toString()});
+      final response = await c.get(uri, headers: _ytHeaders);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List<dynamic>;
+        return data
+            .whereType<Map<String, dynamic>>()
+            .map(YouTubeVideo.fromJson)
+            .toList();
+      }
+      throw Exception('Ошибка ленты: ${response.statusCode}');
+    });
   }
 
   static Future<List<YouTubeVideo>> youtubePopular({int limit = 24}) async {
@@ -329,10 +329,10 @@ class ApiService {
   }
 
   static String youtubeGoogleStartUrl(String state) {
-    // Поскольку мы вырезали локальную регистрацию, передаем заглушку,
-    // так как бэкенд все еще ожидает параметр token для старого роута.
+    final token = _ytToken;
+    if (token == null) throw Exception('Сначала войдите во внутренний аккаунт');
     return Uri.parse('$baseUrl/yt/google/start').replace(
-      queryParameters: {'token': 'oauth_only', 'state': state},
+      queryParameters: {'token': token, 'state': state},
     ).toString();
   }
 
@@ -402,4 +402,60 @@ class ApiService {
     return 'ttl:${video.title.toLowerCase()}|ch:${video.channel.toLowerCase()}';
   }
 
+  static Future<List<YouTubeVideo>> youtubeFresh({int limit = 40}) async {
+    await initLocalState();
+    final channels = await youtubeWatchedChannels();
+    if (channels.isEmpty) {
+      if (isYouTubeLoggedIn) {
+        try {
+          return await youtubeFeed(limit: limit);
+        } catch (_) {}
+      }
+      return youtubePopular(limit: limit);
+    }
+
+    final channelBatches = <String, List<YouTubeVideo>>{};
+    for (final channel in channels.take(8)) {
+      try {
+        final items = await searchYouTube(channel, limit: 8);
+        var filtered = items
+            .where((v) =>
+                v.channel.isEmpty || _isSimilarChannel(v.channel, channel))
+            .toList();
+        if (filtered.isEmpty) filtered = items;
+        if (filtered.isNotEmpty) {
+          channelBatches[channel] = filtered;
+        }
+      } catch (_) {}
+    }
+
+    if (channelBatches.isEmpty) {
+      if (isYouTubeLoggedIn) {
+        try {
+          return await youtubeFeed(limit: limit);
+        } catch (_) {}
+      }
+      return youtubePopular(limit: limit);
+    }
+
+    final output = <YouTubeVideo>[];
+    final seen = <String>{};
+    final keys = channelBatches.keys.toList();
+    var progress = true;
+    while (output.length < limit && progress) {
+      progress = false;
+      for (final key in keys) {
+        final list = channelBatches[key]!;
+        if (list.isEmpty) continue;
+        final item = list.removeAt(0);
+        final itemKey = _videoKey(item);
+        if (seen.add(itemKey)) {
+          output.add(item);
+        }
+        progress = true;
+        if (output.length >= limit) break;
+      }
+    }
+    return output;
+  }
 }

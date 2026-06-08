@@ -1,7 +1,7 @@
 name: vakhtovik_player
 description: Плеер Вахтовика — кроссплатформенный клиент
 publish_to: 'none'
-version: 0.2.26
+version: 0.2.27
 
 environment:
   sdk: ^3.0.0
@@ -10,7 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.0
-  flutter_inappwebview: ^6.1.5
+  flutter_inappwebview: ^6.0.0
   video_player: ^2.9.3
   package_info_plus: ^8.0.0
   webview_flutter: ^4.5.0
@@ -19,7 +19,6 @@ dependencies:
   url_launcher: ^6.3.1
   window_manager: ^0.4.3
   shared_preferences: ^2.3.2
-  crypto: ^3.0.3
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -40,7 +39,3 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
-    - assets/iptv/
-
-dependency_overrides:
-  flutter_inappwebview_windows: 0.6.0

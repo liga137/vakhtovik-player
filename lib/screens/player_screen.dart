@@ -336,10 +336,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         ],
       ),
-      body: _isInitialized && _chewieController != null
-          ? Chewie(controller: _chewieController!)
-          : Center(
-              child: Container(
+      body: Center(
+        child: _isInitialized && _chewieController != null
+            ? Stack(
+                children: [
+                  Positioned.fill(
+                      child: Chewie(controller: _chewieController!)),
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    top: 10,
+                    child: IgnorePointer(
+                      child: _PlaybackStatusOverlay(
+                        controller: _controller!,
+                        fallbackDurationSeconds: _durationHintSeconds,
+                        availableDurationSeconds: _durationHintSeconds,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Container(
                 color: Colors.black54,
                 child: Center(
                   child: Container(
@@ -394,7 +411,152 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
               ),
+      ),
+    );
+  }
+}
+
+class _PlaybackStatusOverlay extends StatefulWidget {
+  final VideoPlayerController controller;
+  final double fallbackDurationSeconds;
+  final double availableDurationSeconds;
+
+  const _PlaybackStatusOverlay({
+    required this.controller,
+    required this.fallbackDurationSeconds,
+    required this.availableDurationSeconds,
+  });
+
+  @override
+  State<_PlaybackStatusOverlay> createState() => _PlaybackStatusOverlayState();
+}
+
+class _PlaybackStatusOverlayState extends State<_PlaybackStatusOverlay> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_tick);
+    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _tick());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    widget.controller.removeListener(_tick);
+    super.dispose();
+  }
+
+  void _tick() {
+    if (mounted) setState(() {});
+  }
+
+  String _fmt(Duration d) {
+    if (d.inMilliseconds <= 0) return '0:00';
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60);
+    final s = d.inSeconds.remainder(60);
+    if (h > 0) {
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
+    return '${d.inMinutes}:${s.toString().padLeft(2, '0')}';
+  }
+
+  Duration _effectiveDuration(VideoPlayerValue v) {
+    final duration = v.duration;
+    if (duration.inMilliseconds > 0) return duration;
+    final fallbackMs = (widget.fallbackDurationSeconds * 1000).round();
+    if (fallbackMs > 0) return Duration(milliseconds: fallbackMs);
+    return Duration.zero;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final value = widget.controller.value;
+    final position = value.position;
+    final duration = _effectiveDuration(value);
+    var bufferedEnd =
+        value.buffered.isNotEmpty ? value.buffered.last.end : Duration.zero;
+    final availableMs = (widget.availableDurationSeconds * 1000).round();
+    if (availableMs > bufferedEnd.inMilliseconds) {
+      bufferedEnd = Duration(milliseconds: availableMs);
+    }
+
+    final totalMs = duration.inMilliseconds;
+    final posMs = position.inMilliseconds
+        .clamp(0, totalMs > 0 ? totalMs : position.inMilliseconds)
+        .toDouble();
+    final bufMs = bufferedEnd.inMilliseconds
+        .clamp(0, totalMs > 0 ? totalMs : bufferedEnd.inMilliseconds)
+        .toDouble();
+
+    final progress =
+        totalMs > 0 ? (posMs / totalMs).clamp(0.0, 1.0).toDouble() : 0.0;
+    final bufferProgress =
+        totalMs > 0 ? (bufMs / totalMs).clamp(0.0, 1.0).toDouble() : 0.0;
+    final bufferedAhead = bufferedEnd - position;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xCC000000),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.schedule, color: Colors.orange, size: 14),
+              const SizedBox(width: 6),
+              Text(
+                '${_fmt(position)} / ${totalMs > 0 ? _fmt(duration) : 'длит. не определена'}',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600),
+              ),
+              const Spacer(),
+              if (value.isBuffering)
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.orange),
+                ),
+              const SizedBox(width: 8),
+              Text(
+                bufferedAhead.inSeconds > 0
+                    ? 'Буфер +${bufferedAhead.inSeconds}с'
+                    : 'Буфер 0с',
+                style: const TextStyle(color: Colors.white70, fontSize: 11),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: SizedBox(
+              height: 4,
+              child: Stack(
+                children: [
+                  Positioned.fill(child: Container(color: Colors.white12)),
+                  FractionallySizedBox(
+                    widthFactor: bufferProgress,
+                    child: Container(color: Colors.white38),
+                  ),
+                  FractionallySizedBox(
+                    widthFactor: progress,
+                    child: Container(color: Colors.orange),
+                  ),
+                ],
+              ),
             ),
+          ),
+        ],
+      ),
     );
   }
 }
