@@ -14,7 +14,7 @@ dependencies:
   video_player: ^2.9.3
   package_info_plus: ^8.0.0
   webview_flutter: ^4.5.0
-  chewie: ^1.10.0
+  chewie: 1.8.7
   video_player_win: ^3.2.2
   url_launcher: ^6.3.1
   window_manager: ^0.4.3
