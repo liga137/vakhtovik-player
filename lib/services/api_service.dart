@@ -234,42 +234,36 @@ class ApiService {
     });
   }
 
-  /// Главная страница YouTube (прямой HTML-парсинг с клиента — IP совпадает).
+  /// Главная страница YouTube (через headless WebView — сессия не рвётся).
   static Future<List<YouTubeVideo>> youtubeHome({int limit = 24}) async {
     await initLocalState();
     try {
-      final parser = YouTubeHtmlParser(_ytToken ?? '');
-      final videos = await parser.getHome(limit: limit);
-      // Fallback: если нет кук или парсер пуст — yt-dlp с сервера
-      if (videos.isEmpty) {
-        return youtubePopular(limit: limit);
-      }
-      return videos;
+      final videos = await YouTubeHtmlParser.getHome(limit: limit);
+      if (videos.isNotEmpty) return videos;
+      return youtubePopular(limit: limit);
     } on Exception {
       return youtubePopular(limit: limit);
     }
   }
 
-  /// Shorts (прямой HTML-парсинг с клиента).
+  /// Shorts (через headless WebView).
   static Future<List<YouTubeVideo>> youtubeShorts({int limit = 20}) async {
     await initLocalState();
     try {
-      final parser = YouTubeHtmlParser(_ytToken ?? '');
-      return await parser.getShorts(limit: limit);
+      return await YouTubeHtmlParser.getShorts(limit: limit);
     } on Exception {
       return [];
     }
   }
 
-  /// Лента подписок (прямой HTML-парсинг с клиента, требует авторизации).
+  /// Лента подписок (через headless WebView, требует авторизации).
   static Future<List<YouTubeVideo>> youtubeSubscriptions({int limit = 30}) async {
     await initLocalState();
     if (_ytToken == null || _ytToken!.isEmpty) {
       throw Exception('AUTH_REQUIRED');
     }
     try {
-      final parser = YouTubeHtmlParser(_ytToken!);
-      return await parser.getSubscriptions(limit: limit);
+      return await YouTubeHtmlParser.getSubscriptions(limit: limit);
     } on Exception catch (e) {
       final msg = e.toString();
       if (msg.contains('AUTH_ERROR')) throw Exception('AUTH_ERROR_401');
