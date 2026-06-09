@@ -358,13 +358,10 @@ class YouTubeHtmlParser {
   }
 
   Future<List<YouTubeVideo>> getShorts({int limit = 20}) async {
-    final html =
-        await _get('$_ytOrigin/results?search_query=%23shorts');
+    final html = await _get('$_ytOrigin/shorts/');
     final data = _extractData(html);
     if (data == null) return [];
-    final all = _extractVideos(data);
-    final shorts = all.where((v) => v.duration > 0 && v.duration <= 60);
-    return (shorts.isNotEmpty ? shorts : all).take(limit).toList();
+    return _extractVideos(data).take(limit).toList();
   }
 }
 
