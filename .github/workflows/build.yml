@@ -1,4 +1,4 @@
-name: Build Flutter Apps
+name: Build VakhtovikPlayer
 
 on:
   push:
@@ -10,44 +10,53 @@ permissions:
 
 jobs:
   build-windows:
+    name: Windows
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Flutter 3.24.3
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.27.x'
-          channel: 'stable'
+          channel: stable
           cache: true
 
       - name: Enable Windows Desktop
         run: flutter config --enable-windows-desktop
 
-      - name: Verify Visual Studio
-        shell: pwsh
-        run: |
-          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          Write-Host "VS: $vs"
-          if (-not $vs) { throw "Visual Studio not found" }
-
-      - name: Install Flutter dependencies
+      - name: Flutter pub get
         run: flutter pub get
 
       - name: Build Windows Release
         run: flutter build windows --release
 
-      - name: Compress Windows Build
-        run: Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath Vakhtovik-Player-Windows.zip
+      - name: Download sing-box
+        shell: pwsh
+        run: |
+          $version = "1.13.12"
+          $url = "https://github.com/SagerNet/sing-box/releases/download/v$version/sing-box-$version-windows-amd64.zip"
+          Invoke-WebRequest -Uri $url -OutFile sing-box.zip
+          Expand-Archive sing-box.zip -DestinationPath sb -Force
+          $exe = Get-ChildItem -Recurse sb -Filter "sing-box.exe" | Select-Object -First 1
+          Copy-Item $exe.FullName "build\windows\x64\runner\Release\sing-box.exe"
+          Write-Host "sing-box.exe copied"
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $v = (Select-String 'version:' pubspec.yaml | Select-Object -First 1).ToString().Split(':')[1].Trim().Split('+')[0]
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "VakhtovikPlayer-v$v-windows.zip" -Force
 
       - name: Upload Windows
         uses: actions/upload-artifact@v4
         with:
-          name: Vakhtovik-Player-Windows
-          path: Vakhtovik-Player-Windows.zip
+          name: windows-build
+          path: VakhtovikPlayer-v*-windows.zip
           retention-days: 30
 
   build-android:
+    name: Android
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,78 +64,61 @@ jobs:
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Setup Flutter 3.24.3
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.27.x'
-          channel: 'stable'
+          channel: stable
           cache: true
 
-      - name: Install Flutter dependencies
+      - name: Flutter pub get
         run: flutter pub get
 
-      - name: Build release APK
-        run: flutter build apk --release
+      - name: Build APK
+        run: flutter build apk --release --split-per-abi
 
-      - name: Upload APK
+      - name: Upload Android
         uses: actions/upload-artifact@v4
         with:
-          name: Vakhtovik-Player-Android
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: android-build
+          path: build/app/outputs/flutter-apk/*.apk
           retention-days: 30
 
   release:
-    runs-on: ubuntu-latest
-    needs: [build-windows]
+    name: Release
+    needs: [build-windows, build-android]
     if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read app version
-        id: version
+      - name: Get version
+        id: ver
         shell: bash
         run: |
-          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          V=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
 
-      - name: Download Windows artifact
+      - name: Download Windows
         uses: actions/download-artifact@v4
         with:
-          name: Vakhtovik-Player-Windows
-          path: release-assets/windows
+          name: windows-build
+          path: assets/
 
-      - name: Download Android artifact
+      - name: Download Android
         uses: actions/download-artifact@v4
         with:
-          name: Vakhtovik-Player-Android
-          path: release-assets/android
+          name: android-build
+          path: assets/
 
-      - name: Rename APK
-        shell: bash
-        run: mv release-assets/android/app-release.apk release-assets/android/Vakhtovik-Player-Android.apk
-
-      - name: Publish GitHub Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: Vakhtovik Player v${{ steps.version.outputs.version }}
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Vakhtovik Player v${{ steps.ver.outputs.version }}
           target_commitish: ${{ github.sha }}
           make_latest: true
-          overwrite_files: true
-          body: |
-            Автоматическая сборка Плеера Вахтовика.
-
-            v${{ steps.version.outputs.version }}:
-            - YouTube «Главная» через InnerTube API
-            - IPTV: Беларусь + Россия, кэш-first
-            - WebView: исправлены циклические перезагрузки
-            - Исправлены YouTube search/feed/popular
-          files: |
-            release-assets/windows/Vakhtovik-Player-Windows.zip
-            release-assets/android/Vakhtovik-Player-Android.apk
+          files: assets/**
