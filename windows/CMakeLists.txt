@@ -93,13 +93,13 @@ install(DIRECTORY "${NATIVE_ASSETS_DIR}"
    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
    COMPONENT Runtime)
 
-# Copy sing-box binaries next to executable
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/sing-box.exe"
-  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-  COMPONENT Runtime)
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/libcronet.dll"
-  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
-  COMPONENT Runtime)
+# Copy sing-box binaries next to executable (if present — excluded from git)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sing-box.exe")
+  install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/sing-box.exe"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+# libcronet.dll excluded — not included in git (in .gitignore), causes MSB3073 on CI
 
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
