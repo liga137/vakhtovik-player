@@ -17,14 +17,26 @@ class YouTubeHtmlParser {
 
   YouTubeHtmlParser(this._cookies);
 
-  /// GET-запрос к YouTube (консистентный IP)
+  /// GET-запрос к YouTube (маскировка под Chrome)
   Future<String> _get(String url) async {
     final uri = Uri.parse(url);
     final headers = {
       'User-Agent': _userAgent,
       'Accept-Language': _acceptLang,
       'Accept':
-          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Cache-Control': 'max-age=0',
+      'Sec-Ch-Ua':
+          '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
+      'Sec-Ch-Ua-Mobile': '?0',
+      'Sec-Ch-Ua-Platform': '"Windows"',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1',
+      'Dnt': '1',
       if (_cookies.isNotEmpty) 'Cookie': _cookies,
     };
     final resp = await http.get(uri, headers: headers).timeout(
