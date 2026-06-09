@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/preset.dart';
 import '../models/transcode_result.dart';
 import '../models/youtube_video.dart';
+import 'youtube_html_parser.dart';
 
 /// Сервис для работы с API «Плеер Вахтовика»
 class ApiService {
@@ -233,70 +234,48 @@ class ApiService {
     });
   }
 
-  /// Главная страница YouTube (серверный InnerTube).
-  /// С token (SAPISID) — персональная лента, без — анонимная/популярная.
+  /// Главная страница YouTube (прямой HTML-парсинг с клиента — IP совпадает).
   static Future<List<YouTubeVideo>> youtubeHome({int limit = 24}) async {
     await initLocalState();
-    return _withRetry((c) async {
-      final params = <String, String>{'limit': limit.toString()};
-      if (_ytToken != null && _ytToken!.isNotEmpty) {
-        params['token'] = _ytToken!;
+    try {
+      final parser = YouTubeHtmlParser(_ytToken ?? '');
+      final videos = await parser.getHome(limit: limit);
+      // Fallback: если нет кук или парсер пуст — yt-dlp с сервера
+      if (videos.isEmpty) {
+        return youtubePopular(limit: limit);
       }
-      final uri = Uri.parse('$baseUrl/yt/home').replace(queryParameters: params);
-      final response = await c.get(uri).timeout(const Duration(seconds: 35));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List<dynamic>;
-        return data
-            .whereType<Map<String, dynamic>>()
-            .map(YouTubeVideo.fromJson)
-            .toList();
-      }
-      throw Exception('Ошибка Главной YouTube: ${response.statusCode}');
-    });
+      return videos;
+    } on Exception {
+      return youtubePopular(limit: limit);
+    }
   }
 
-  /// Shorts (серверный InnerTube — MWEB FEshorts + fallback).
+  /// Shorts (прямой HTML-парсинг с клиента).
   static Future<List<YouTubeVideo>> youtubeShorts({int limit = 20}) async {
     await initLocalState();
-    return _withRetry((c) async {
-      final params = <String, String>{'limit': limit.toString()};
-      if (_ytToken != null && _ytToken!.isNotEmpty) {
-        params['token'] = _ytToken!;
-      }
-      final uri = Uri.parse('$baseUrl/yt/shorts').replace(queryParameters: params);
-      final response = await c.get(uri).timeout(const Duration(seconds: 35));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List<dynamic>;
-        return data
-            .whereType<Map<String, dynamic>>()
-            .map(YouTubeVideo.fromJson)
-            .toList();
-      }
-      throw Exception('Ошибка Shorts YouTube: ${response.statusCode}');
-    });
+    try {
+      final parser = YouTubeHtmlParser(_ytToken ?? '');
+      return await parser.getShorts(limit: limit);
+    } on Exception {
+      return [];
+    }
   }
 
-  /// Лента подписок (серверный InnerTube, требует авторизации).
+  /// Лента подписок (прямой HTML-парсинг с клиента, требует авторизации).
   static Future<List<YouTubeVideo>> youtubeSubscriptions({int limit = 30}) async {
     await initLocalState();
     if (_ytToken == null || _ytToken!.isEmpty) {
       throw Exception('AUTH_REQUIRED');
     }
-    return _withRetry((c) async {
-      final uri = Uri.parse('$baseUrl/yt/subscriptions').replace(
-        queryParameters: {'token': _ytToken!, 'limit': limit.toString()},
-      );
-      final response = await c.get(uri).timeout(const Duration(seconds: 35));
-      if (response.statusCode == 401) throw Exception('AUTH_ERROR_401');
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List<dynamic>;
-        return data
-            .whereType<Map<String, dynamic>>()
-            .map(YouTubeVideo.fromJson)
-            .toList();
-      }
-      throw Exception('Ошибка подписок YouTube: ${response.statusCode}');
-    });
+    try {
+      final parser = YouTubeHtmlParser(_ytToken!);
+      return await parser.getSubscriptions(limit: limit);
+    } on Exception catch (e) {
+      final msg = e.toString();
+      if (msg.contains('AUTH_ERROR')) throw Exception('AUTH_ERROR_401');
+      if (msg.contains('AUTH_REQUIRED')) throw Exception('AUTH_REQUIRED');
+      rethrow;
+    }
   }
 
   static void youtubeLogout() {
