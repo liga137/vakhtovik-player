@@ -8,7 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/preset.dart';
 import '../models/transcode_result.dart';
 import '../models/youtube_video.dart';
-import 'youtube_html_parser.dart';
 
 /// Сервис для работы с API «Плеер Вахтовика»
 class ApiService {
@@ -234,42 +233,17 @@ class ApiService {
     });
   }
 
-  /// Главная страница YouTube (через headless WebView — сессия не рвётся).
+  /// YouTube теперь через WebView-вкладку — эти методы больше не нужны.
   static Future<List<YouTubeVideo>> youtubeHome({int limit = 24}) async {
-    await initLocalState();
-    try {
-      final videos = await YouTubeHtmlParser.getHome(limit: limit);
-      if (videos.isNotEmpty) return videos;
-      return youtubePopular(limit: limit);
-    } on Exception {
-      return youtubePopular(limit: limit);
-    }
+    return youtubePopular(limit: limit);
   }
 
-  /// Shorts (через headless WebView).
   static Future<List<YouTubeVideo>> youtubeShorts({int limit = 20}) async {
-    await initLocalState();
-    try {
-      return await YouTubeHtmlParser.getShorts(limit: limit);
-    } on Exception {
-      return [];
-    }
+    return [];
   }
 
-  /// Лента подписок (через headless WebView, требует авторизации).
   static Future<List<YouTubeVideo>> youtubeSubscriptions({int limit = 30}) async {
-    await initLocalState();
-    if (_ytToken == null || _ytToken!.isEmpty) {
-      throw Exception('AUTH_REQUIRED');
-    }
-    try {
-      return await YouTubeHtmlParser.getSubscriptions(limit: limit);
-    } on Exception catch (e) {
-      final msg = e.toString();
-      if (msg.contains('AUTH_ERROR')) throw Exception('AUTH_ERROR_401');
-      if (msg.contains('AUTH_REQUIRED')) throw Exception('AUTH_REQUIRED');
-      rethrow;
-    }
+    throw Exception('AUTH_REQUIRED');
   }
 
   static void youtubeLogout() {
