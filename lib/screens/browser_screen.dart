@@ -9,9 +9,9 @@ import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:window_manager/window_manager.dart';
 import '../services/api_service.dart';
-import '../services/log_service.dart';
+import '../services/filmix_auth.dart';
+import '../services/filmix_dom.dart';
 import '../services/update_service.dart';
-import '../services/vpn_service.dart';
 import '../services/youtube_hover.dart';
 import '../models/preset.dart';
 import 'iptv_screen.dart';
@@ -55,8 +55,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _onYouTube = false; // флаг: мы на странице YouTube
   bool _compressMode = false; // Режим «Сжатое» — кнопки на всех видео YouTube
   bool _interceptedAlready = false; // защита от повторного перехвата одного URL
-  VpnState _vpnState = VpnState.disconnected;
-  StreamSubscription<VpnState>? _vpnSub;
   bool _scanningSeasonvar = false;
   List<Map<String, String>> _seasonvarEpisodes = [];
   int _seasonvarIndex = 0;
@@ -85,9 +83,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _loadPresets();
     _loadRecentLinks();
     _initWindowsWebViewEnvironment();
-    _vpnSub = VpnService.instance.stateStream.listen((s) {
-      if (mounted) setState(() => _vpnState = s);
-    });
     Future.delayed(const Duration(seconds: 6), () {
       if (mounted) _checkForUpdates(silent: true);
     });
@@ -361,96 +356,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void dispose() {
     _videoController?.dispose();
     _chewieController?.dispose();
-    _vpnSub?.cancel();
     unawaited(_safeDisposeEnvironment(_webViewEnvironment));
     super.dispose();
-  }
-
-  // ── VPN (sing-box) ────────────────────────────────────────
-
-  String _vpnTooltip() {
-    switch (_vpnState) {
-      case VpnState.connected: return 'VPN подключён';
-      case VpnState.connecting: return 'VPN подключается...';
-      case VpnState.disconnecting: return 'VPN отключается...';
-      case VpnState.error: return 'Ошибка VPN: ${VpnService.instance.lastError}';
-      case VpnState.disconnected: return 'VPN отключён';
-    }
-  }
-
-  Future<void> _toggleVpn() async {
-    if (_vpnState == VpnState.connecting || _vpnState == VpnState.disconnecting) return;
-
-    if (_vpnState == VpnState.connected) {
-      await VpnService.instance.disconnect();
-      return;
-    }
-
-    // Загружаем конфиг и подключаемся
-    final config = await VpnService.loadConfig();
-    if (!mounted) return;
-
-    // Если дефолтный конфиг (не настроен) — показываем диалог
-    if (config.contains('YOUR_SERVER') || config.contains('YOUR_PASSWORD')) {
-      final result = await _showVpnConfigDialog(config);
-      if (result != null && mounted) {
-        await VpnService.saveConfig(result);
-        await VpnService.instance.connect(result);
-        if (mounted && VpnService.instance.lastError.isNotEmpty) {
-          _snack(VpnService.instance.lastError);
-        }
-      }
-      return;
-    }
-
-    await VpnService.instance.connect(config);
-    if (mounted && VpnService.instance.lastError.isNotEmpty) {
-      _snack(VpnService.instance.lastError);
-    }
-  }
-
-  Future<String?> _showVpnConfigDialog(String currentConfig) async {
-    final ctrl = TextEditingController(text: currentConfig);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Конфиг sing-box'),
-        content: SizedBox(
-          width: 400,
-          height: 300,
-          child: TextField(
-            controller: ctrl,
-            maxLines: null,
-            expands: true,
-            textAlignVertical: TextAlignVertical.top,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-            decoration: const InputDecoration(
-              hintText: '{\n  "outbounds": [...]\n}',
-              border: OutlineInputBorder(),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text),
-            child: const Text('Подключить'),
-          ),
-        ],
-      ),
-    );
-    ctrl.dispose();
-    return result;
-  }
-
-  void _snack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: const Duration(seconds: 3)),
-    );
   }
 
   // Скрипт для авто-переключения серии — НЕ закрывает плеер, ждёт новый перехват
@@ -861,12 +768,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (_showPlayer || _isLoading) return;
     if (clean == _lastAutoMediaUrl) return;
 
-    // Filmix disabled — skip filmix hint extraction
-    // final isFilmixSource =
-    //     _isFilmixContext(lower) || _isFilmixContext(_currentRealUrl);
-    // if (isFilmixSource) {
-    //   _applyFilmixHintFromMediaUrl(clean);
-    // }
+    final isFilmixSource =
+        _isFilmixContext(lower) || _isFilmixContext(_currentRealUrl);
+    if (isFilmixSource) {
+      _applyFilmixHintFromMediaUrl(clean);
+    }
 
     final canAutostart =
         _waitingForNextEpisode || (!_showInterceptor && !_interceptedAlready);
@@ -941,13 +847,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Future<void> _selectFilmixTranslation(String translationId) async {
     if (translationId.trim().isEmpty || webViewController == null) return;
-    // Filmix disabled
-    return;
+    await webViewController!
+        .evaluateJavascript(source: FilmixDom.getInjectionJS());
+    if (!mounted) return;
+    setState(() {
+      _filmixTranslationId = translationId.trim();
+      _filmixIndex = 0;
+    });
+    _scanFilmixEpisodes(silent: true);
   }
 
   Future<void> _selectFilmixSeason(String seasonId) async {
     if (seasonId.trim().isEmpty || webViewController == null) return;
-    // Filmix disabled — .evaluateJavascript removed
+    await webViewController!
+        .evaluateJavascript(source: FilmixDom.getInjectionJS());
     if (!mounted) return;
     setState(() {
       _filmixSeasonId = seasonId.trim();
@@ -972,7 +885,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _lastFilmixMediaUrl = '';
     _lastAutoMediaUrl = '';
 
-    // Filmix disabled — .evaluateJavascript removed
+    await webViewController!
+        .evaluateJavascript(source: FilmixDom.getInjectionJS());
     final clickResult = await webViewController!.evaluateJavascript(source: """
       (function() {
         var season = '${_jsString(season)}';
@@ -1010,7 +924,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _scanFilmixEpisodes({bool silent = false}) {
-    return; // Отключено
+    if (webViewController == null) return;
+    if (!silent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Сканирую серии Filmix...'),
+            duration: Duration(seconds: 2)),
+      );
+    }
+    webViewController!.evaluateJavascript(source: FilmixDom.getInjectionJS());
   }
 
   void _openCompressedUrl(String url, {String? referer}) {
@@ -1261,8 +1183,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool get _hasEpisodeList =>
       _seasonvarEpisodes.isNotEmpty ||
       _seasonvarTranslations.isNotEmpty ||
-      _seasonvarSeasons.isNotEmpty;
-      // Filmix disabled — removed from condition
+      _seasonvarSeasons.isNotEmpty ||
+      _filmixEpisodes.isNotEmpty ||
+      _filmixTranslations.isNotEmpty ||
+      _filmixSeasons.isNotEmpty;
 
   List<Map<String, String>> get _activeEpisodes {
     if (_seasonvarEpisodes.isNotEmpty) return _seasonvarEpisodes;
@@ -1427,20 +1351,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
-  Future<void> _showLogDialog() async {
-    final log = await LogService.readLog();
-    if (!mounted) return;
-    showDialog(context: context, builder: (ctx) => AlertDialog(
-      title: Row(children: [const Text('Лог ошибок'), const Spacer(),
-        Text('${log.split('\n').length} строк', style: const TextStyle(fontSize: 12, color: Colors.grey))]),
-      content: SizedBox(width: double.maxFinite, height: 400,
-        child: SingleChildScrollView(child: SelectableText(log, style: const TextStyle(fontFamily: 'monospace', fontSize: 11)))),
-      actions: [
-        TextButton(onPressed: () { LogService.clearLog(); Navigator.pop(ctx); }, child: const Text('Очистить')),
-        TextButton(onPressed: () { Navigator.pop(ctx); }, child: const Text('Закрыть')),
-    ]));
-  }
-
   Future<void> _showCustomSiteDialog() async {
     final c = TextEditingController(text: 'https://');
     final result = await showDialog<String>(
@@ -1493,7 +1403,46 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       tooltip: 'Обновить',
                       onPressed: () => webViewController?.reload(),
                     ),
-                    // History button removed — not needed
+                    PopupMenuButton<String>(
+                      tooltip: 'Недавние ссылки',
+                      icon: const Icon(Icons.history, color: Colors.white),
+                      onSelected: (value) {
+                        if (value == '__clear__') {
+                          _clearRecentLinks();
+                          return;
+                        }
+                        _loadAddress(value);
+                      },
+                      itemBuilder: (_) {
+                        if (_recentLinks.isEmpty) {
+                          return const [
+                            PopupMenuItem<String>(
+                              value: '__empty__',
+                              enabled: false,
+                              child: Text('История пуста'),
+                            ),
+                          ];
+                        }
+                        final items = <PopupMenuEntry<String>>[
+                          ..._recentLinks
+                              .take(12)
+                              .map((link) => PopupMenuItem<String>(
+                                    value: link,
+                                    child: SizedBox(
+                                      width: 340,
+                                      child: Text(link,
+                                          overflow: TextOverflow.ellipsis),
+                                    ),
+                                  )),
+                          const PopupMenuDivider(),
+                          const PopupMenuItem<String>(
+                            value: '__clear__',
+                            child: Text('Очистить историю'),
+                          ),
+                        ];
+                        return items;
+                      },
+                    ),
                     IconButton(
                       icon: const Icon(Icons.home, color: Colors.white),
                       onPressed: () {
@@ -1545,7 +1494,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           ? null
                           : () => _checkForUpdates(silent: false),
                     ),
-                    // Debug playlist-scan button removed
+                    if (_currentRealUrl.contains('seasonvar') ||
+                        _currentRealUrl.contains('filmix'))
+                      IconButton(
+                        icon: const Icon(Icons.playlist_play,
+                            color: Colors.orange),
+                        tooltip: 'Сканировать сезоны/серии/озвучки',
+                        onPressed: () {
+                          if (_currentRealUrl.contains('seasonvar')) {
+                            _scanSeasonvarPlaylist();
+                          } else if (_currentRealUrl.contains('filmix')) {
+                            _scanFilmixEpisodes();
+                          }
+                        },
+                      ),
                     PopupMenuButton<EconomyLevel>(
                       tooltip: 'Режим экономии',
                       initialValue: _economyLevel,
@@ -1586,22 +1548,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               fontWeight: FontWeight.bold),
                         ),
                       ),
-                    ),
-                    // ── VPN (sing-box) ──
-                    IconButton(
-                      icon: Icon(
-                        _vpnState == VpnState.connected
-                            ? Icons.shield
-                            : Icons.shield_outlined,
-                        color: _vpnState == VpnState.connected
-                            ? Colors.greenAccent
-                            : _vpnState == VpnState.connecting
-                                ? Colors.orange
-                                : Colors.white54,
-                        size: 20,
-                      ),
-                      tooltip: _vpnTooltip(),
-                      onPressed: _toggleVpn,
                     ),
                     // YouTube: кнопки «Сжать» + «Оригинал/Сжатое» в хедере
                     if (_onYouTube) ...[
@@ -1715,6 +1661,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                 urlRequest:
                                     URLRequest(url: WebUri(restoreUrl)));
                           }
+                          unawaited(controller
+                              .addUserScript(
+                                userScript: UserScript(
+                                  groupName: 'vakhtovik_filmix_dom',
+                                  source: FilmixDom.getInjectionJS(),
+                                  injectionTime:
+                                      UserScriptInjectionTime.AT_DOCUMENT_END,
+                                  forMainFrameOnly: false,
+                                ),
+                              )
+                              .catchError((_) {}));
                           controller.addJavaScriptHandler(
                             handlerName: 'compressUrl',
                             callback: (args) {
@@ -2114,6 +2071,41 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               });
                             }
 
+                            // Filmix: автологин
+                            if (url.host.contains('filmix')) {
+                              await FilmixAuth.injectCookies(controller, url);
+                              controller.evaluateJavascript(
+                                  source: FilmixAuth.getInjectionScript());
+                              controller.evaluateJavascript(
+                                  source: FilmixDom.getInjectionJS());
+                              Future.delayed(
+                                  const Duration(milliseconds: 700),
+                                  () => controller.evaluateJavascript(
+                                      source: FilmixAuth.getInjectionScript()));
+                              Future.delayed(
+                                  const Duration(milliseconds: 900),
+                                  () => controller.evaluateJavascript(
+                                      source: FilmixDom.getInjectionJS()));
+                              Future.delayed(
+                                  const Duration(seconds: 2),
+                                  () => controller.evaluateJavascript(
+                                      source: FilmixAuth.getInjectionScript()));
+                              Future.delayed(const Duration(seconds: 2),
+                                  () => _scanFilmixEpisodes(silent: true));
+                              Future.delayed(
+                                  const Duration(seconds: 4),
+                                  () => controller.evaluateJavascript(
+                                      source: FilmixAuth.getInjectionScript()));
+                              Future.delayed(
+                                  const Duration(seconds: 7),
+                                  () => controller.evaluateJavascript(
+                                      source: FilmixAuth.getInjectionScript()));
+                              Future.delayed(const Duration(seconds: 3),
+                                  () => FilmixAuth.persistCookies(url));
+                              Future.delayed(const Duration(seconds: 8),
+                                  () => FilmixAuth.persistCookies(url));
+                            }
+
                             // YouTube: ховер-кнопки
                             if (url.host.contains('youtube.com')) {
                               controller.evaluateJavascript(
@@ -2138,16 +2130,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         },
                         onReceivedError: (controller, request, error) {
                           final failedUrl = request.url?.toString() ?? '';
+                          // Игнорируем ошибки about:blank и фоновых ресурсов
                           if (failedUrl.isEmpty ||
                               failedUrl == 'about:blank' ||
-                              !failedUrl.startsWith('http')) return;
-                          // Ретрим только главный фрейм, не саб-ресурсы
-                          final isMain = request.isForMainFrame ?? true;
-                          if (!isMain) return;
-                          // CONNECTION_ABORTED — норма при навигации
-                          if (error.type == WebResourceErrorType.CONNECTION_ABORTED) return;
-                          LogService.warn(LogService.browser,
-                              'WebView ошибка: $failedUrl — ${error.description}');
+                              !failedUrl.startsWith('http')) {
+                            return;
+                          }
                           _lastFailedUrl = failedUrl;
                           if (_webViewRetryCount < _webViewMaxRetries) {
                             _webViewRetryCount++;
@@ -2206,6 +2194,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               _rememberUrl(_currentRealUrl);
                             }
                             _updateYouTubeState(url);
+                            if (url.host.contains('filmix')) {
+                              controller.evaluateJavascript(
+                                  source: FilmixDom.getInjectionJS());
+                            }
                             if (url.host.contains('youtube.com') &&
                                 (url.path.contains('/watch') ||
                                     url.path.contains('/shorts/')) &&
@@ -2340,7 +2332,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
                           // Перехват медиа-запросов
                           if (method.toUpperCase() == "GET" && isMedia) {
-                            // Filmix hint extraction disabled
+                            if (_isFilmixContext(uri) ||
+                                _isFilmixContext(_currentRealUrl)) {
+                              _applyFilmixHintFromMediaUrl(
+                                  request.url.toString());
+                            }
                             // Режим авто-переключения серий: сразу сжимаем без шторки
                             if (_waitingForNextEpisode) {
                               _interceptedAlready = false;
@@ -2393,11 +2389,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(children: [
-                      const Text('Плеер Вахтовика', style: TextStyle(color: Colors.orange, fontSize: 24, fontWeight: FontWeight.bold)),
-                      const Spacer(),
-                      IconButton(icon: const Icon(Icons.bug_report, color: Colors.orange, size: 20), tooltip: 'Лог ошибок', onPressed: _showLogDialog),
-                    ]),
+                    const Text('Плеер Вахтовика',
+                        style: TextStyle(
+                            color: Colors.orange,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     const Text('Выбери сайт или введи свой адрес сверху',
                         style: TextStyle(color: Colors.white70)),
@@ -2459,12 +2455,155 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (_seasonvarTranslations.isNotEmpty)
+                      SizedBox(
+                        height: 34,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: _seasonvarTranslations.map((tr) {
+                            final id = tr['id'] ?? '';
+                            final trIndex = tr['index'] ?? '';
+                            final name = tr['name'] ?? 'Озвучка';
+                            final active =
+                                id.isNotEmpty && id == _seasonvarTranslationId;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: OutlinedButton(
+                                onPressed: () => _selectSeasonvarTranslation(id,
+                                    fallbackIndex: trIndex),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: active
+                                      ? Colors.greenAccent
+                                      : Colors.transparent,
+                                  foregroundColor:
+                                      active ? Colors.black : Colors.white,
+                                  side: BorderSide(
+                                      color: active
+                                          ? Colors.greenAccent
+                                          : Colors.white38),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  minimumSize: Size.zero,
+                                ),
+                                child: Text(name,
+                                    style: const TextStyle(fontSize: 11)),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    if (_seasonvarTranslations.isEmpty &&
+                        _filmixTranslations.isNotEmpty)
+                      SizedBox(
+                        height: 34,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: _filmixTranslations.map((tr) {
+                            final id = tr['id'] ?? '';
+                            final name = tr['name'] ?? id;
+                            final active =
+                                id.isNotEmpty && id == _filmixTranslationId;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: OutlinedButton(
+                                onPressed: () => _selectFilmixTranslation(id),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: active
+                                      ? Colors.greenAccent
+                                      : Colors.transparent,
+                                  foregroundColor:
+                                      active ? Colors.black : Colors.white,
+                                  side: BorderSide(
+                                      color: active
+                                          ? Colors.greenAccent
+                                          : Colors.white38),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  minimumSize: Size.zero,
+                                ),
+                                child: Text(name,
+                                    style: const TextStyle(fontSize: 11)),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    if (_seasonvarSeasons.isNotEmpty)
+                      SizedBox(
+                        height: 34,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: _seasonvarSeasons.map((s) {
+                            final title = s['title'] ?? 'Сезон';
+                            final seasonUrl = s['url'] ?? '';
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: OutlinedButton(
+                                onPressed: () =>
+                                    _openSeasonvarSeason(seasonUrl),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: const BorderSide(color: Colors.white38),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  minimumSize: Size.zero,
+                                ),
+                                child: Text(title,
+                                    style: const TextStyle(fontSize: 11)),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    if (_seasonvarSeasons.isEmpty && _filmixSeasons.isNotEmpty)
+                      SizedBox(
+                        height: 34,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: _filmixSeasons.map((s) {
+                            final id = s['id'] ?? '';
+                            final name = s['name'] ??
+                                (id.isNotEmpty ? 'Сезон $id' : 'Сезон');
+                            final active =
+                                id.isNotEmpty && id == _filmixSeasonId;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: OutlinedButton(
+                                onPressed: () => _selectFilmixSeason(id),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: active
+                                      ? Colors.greenAccent
+                                      : Colors.transparent,
+                                  foregroundColor:
+                                      active ? Colors.black : Colors.white,
+                                  side: BorderSide(
+                                      color: active
+                                          ? Colors.greenAccent
+                                          : Colors.white38),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  minimumSize: Size.zero,
+                                ),
+                                child: Text(name,
+                                    style: const TextStyle(fontSize: 11)),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
                           Text(
-                            _seasonvarEpisodes.isNotEmpty ? 'Seasonvar: ' : 'Filmix: ',
+                            (_seasonvarEpisodes.isNotEmpty ||
+                                    _seasonvarTranslations.isNotEmpty ||
+                                    _seasonvarSeasons.isNotEmpty)
+                                ? 'Seasonvar: '
+                                : (_filmixSeasonId.isNotEmpty ||
+                                        _filmixTranslationId.isNotEmpty)
+                                    ? 'Filmix ${_filmixSeasonId.isNotEmpty ? "S$_filmixSeasonId" : ""}${_filmixTranslationId.isNotEmpty ? " · $_filmixTranslationId" : ""}: '
+                                    : 'Filmix: ',
                             style: const TextStyle(
                                 color: Colors.orange, fontSize: 13),
                           ),

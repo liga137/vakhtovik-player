@@ -15,7 +15,3 @@ x86/
 *.[Cc]ache
 # but keep track of directories ending in .cache
 !*.[Cc]ache/
-sing-box.exe
-libcronet.dll
-*.exe
-*.dll
