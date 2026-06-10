@@ -106,30 +106,30 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
             onLoadStart: (_, __) => setState(() => _loading = true),
             onLoadStop: (_, __) {
               setState(() => _loading = false);
-              // JS: пауза через клавишу k + остановка video.src
+              // JS: скрываем видео сразу, пауза, шлём videoId
               _webCtrl?.evaluateJavascript(source: '''
 (function(){
+// CSS: прячем плеер YouTube
+var s=document.createElement('style');
+s.textContent='video{visibility:hidden!important}#movie_player{opacity:0!important}';
+document.head.appendChild(s);
+
 var _done={};
 setInterval(function(){
   var m=location.href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
   if(!m||_done[m[1]])return;
   _done[m[1]]=1;
-  // Способ 1: эмуляция нажатия k (YouTube hotkey паузы)
+  // Остановка видео
   var v=document.querySelector('video');
-  if(v){
-    v.dispatchEvent(new KeyboardEvent('keydown',{key:'k',code:'KeyK',keyCode:75,bubbles:true}));
-    setTimeout(function(){v.pause();v.src='';v.load();},200);
-  }
-  // Способ 2: клик по кнопке паузы
+  if(v){v.pause();v.muted=true;v.src='';try{v.load()}catch(e){}}
+  // Клик по паузе (ищем кнопку с aria-label "Pause")
   var btns=document.querySelectorAll('.ytp-play-button');
   for(var i=0;i<btns.length;i++){
-    var b=btns[i];
-    var ar=(b.getAttribute('aria-label')||'').toLowerCase();
-    var ti=(b.getAttribute('title')||'').toLowerCase();
-    if(ar.indexOf('pause')>=0||ti.indexOf('pause')>=0){b.click();break;}
+    var a=btns[i].getAttribute('aria-label')||'';
+    if(a.toLowerCase().indexOf('pause')>=0){btns[i].click();break;}
   }
   window.flutter_inappwebview.callHandler('onYouTubeVideo',m[1]);
-},300);
+},200);
 })();
 ''');
             },
