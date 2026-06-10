@@ -45,14 +45,14 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          $v = (Select-String 'version:' pubspec.yaml | Select-Object -First 1).ToString().Split(':')[1].Trim().Split('+')[0]
+          $v = ((Get-Content pubspec.yaml | Select-String '^version:') -split ':\s+')[1] -replace '\+.*$',''
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "VakhtovikPlayer-v$v-windows.zip" -Force
 
       - name: Upload Windows
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: VakhtovikPlayer-v*-windows.zip
+          path: VakhtovikPlayer-*-windows.zip
           retention-days: 30
 
   build-android:
