@@ -106,22 +106,19 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
             onLoadStart: (_, __) => setState(() => _loading = true),
             onLoadStop: (_, __) {
               setState(() => _loading = false);
-              // JS: непрерывный опрос video + URL, не зависит от тайминга onLoadStop
+              // Перехват видео — каждый раз заново, без флага
               _webCtrl?.evaluateJavascript(source: '''
-(function() {
-  if (window.__ytPollInstalled) return;
-  window.__ytPollInstalled = true;
-  var _lastId = '';
-  setInterval(function(){
-    var url = location.href;
-    var m = url.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
-    if (m && m[1] !== _lastId) {
-      _lastId = m[1];
-      var v = document.querySelector('video');
-      if (v) { v.pause(); try{v.src='';v.load();}catch(e){} }
-      window.flutter_inappwebview.callHandler('onYouTubeVideo', m[1]);
-    }
-  }, 500);
+(function(){
+var _ytLastId='';
+setInterval(function(){
+  var m=location.href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+  if(m&&m[1]!==_ytLastId){
+    _ytLastId=m[1];
+    var v=document.querySelector('video');
+    if(v){v.pause();try{v.src='';v.load();}catch(e){}}
+    window.flutter_inappwebview.callHandler('onYouTubeVideo',m[1]);
+  }
+},300);
 })();
 ''');
             },
