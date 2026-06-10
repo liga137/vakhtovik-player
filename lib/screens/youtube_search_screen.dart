@@ -106,40 +106,22 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
             onLoadStart: (_, __) => setState(() => _loading = true),
             onLoadStop: (_, __) {
               setState(() => _loading = false);
-              // Внедряем скрипт после загрузки каждой страницы
+              // JS: непрерывный опрос video + URL, не зависит от тайминга onLoadStop
               _webCtrl?.evaluateJavascript(source: '''
 (function() {
-  if (window.__ytInterceptInstalled) return;
-  window.__ytInterceptInstalled = true;
-  
-  // Перехват: следим за URL через history API + MutationObserver
-  function checkVideo() {
+  if (window.__ytPollInstalled) return;
+  window.__ytPollInstalled = true;
+  var _lastId = '';
+  setInterval(function(){
     var url = location.href;
-    var m = url.match(/[?&]v=([^&]+)/);
-    if (m) {
-      // Стопим видео и шлём ID
+    var m = url.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+    if (m && m[1] !== _lastId) {
+      _lastId = m[1];
       var v = document.querySelector('video');
-      if (v) { v.pause(); v.src = ''; v.load(); }
+      if (v) { v.pause(); try{v.src='';v.load();}catch(e){} }
       window.flutter_inappwebview.callHandler('onYouTubeVideo', m[1]);
     }
-  }
-  
-  // Отслеживаем pushState/replaceState
-  var _push = history.pushState; history.pushState = function(){ _push.apply(this,arguments); setTimeout(checkVideo,500); };
-  var _replace = history.replaceState; history.replaceState = function(){ _replace.apply(this,arguments); setTimeout(checkVideo,500); };
-  window.addEventListener('popstate', function(){ setTimeout(checkVideo,500); });
-  
-  // MutationObserver: следим за появлением video-элемента
-  new MutationObserver(function(){
-    var v = document.querySelector('video');
-    if (v && !v.dataset.ytIntercepted) {
-      v.dataset.ytIntercepted = '1';
-      v.pause();
-      checkVideo();
-    }
-  }).observe(document.body, {childList:true, subtree:true});
-  
-  checkVideo();
+  }, 500);
 })();
 ''');
             },
