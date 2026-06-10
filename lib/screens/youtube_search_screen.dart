@@ -93,8 +93,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
             onWebViewCreated: (c) => _webCtrl = c,
             onLoadStart: (_, __) => setState(() => _loading = true),
             onLoadStop: (_, __) => setState(() => _loading = false),
-            shouldOverrideUrlLoading: (controller, request) async {
-              final url = request.url?.toString() ?? '';
+            shouldOverrideUrlLoading: (controller, navigationAction) async {
+              final url = navigationAction.request.url?.toString() ?? '';
               // Перехват видео: /watch, /shorts/, /live/
               if (url.contains('/watch?v=') ||
                   url.contains('/shorts/') ||
