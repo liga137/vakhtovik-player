@@ -90,19 +90,58 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
               javaScriptEnabled: true,
               domStorageEnabled: true,
             ),
-            onWebViewCreated: (c) => _webCtrl = c,
+            onWebViewCreated: (c) {
+              _webCtrl = c;
+              // JS: перехват видео — стопим плеер, шлём videoId в Flutter
+              c.addJavaScriptHandler(
+                handlerName: 'onYouTubeVideo',
+                callback: (args) {
+                  final videoId = args.isNotEmpty ? args[0].toString() : '';
+                  if (videoId.isNotEmpty) {
+                    _playVideo('https://www.youtube.com/watch?v=$videoId');
+                  }
+                },
+              );
+            },
             onLoadStart: (_, __) => setState(() => _loading = true),
-            onLoadStop: (_, __) => setState(() => _loading = false),
-            shouldOverrideUrlLoading: (controller, navigationAction) async {
-              final url = navigationAction.request.url?.toString() ?? '';
-              // Перехват видео: /watch, /shorts/, /live/
-              if (url.contains('/watch?v=') ||
-                  url.contains('/shorts/') ||
-                  url.contains('/live/')) {
-                _playVideo(url);
-                return NavigationActionPolicy.CANCEL;
-              }
-              return NavigationActionPolicy.ALLOW;
+            onLoadStop: (_, __) {
+              setState(() => _loading = false);
+              // Внедряем скрипт после загрузки каждой страницы
+              _webCtrl?.evaluateJavascript(source: '''
+(function() {
+  if (window.__ytInterceptInstalled) return;
+  window.__ytInterceptInstalled = true;
+  
+  // Перехват: следим за URL через history API + MutationObserver
+  function checkVideo() {
+    var url = location.href;
+    var m = url.match(/[?&]v=([^&]+)/);
+    if (m) {
+      // Стопим видео и шлём ID
+      var v = document.querySelector('video');
+      if (v) { v.pause(); v.src = ''; v.load(); }
+      window.flutter_inappwebview.callHandler('onYouTubeVideo', m[1]);
+    }
+  }
+  
+  // Отслеживаем pushState/replaceState
+  var _push = history.pushState; history.pushState = function(){ _push.apply(this,arguments); setTimeout(checkVideo,500); };
+  var _replace = history.replaceState; history.replaceState = function(){ _replace.apply(this,arguments); setTimeout(checkVideo,500); };
+  window.addEventListener('popstate', function(){ setTimeout(checkVideo,500); });
+  
+  // MutationObserver: следим за появлением video-элемента
+  new MutationObserver(function(){
+    var v = document.querySelector('video');
+    if (v && !v.dataset.ytIntercepted) {
+      v.dataset.ytIntercepted = '1';
+      v.pause();
+      checkVideo();
+    }
+  }).observe(document.body, {childList:true, subtree:true});
+  
+  checkVideo();
+})();
+''');
             },
           ),
           if (_loading)
