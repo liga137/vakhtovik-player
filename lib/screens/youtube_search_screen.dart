@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/youtube_video.dart';
 import '../services/api_service.dart';
 import '../services/log_service.dart';
+import '../services/youtube_html_parser.dart';
 import 'player_screen.dart';
 import 'youtube_login_screen.dart';
 
@@ -825,6 +827,22 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen>
               ),
             ),
           ),
+        // Скрытый WebView для YouTube-парсинга (общие куки с экраном входа)
+        SizedBox(
+          height: 0,
+          width: 0,
+          child: InAppWebView(
+            initialSettings: InAppWebViewSettings(
+              userAgent:
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              javaScriptEnabled: true,
+              domStorageEnabled: true,
+            ),
+            initialUrlRequest: URLRequest(url: WebUri('about:blank')),
+            onWebViewCreated: (c) => YouTubeHtmlParser.setController(c),
+            onLoadStop: (c, url) => YouTubeHtmlParser.onPageLoaded(url?.toString()),
+          ),
+        ),
       ]),
     );
   }
