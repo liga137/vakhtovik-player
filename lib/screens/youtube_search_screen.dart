@@ -155,7 +155,7 @@ setInterval(function(){
         context,
         MaterialPageRoute(
           builder: (_) => PlayerScreen(
-            hlsUrl: result.playlistUrl,
+            hlsUrl: ApiService.hlsUrl(result.playlistUrl),
             sessionId: result.sessionId,
             sourceUrl: url,
             quality: '240p',
