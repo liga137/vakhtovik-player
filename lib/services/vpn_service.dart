@@ -75,12 +75,27 @@ class VpnService {
     try { json.decode(configJson); }
     catch (e) { _lastError = 'Invalid JSON: $e'; _setState(VpnState.error); return; }
 
+    // На Android заменяем TUN на SOCKS5
+    if (Platform.isAndroid) {
+      final cfg = json.decode(configJson) as Map<String, dynamic>;
+      cfg['inbounds'] = [
+        {
+          'type': 'mixed',
+          'tag': 'mixed-in',
+          'listen': '127.0.0.1',
+          'listen_port': 1080,
+        }
+      ];
+      configJson = json.encode(cfg);
+    }
+
     await saveConfig(configJson);
     await disconnect();
 
     // Найти/извлечь sing-box
     String exePath;
     if (Platform.isAndroid) {
+      await bootstrapAndroid();
       final dir = await getApplicationDocumentsDirectory();
       exePath = '${dir.path}/sing-box';
     } else {
