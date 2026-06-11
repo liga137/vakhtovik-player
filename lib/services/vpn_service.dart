@@ -55,17 +55,30 @@ class VpnService {
     _setState(VpnState.connecting);
     _lastError = '';
 
-    // Validate
     try { json.decode(configJson); }
     catch (e) { _lastError = 'Invalid JSON: $e'; _setState(VpnState.error); return; }
 
-    // Save config
     await saveConfig(configJson);
-
-    // Kill old process
     await disconnect();
 
-    // Find sing-box.exe
+    // Android: используем нативный VpnService через MethodChannel
+    if (Platform.isAndroid) {
+      try {
+        final result = await _channel.invokeMethod('connect', {'config': configJson});
+        if (result == true) {
+          _setState(VpnState.connected);
+        } else {
+          _lastError = 'VPN permission denied';
+          _setState(VpnState.error);
+        }
+      } catch (e) {
+        _lastError = 'Android VPN error: $e';
+        _setState(VpnState.error);
+      }
+      return;
+    }
+
+    // Windows: запускаем sing-box.exe через Process
     final exeDir = Directory(Platform.resolvedExecutable).parent.path;
     final exePath = '$exeDir\\sing-box.exe';
     if (!File(exePath).existsSync()) {
@@ -74,16 +87,14 @@ class VpnService {
       return;
     }
 
-    // Start process
     try {
       _process = await Process.start(
         exePath,
-        ['run', '-c', configPath],  // без кавычек — Dart сам экранирует
-        workingDirectory: exeDir,    // чтобы sing-box нашёл wintun.dll
+        ['run', '-c', configPath],
+        workingDirectory: exeDir,
         mode: ProcessStartMode.normal,
       );
 
-      // Ловим stdout для диагностики
       _process!.stdout.transform(utf8.decoder).listen((data) {
         print('[sing-box] $data');
       });
@@ -91,7 +102,6 @@ class VpnService {
         print('[sing-box ERR] $data');
       });
 
-      // Check if it dies immediately
       Future.delayed(const Duration(seconds: 3), () async {
         if (_process == null) return;
         try {
@@ -103,7 +113,6 @@ class VpnService {
             _setState(VpnState.connected);
           }
         } catch (_) {
-          // Still running — OK
           _setState(VpnState.connected);
         }
       });
@@ -115,6 +124,11 @@ class VpnService {
 
   Future<void> disconnect() async {
     _setState(VpnState.disconnecting);
+    if (Platform.isAndroid) {
+      try { await _channel.invokeMethod('disconnect'); } catch (_) {}
+      _setState(VpnState.disconnected);
+      return;
+    }
     try {
       _process?.kill(ProcessSignal.sigterm);
       await _process?.exitCode.timeout(const Duration(seconds: 3));
@@ -126,6 +140,14 @@ class VpnService {
   }
 
   Future<bool> isAvailable() async {
+    if (Platform.isAndroid) {
+      try {
+        final result = await _channel.invokeMethod<bool>('isAvailable');
+        return result ?? false;
+      } catch (_) {
+        return false;
+      }
+    }
     final exeDir = Directory(Platform.resolvedExecutable).parent.path;
     return File('$exeDir\\sing-box.exe').existsSync();
   }
