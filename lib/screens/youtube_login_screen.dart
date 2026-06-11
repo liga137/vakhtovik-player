@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import '../services/api_service.dart';
@@ -49,12 +50,16 @@ class _YouTubeLoginScreenState extends State<YouTubeLoginScreen> {
               'https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com/'),
         ),
         initialSettings: InAppWebViewSettings(
-          userAgent:
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          userAgent: Platform.isAndroid
+              ? "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+              : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
           clearCache: true,
           clearSessionCache: true,
           javaScriptEnabled: true,
           domStorageEnabled: true,
+          useWideViewPort: true,
+          supportZoom: false,
+          safeBrowsingEnabled: false,
         ),
         onWebViewCreated: (controller) {
           _webViewController = controller;
