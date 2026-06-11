@@ -106,10 +106,9 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
             onLoadStart: (_, __) => setState(() => _loading = true),
             onLoadStop: (_, __) {
               setState(() => _loading = false);
-              // JS: скрываем видео сразу, пауза, шлём videoId
+              // JS: прячем плеер, пауза, пропускаем рекламу
               _webCtrl?.evaluateJavascript(source: '''
 (function(){
-// CSS: прячем плеер YouTube
 var s=document.createElement('style');
 s.textContent='video{visibility:hidden!important}#movie_player{opacity:0!important}';
 document.head.appendChild(s);
@@ -118,11 +117,16 @@ var _done={};
 setInterval(function(){
   var m=location.href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
   if(!m||_done[m[1]])return;
+  // Пропускаем рекламу
+  var isAd=document.querySelector('.ad-showing,.ytp-ad-player-overlay,.ytp-ad-skip-button');
+  if(isAd){
+    var skipBtn=document.querySelector('.ytp-ad-skip-button,.ytp-skip-ad-button');
+    if(skipBtn){skipBtn.click();}
+    return;
+  }
   _done[m[1]]=1;
-  // Остановка видео
   var v=document.querySelector('video');
   if(v){v.pause();v.muted=true;v.src='';try{v.load()}catch(e){}}
-  // Клик по паузе (ищем кнопку с aria-label "Pause")
   var btns=document.querySelectorAll('.ytp-play-button');
   for(var i=0;i<btns.length;i++){
     var a=btns[i].getAttribute('aria-label')||'';
