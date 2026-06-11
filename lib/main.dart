@@ -4,10 +4,12 @@ import 'package:window_manager/window_manager.dart';
 import 'dart:io' show Platform;
 import 'screens/browser_screen.dart';
 import 'services/api_service.dart';
+import 'services/vpn_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ApiService.initLocalState();
+  VpnService.bootstrapAndroid(); // не ждём — фоном
   if (Platform.isWindows) {
     WindowsVideoPlayer.registerWith();
     await windowManager.ensureInitialized();
