@@ -28,6 +28,13 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      - name: Placeholder for Android-only asset
+        shell: pwsh
+        run: |
+          if (-not (Test-Path assets/sing-box)) {
+            New-Item -ItemType File -Path assets/sing-box -Force | Out-Null
+          }
+
       - name: Build Windows Release
         run: flutter build windows --release
 
