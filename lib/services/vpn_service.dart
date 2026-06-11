@@ -163,9 +163,18 @@ class VpnService {
     'log': {'level': 'info', 'timestamp': true},
     'dns': {
       'servers': [
-        {'tag': 'dns-proxy', 'type': 'tls', 'server': '1.1.1.1', 'detour': 'proxy'},
-        {'tag': 'dns-local', 'type': 'local', 'detour': 'direct'},
+        {'tag': 'dns-remote', 'address': 'https://1.1.1.1/dns-query', 'detour': 'proxy'},
+        {'tag': 'dns-fakeip', 'address': 'fakeip'},
       ],
+      'rules': [
+        {'domain_suffix': 'google.com', 'server': 'dns-remote'},
+        {'domain_suffix': 'youtube.com', 'server': 'dns-remote'},
+        {'domain_suffix': 'googlevideo.com', 'server': 'dns-remote'},
+        {'domain_suffix': 'ggpht.com', 'server': 'dns-remote'},
+        {'domain_suffix': 'nip.io', 'server': 'dns-remote'},
+      ],
+      'final': 'dns-remote',
+      'strategy': 'ipv4_only',
     },
     'inbounds': [{
       'type': 'tun',
@@ -173,7 +182,6 @@ class VpnService {
       'interface_name': 'BeaverVPN',
       'address': ['172.19.0.1/30'],
       'auto_route': true,
-      'strict_route': true,
       'stack': 'system',
       'mtu': 1360,
     }],
@@ -193,10 +201,7 @@ class VpnService {
       {'type': 'direct', 'tag': 'direct'},
     ],
     'route': {
-      'default_domain_resolver': 'dns-local',
       'rules': [
-        {'port': 53, 'action': 'hijack-dns'},
-        {'protocol': 'dns', 'action': 'hijack-dns'},
         {'ip_is_private': true, 'outbound': 'direct'},
         {'ip_cidr': ['195.226.92.151/32'], 'outbound': 'direct'},
       ],
