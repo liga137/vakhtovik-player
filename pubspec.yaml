@@ -17,6 +17,7 @@ dependencies:
   chewie: ^1.10.0
   video_player_win: ^3.2.2
   url_launcher: ^6.3.1
+  path_provider: ^2.1.0
   window_manager: ^0.4.3
   shared_preferences: ^2.3.2
   crypto: ^3.0.3
@@ -41,3 +42,4 @@ flutter:
   assets:
     - assets/logo.png
     - assets/iptv/
+    - assets/sing-box

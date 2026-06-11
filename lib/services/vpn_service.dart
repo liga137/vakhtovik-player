@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 
 enum VpnState { disconnected, connecting, connected, disconnecting, error }
 
@@ -21,6 +22,22 @@ class VpnService {
 
   VpnService._() {
     _channel.setMethodCallHandler(_handleMethod);
+  }
+
+  /// Извлечь sing-box из assets на Android (вызвать при старте приложения)
+  static Future<void> bootstrapAndroid() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final exe = File('${dir.path}/sing-box');
+      if (await exe.exists()) return; // уже извлечён
+      final data = await rootBundle.load('assets/sing-box');
+      await exe.writeAsBytes(data.buffer.asUint8List());
+      await Process.run('chmod', ['+x', exe.path]);
+      print('[VPN] sing-box extracted to ${exe.path}');
+    } catch (e) {
+      print('[VPN] bootstrap failed: $e');
+    }
   }
 
   // ── Config ───────────────────────────────────────────────
@@ -64,22 +81,8 @@ class VpnService {
     // Найти/извлечь sing-box
     String exePath;
     if (Platform.isAndroid) {
-      // Извлекаем из assets в app data
-      final appDir = Directory('${Platform.environment['HOME'] ?? '/data/data/com.vakhtovik.flutter_app'}/files');
-      exePath = '${appDir.path}/sing-box';
-      if (!File(exePath).existsSync()) {
-        // Копируем из assets (загружен CI в android/app/src/main/assets/)
-        // На Android используем rootBundle или прямую проверку
-        final assetPath = '${Directory.current.path}/sing-box';
-        if (File(assetPath).existsSync()) {
-          await File(assetPath).copy(exePath);
-          await Process.run('chmod', ['+x', exePath]);
-        } else {
-          _lastError = 'sing-box не найден на Android';
-          _setState(VpnState.error);
-          return;
-        }
-      }
+      final dir = await getApplicationDocumentsDirectory();
+      exePath = '${dir.path}/sing-box';
     } else {
       final exeDir = Directory(Platform.resolvedExecutable).parent.path;
       exePath = '$exeDir\\sing-box.exe';
