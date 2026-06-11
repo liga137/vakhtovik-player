@@ -28,13 +28,6 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Placeholder for Android-only asset
-        shell: pwsh
-        run: |
-          if (-not (Test-Path assets/sing-box)) {
-            New-Item -ItemType File -Path assets/sing-box -Force | Out-Null
-          }
-
       - name: Build Windows Release
         run: flutter build windows --release
 
@@ -84,14 +77,15 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Download sing-box Android ARM64
+      - name: Download sing-box Android library
         run: |
-          mkdir -p assets
-          curl -L -o sb.tar.gz https://github.com/SagerNet/sing-box/releases/download/v1.11.7/sing-box-1.11.7-android-arm64.tar.gz
-          tar -xzf sb.tar.gz
-          cp sing-box-*/sing-box assets/sing-box
-          chmod +x assets/sing-box
-          echo "sing-box Android binary added"
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p android/app/libs
+          curl -L -o libbox.aar https://github.com/SagerNet/sing-box/releases/download/v1.11.7/sing-box-1.11.7-android-arm64.aar
+          unzip -o libbox.aar -d libbox_extracted
+          cp libbox_extracted/jni/arm64-v8a/libbox.so android/app/src/main/jniLibs/arm64-v8a/
+          cp libbox_extracted/classes.jar android/app/libs/libbox.jar
+          echo "libbox.so + classes.jar added"
 
       - name: Build APK
         run: flutter build apk --release --split-per-abi
