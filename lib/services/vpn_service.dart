@@ -30,11 +30,24 @@ class VpnService {
     try {
       final dir = await getApplicationDocumentsDirectory();
       final exe = File('${dir.path}/sing-box');
-      if (await exe.exists()) return; // уже извлечён
+      if (await exe.exists()) {
+        // Проверяем размер — если пустой (заглушка) — переизвлечь
+        if (await exe.length() > 100000) return;
+      }
       final data = await rootBundle.load('assets/sing-box');
+      if (data.lengthInBytes < 100000) {
+        print('[VPN] sing-box asset is placeholder, skipping');
+        return;
+      }
       await exe.writeAsBytes(data.buffer.asUint8List());
-      await Process.run('chmod', ['+x', exe.path]);
-      print('[VPN] sing-box extracted to ${exe.path}');
+      // На Android chmod не всегда доступен — пробуем, но не фатально
+      try {
+        final r = await Process.run('chmod', ['755', exe.path]);
+        print('[VPN] chmod: ${r.exitCode}');
+      } catch (_) {
+        print('[VPN] chmod not available, continuing');
+      }
+      print('[VPN] sing-box extracted to ${exe.path} (${await exe.length()} bytes)');
     } catch (e) {
       print('[VPN] bootstrap failed: $e');
     }
@@ -178,9 +191,9 @@ class VpnService {
     'log': {'level': 'info', 'timestamp': true},
     'dns': {
       'servers': [
-        {'tag': 'dns-remote', 'address': 'tls://1.1.1.1', 'detour': 'proxy'},
+        {'tag': 'dns-proxy', 'type': 'tls', 'server': '1.1.1.1', 'detour': 'proxy'},
+        {'tag': 'dns-local', 'type': 'local', 'detour': 'direct'},
       ],
-      'final': 'dns-remote',
     },
     'inbounds': [{
       'type': 'tun',
@@ -208,6 +221,7 @@ class VpnService {
       {'type': 'direct', 'tag': 'direct'},
     ],
     'route': {
+      'default_domain_resolver': 'dns-local',
       'rules': [
         {'port': 53, 'action': 'hijack-dns'},
         {'protocol': 'dns', 'action': 'hijack-dns'},
