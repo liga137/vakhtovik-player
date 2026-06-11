@@ -77,6 +77,15 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      - name: Download sing-box Android ARM64
+        run: |
+          mkdir -p android/app/src/main/assets
+          curl -L -o sb.tar.gz https://github.com/SagerNet/sing-box/releases/download/v1.11.7/sing-box-1.11.7-android-arm64.tar.gz
+          tar -xzf sb.tar.gz
+          cp sing-box-*/sing-box android/app/src/main/assets/sing-box
+          chmod +x android/app/src/main/assets/sing-box
+          echo "sing-box Android binary added"
+
       - name: Build APK
         run: flutter build apk --release --split-per-abi
 

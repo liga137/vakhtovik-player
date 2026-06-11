@@ -61,37 +61,44 @@ class VpnService {
     await saveConfig(configJson);
     await disconnect();
 
-    // Android: используем нативный VpnService через MethodChannel
+    // Найти/извлечь sing-box
+    String exePath;
     if (Platform.isAndroid) {
-      try {
-        final result = await _channel.invokeMethod('connect', {'config': configJson});
-        if (result == true) {
-          _setState(VpnState.connected);
+      // Извлекаем из assets в app data
+      final appDir = Directory('${Platform.environment['HOME'] ?? '/data/data/com.vakhtovik.flutter_app'}/files');
+      exePath = '${appDir.path}/sing-box';
+      if (!File(exePath).existsSync()) {
+        // Копируем из assets (загружен CI в android/app/src/main/assets/)
+        // На Android используем rootBundle или прямую проверку
+        final assetPath = '${Directory.current.path}/sing-box';
+        if (File(assetPath).existsSync()) {
+          await File(assetPath).copy(exePath);
+          await Process.run('chmod', ['+x', exePath]);
         } else {
-          _lastError = 'VPN permission denied';
+          _lastError = 'sing-box не найден на Android';
           _setState(VpnState.error);
+          return;
         }
-      } catch (e) {
-        _lastError = 'Android VPN error: $e';
-        _setState(VpnState.error);
       }
-      return;
+    } else {
+      final exeDir = Directory(Platform.resolvedExecutable).parent.path;
+      exePath = '$exeDir\\sing-box.exe';
     }
 
-    // Windows: запускаем sing-box.exe через Process
-    final exeDir = Directory(Platform.resolvedExecutable).parent.path;
-    final exePath = '$exeDir\\sing-box.exe';
     if (!File(exePath).existsSync()) {
-      _lastError = 'sing-box.exe не найден в $exeDir';
+      _lastError = 'sing-box не найден: $exePath';
       _setState(VpnState.error);
       return;
     }
 
     try {
+      // Android: SOCKS5-only режим (без TUN)
+      final args = Platform.isAndroid
+          ? ['run', '-c', configPath, '--disable-color']
+          : ['run', '-c', configPath];
       _process = await Process.start(
-        exePath,
-        ['run', '-c', configPath],
-        workingDirectory: exeDir,
+        exePath, args,
+        workingDirectory: Directory(exePath).parent.path,
         mode: ProcessStartMode.normal,
       );
 
@@ -124,11 +131,6 @@ class VpnService {
 
   Future<void> disconnect() async {
     _setState(VpnState.disconnecting);
-    if (Platform.isAndroid) {
-      try { await _channel.invokeMethod('disconnect'); } catch (_) {}
-      _setState(VpnState.disconnected);
-      return;
-    }
     try {
       _process?.kill(ProcessSignal.sigterm);
       await _process?.exitCode.timeout(const Duration(seconds: 3));
@@ -140,14 +142,7 @@ class VpnService {
   }
 
   Future<bool> isAvailable() async {
-    if (Platform.isAndroid) {
-      try {
-        final result = await _channel.invokeMethod<bool>('isAvailable');
-        return result ?? false;
-      } catch (_) {
-        return false;
-      }
-    }
+    if (Platform.isAndroid) return true; // sing-box bundled in assets
     final exeDir = Directory(Platform.resolvedExecutable).parent.path;
     return File('$exeDir\\sing-box.exe').existsSync();
   }

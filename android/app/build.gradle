@@ -39,10 +39,6 @@ android {
     }
 }
 
-dependencies {
-    implementation 'io.nekohasekai:libbox:1.13.12'
-}
-
 flutter {
     source = "../.."
 }
