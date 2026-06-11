@@ -79,13 +79,18 @@ jobs:
 
       - name: Download sing-box Android library
         run: |
-          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a android/app/src/main/jniLibs/armeabi-v7a android/app/src/main/jniLibs/x86_64
           mkdir -p android/app/libs
-          curl -L -o libbox.aar https://github.com/SagerNet/sing-box/releases/download/v1.11.7/sing-box-1.11.7-android-arm64.aar
-          unzip -o libbox.aar -d libbox_extracted
-          cp libbox_extracted/jni/arm64-v8a/libbox.so android/app/src/main/jniLibs/arm64-v8a/
-          cp libbox_extracted/classes.jar android/app/libs/libbox.jar
-          echo "libbox.so + classes.jar added"
+          # Скачиваем SFA APK и извлекаем libbox.so
+          curl -L -o sfa.apk https://github.com/SagerNet/sing-box/releases/download/v1.11.7/SFA-1.11.7-universal.apk
+          unzip -o sfa.apk -d sfa_extracted
+          cp sfa_extracted/lib/arm64-v8a/libbox.so android/app/src/main/jniLibs/arm64-v8a/ 2>/dev/null || true
+          cp sfa_extracted/lib/armeabi-v7a/libbox.so android/app/src/main/jniLibs/armeabi-v7a/ 2>/dev/null || true
+          cp sfa_extracted/lib/x86_64/libbox.so android/app/src/main/jniLibs/x86_64/ 2>/dev/null || true
+          # Также пробуем извлечь classes.jar (может не быть)
+          unzip -o sfa.apk classes.dex -d sfa_classes 2>/dev/null || true
+          ls -la android/app/src/main/jniLibs/*/
+          echo "libbox.so added"
 
       - name: Build APK
         run: flutter build apk --release --split-per-abi

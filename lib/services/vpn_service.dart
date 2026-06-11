@@ -23,35 +23,6 @@ class VpnService {
     _channel.setMethodCallHandler(_handleMethod);
   }
 
-  /// Извлечь sing-box из assets на Android (вызвать при старте приложения)
-  static Future<void> bootstrapAndroid() async {
-    if (!Platform.isAndroid) return;
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final exe = File('${dir.path}/sing-box');
-      if (await exe.exists()) {
-        // Проверяем размер — если пустой (заглушка) — переизвлечь
-        if (await exe.length() > 100000) return;
-      }
-      final data = await rootBundle.load('assets/sing-box');
-      if (data.lengthInBytes < 100000) {
-        print('[VPN] sing-box asset is placeholder, skipping');
-        return;
-      }
-      await exe.writeAsBytes(data.buffer.asUint8List());
-      // На Android chmod не всегда доступен — пробуем, но не фатально
-      try {
-        final r = await Process.run('chmod', ['755', exe.path]);
-        print('[VPN] chmod: ${r.exitCode}');
-      } catch (_) {
-        print('[VPN] chmod not available, continuing');
-      }
-      print('[VPN] sing-box extracted to ${exe.path} (${await exe.length()} bytes)');
-    } catch (e) {
-      print('[VPN] bootstrap failed: $e');
-    }
-  }
-
   // ── Config ───────────────────────────────────────────────
 
   static String get configDir {
