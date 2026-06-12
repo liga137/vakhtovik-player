@@ -44,6 +44,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   static const Duration _reconnectDelay = Duration(seconds: 5);
   bool _reconnecting = false;
   String? _reconnectStatus;
+  bool _isWindowHidden = false;
 
   @override
   void initState() {
@@ -99,16 +100,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted) return;
-    // На Windows при сворачивании окна текстура video_player_win
-    // может оставаться видимой как ghost-маска на рабочем столе.
-    // Пауза видео предотвращает это.
+    // На Windows при сворачивании текстура video_player_win
+    // остаётся на рабочем столе как ghost-маска, блокирующая клики.
+    // Убираем Chewie-виджет из дерева → текстура освобождается,
+    // видео продолжает играть в фоне. При разворачивании возвращаем.
     if (!Platform.isWindows) return;
-    final ctrl = _controller;
-    if (ctrl == null || !ctrl.value.isInitialized) return;
     if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) {
-      ctrl.pause();
-    } else if (state == AppLifecycleState.resumed && !ctrl.value.isPlaying) {
-      ctrl.play();
+      if (!_isWindowHidden) setState(() => _isWindowHidden = true);
+    } else if (state == AppLifecycleState.resumed) {
+      if (_isWindowHidden) setState(() => _isWindowHidden = false);
     }
   }
 
@@ -354,9 +354,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           ),
         ],
       ),
-      body: _isInitialized && _chewieController != null
+      body: _isInitialized && _chewieController != null && !_isWindowHidden
           ? Chewie(controller: _chewieController!)
-          : Center(
+          : _isWindowHidden
+              ? Container(color: Colors.black)
+              : Center(
               child: Container(
                 color: Colors.black54,
                 child: Center(
