@@ -29,7 +29,7 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> {
+class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
   VideoPlayerController? _controller;
   ChewieController? _chewieController;
   bool _isInitialized = false;
@@ -48,6 +48,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _durationHintSeconds = widget.duration;
     _initPlayer();
     _startDurationProbe();
@@ -92,6 +93,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _reconnectStatus = null;
         _reconnectAttempts = 0;
       });
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
+    // На Windows при сворачивании окна текстура video_player_win
+    // может оставаться видимой как ghost-маска на рабочем столе.
+    // Пауза видео предотвращает это.
+    if (!Platform.isWindows) return;
+    final ctrl = _controller;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+    if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) {
+      ctrl.pause();
+    } else if (state == AppLifecycleState.resumed && !ctrl.value.isPlaying) {
+      ctrl.play();
     }
   }
 
@@ -283,6 +300,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _durationTimer?.cancel();
     ApiService.stopSession(widget.sessionId).catchError((_) {});
     _chewieController?.dispose();
