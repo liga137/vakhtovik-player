@@ -28,6 +28,9 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      - name: Flutter clean (no cache)
+        run: flutter clean
+
       - name: Build Windows Release
         run: flutter build windows --release
 

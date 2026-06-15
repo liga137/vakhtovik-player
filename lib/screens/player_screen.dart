@@ -119,34 +119,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void _hideVideo() {
     if (_isWindowHidden) return;
     setState(() => _isWindowHidden = true);
-    // Диспоузим Chewie — текстура освобождается
+    // Полный диспоуз — гарантированно освобождает нативную текстуру video_player_win
     _chewieController?.dispose();
     _chewieController = null;
-    // Паузим видео (контроллер остаётся, но текстуры нет)
     _controller?.pause();
+    _controller?.dispose();
+    _controller = null;
+    _isInitialized = false;
   }
 
   void _showVideo() {
     if (!_isWindowHidden) return;
     setState(() => _isWindowHidden = false);
-    // Пересоздаём Chewie на том же контроллере
-    if (_controller != null && _controller!.value.isInitialized) {
-      _controller!.play();
-      _chewieController = ChewieController(
-        videoPlayerController: _controller!,
-        autoPlay: true,
-        looping: false,
-        aspectRatio: _controller!.value.aspectRatio > 0
-            ? _controller!.value.aspectRatio
-            : 16 / 9,
-        allowFullScreen: true,
-        allowMuting: true,
-        showControls: true,
-        showControlsOnInitialize: true,
-      );
-      // Принудительно обновляем UI
-      if (mounted) setState(() {});
-    }
+    _initPlayer(); // Полная переинициализация
   }
 
   void _onPlayerError() {
