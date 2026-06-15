@@ -51,10 +51,21 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    if (Platform.isWindows) windowManager.addListener(this);
+        if (Platform.isWindows) windowManager.addListener(this);
     _durationHintSeconds = widget.duration;
     _initPlayer();
     _startDurationProbe();
+    // Отложенный вызов: восстанавливаем окно, если было скрыто
+    Future.microtask(() => _restoreWindowIfNeeded());
+  }
+
+  Future<void> _restoreWindowIfNeeded() async {
+    if (!Platform.isWindows) return;
+    try {
+      final minimized = await windowManager.isMinimized();
+      if (!minimized) await windowManager.show();
+      await windowManager.focus();
+    } catch (_) {}
   }
 
   Future<void> _initPlayer() async {
@@ -118,20 +129,20 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   void _hideVideo() {
     if (_isWindowHidden) return;
-    setState(() => _isWindowHidden = true);
-    // Полный диспоуз — гарантированно освобождает нативную текстуру video_player_win
-    _chewieController?.dispose();
-    _chewieController = null;
-    _controller?.pause();
-    _controller?.dispose();
-    _controller = null;
-    _isInitialized = false;
+    _isWindowHidden = true;
+    // Windows: прячем окно полностью — это гарантированно убирает ghost-маску
+    if (Platform.isWindows) {
+      windowManager.hide();
+    }
   }
 
   void _showVideo() {
     if (!_isWindowHidden) return;
-    setState(() => _isWindowHidden = false);
-    _initPlayer(); // Полная переинициализация
+    _isWindowHidden = false;
+    if (Platform.isWindows) {
+      windowManager.show();
+      windowManager.focus();
+    }
   }
 
   void _onPlayerError() {

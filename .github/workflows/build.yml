@@ -82,16 +82,21 @@ jobs:
 
       - name: Download sing-box Android library
         run: |
+          SFA_VER="1.13.13"
           mkdir -p android/app/src/main/jniLibs/arm64-v8a android/app/src/main/jniLibs/armeabi-v7a android/app/src/main/jniLibs/x86_64
           mkdir -p android/app/libs
-          # Скачиваем SFA APK и извлекаем libbox.so
-          curl -L -o sfa.apk https://github.com/SagerNet/sing-box/releases/download/v1.11.7/SFA-1.11.7-universal.apk
-          unzip -o sfa.apk -d sfa_extracted
-          cp sfa_extracted/lib/arm64-v8a/libbox.so android/app/src/main/jniLibs/arm64-v8a/ 2>/dev/null || true
-          cp sfa_extracted/lib/armeabi-v7a/libbox.so android/app/src/main/jniLibs/armeabi-v7a/ 2>/dev/null || true
-          cp sfa_extracted/lib/x86_64/libbox.so android/app/src/main/jniLibs/x86_64/ 2>/dev/null || true
-          # Также пробуем извлечь classes.jar (может не быть)
-          unzip -o sfa.apk classes.dex -d sfa_classes 2>/dev/null || true
+          # arm64-v8a
+          curl -L -o sfa_arm64.apk "https://github.com/SagerNet/sing-box/releases/download/v${SFA_VER}/SFA-${SFA_VER}-arm64-v8a.apk"
+          unzip -o sfa_arm64.apk -d sfa_arm64
+          cp sfa_arm64/lib/arm64-v8a/libbox.so android/app/src/main/jniLibs/arm64-v8a/ 2>/dev/null || true
+          # armeabi-v7a
+          curl -L -o sfa_arm.apk "https://github.com/SagerNet/sing-box/releases/download/v${SFA_VER}/SFA-${SFA_VER}-armeabi-v7a.apk"
+          unzip -o sfa_arm.apk -d sfa_arm
+          cp sfa_arm/lib/armeabi-v7a/libbox.so android/app/src/main/jniLibs/armeabi-v7a/ 2>/dev/null || true
+          # x86_64 — не всегда есть в новых версиях, игнорируем ошибку
+          curl -L -o sfa_x86.apk "https://github.com/SagerNet/sing-box/releases/download/v${SFA_VER}/SFA-${SFA_VER}-x86_64.apk" 2>/dev/null || true
+          unzip -o sfa_x86.apk -d sfa_x86 2>/dev/null || true
+          cp sfa_x86/lib/x86_64/libbox.so android/app/src/main/jniLibs/x86_64/ 2>/dev/null || true
           ls -la android/app/src/main/jniLibs/*/
           echo "libbox.so added"
 
