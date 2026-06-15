@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
+import 'package:window_manager/window_manager.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -29,7 +30,7 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
+class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver, WindowListener {
   VideoPlayerController? _controller;
   ChewieController? _chewieController;
   bool _isInitialized = false;
@@ -50,6 +51,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (Platform.isWindows) windowManager.addListener(this);
     _durationHintSeconds = widget.duration;
     _initPlayer();
     _startDurationProbe();
@@ -99,16 +101,51 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!mounted) return;
-    // На Windows при сворачивании текстура video_player_win
-    // остаётся на рабочем столе как ghost-маска, блокирующая клики.
-    // Убираем Chewie-виджет из дерева → текстура освобождается,
-    // видео продолжает играть в фоне. При разворачивании возвращаем.
-    if (!Platform.isWindows) return;
+    if (!mounted || !Platform.isWindows) return;
     if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) {
-      if (!_isWindowHidden) setState(() => _isWindowHidden = true);
+      _hideVideo();
     } else if (state == AppLifecycleState.resumed) {
-      if (_isWindowHidden) setState(() => _isWindowHidden = false);
+      _showVideo();
+    }
+  }
+
+  // window_manager listener (Windows): надёжнее чем AppLifecycle
+  @override
+  void onWindowMinimize() => _hideVideo();
+
+  @override
+  void onWindowRestore() => _showVideo();
+
+  void _hideVideo() {
+    if (_isWindowHidden) return;
+    setState(() => _isWindowHidden = true);
+    // Диспоузим Chewie — текстура освобождается
+    _chewieController?.dispose();
+    _chewieController = null;
+    // Паузим видео (контроллер остаётся, но текстуры нет)
+    _controller?.pause();
+  }
+
+  void _showVideo() {
+    if (!_isWindowHidden) return;
+    setState(() => _isWindowHidden = false);
+    // Пересоздаём Chewie на том же контроллере
+    if (_controller != null && _controller!.value.isInitialized) {
+      _controller!.play();
+      _chewieController = ChewieController(
+        videoPlayerController: _controller!,
+        autoPlay: true,
+        looping: false,
+        aspectRatio: _controller!.value.aspectRatio > 0
+            ? _controller!.value.aspectRatio
+            : 16 / 9,
+        allowFullScreen: true,
+        allowMuting: true,
+        showControls: true,
+        showControlsOnInitialize: true,
+      );
+      // Принудительно обновляем UI
+      if (mounted) setState(() {});
     }
   }
 
@@ -301,6 +338,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (Platform.isWindows) windowManager.removeListener(this);
     _durationTimer?.cancel();
     ApiService.stopSession(widget.sessionId).catchError((_) {});
     _chewieController?.dispose();
