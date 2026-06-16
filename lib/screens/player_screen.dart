@@ -120,7 +120,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
   }
 
-  // window_manager listener (Windows): надёжнее чем AppLifecycle
+  // window_manager listener (Windows)
   @override
   void onWindowMinimize() => _hideVideo();
 
@@ -130,9 +130,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void _hideVideo() {
     if (_isWindowHidden) return;
     _isWindowHidden = true;
-    // Windows: прячем окно полностью — это гарантированно убирает ghost-маску
     if (Platform.isWindows) {
-      windowManager.hide();
+      // Делаем окно практически прозрачным, чтобы ghost-маска не блокировала клики,
+      // но окно оставалось в панели задач и видео продолжало играть.
+      windowManager.setOpacity(0.01);
     }
   }
 
@@ -140,8 +141,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     if (!_isWindowHidden) return;
     _isWindowHidden = false;
     if (Platform.isWindows) {
-      windowManager.show();
-      windowManager.focus();
+      windowManager.setOpacity(1.0);
     }
   }
 
