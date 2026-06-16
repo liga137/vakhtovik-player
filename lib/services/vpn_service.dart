@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 
 enum VpnState { disconnected, connecting, connected, disconnecting, error }
 
@@ -63,6 +64,33 @@ class VpnService {
       try {
         final result = await _channel.invokeMethod('connect', {'config': configJson});
         if (result == true) {
+          // Очищаем старый статус
+          try {
+            final dir = await getApplicationSupportDirectory();
+            final file = File('${dir.path}/vpn_status.txt');
+            if (await file.exists()) await file.delete();
+          } catch (_) {}
+
+          // Ждём пока сервис запишет статус
+          for (int i = 0; i < 20; i++) {
+            await Future.delayed(const Duration(milliseconds: 500));
+            try {
+              final dir = await getApplicationSupportDirectory();
+              final file = File('${dir.path}/vpn_status.txt');
+              if (await file.exists()) {
+                final status = await file.readAsString();
+                if (status.startsWith('Error:')) {
+                  _lastError = status;
+                  _setState(VpnState.error);
+                  return;
+                } else if (status == 'Connected') {
+                  _setState(VpnState.connected);
+                  return;
+                }
+              }
+            } catch (_) {}
+          }
+          // Если файл не появился, считаем что подключено (fallback)
           _setState(VpnState.connected);
         } else {
           _lastError = 'VPN permission denied';

@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
-import 'package:chewie/chewie.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import '../services/api_service.dart';
 
-/// Экран плеера: мультиплатформенный HLS стриминг
+/// Экран плеера: мультиплатформенный HLS стриминг (MediaKit)
 class PlayerScreen extends StatefulWidget {
   final String hlsUrl;
   final String sessionId;
@@ -30,9 +29,10 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver, WindowListener {
-  VideoPlayerController? _controller;
-  ChewieController? _chewieController;
+class _PlayerScreenState extends State<PlayerScreen> {
+  late final player = Player();
+  late final controller = VideoController(player);
+  
   bool _isInitialized = false;
   bool _isDownloading = false;
   double _durationHintSeconds = 0;
@@ -45,60 +45,26 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   static const Duration _reconnectDelay = Duration(seconds: 5);
   bool _reconnecting = false;
   String? _reconnectStatus;
-  bool _isWindowHidden = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-        if (Platform.isWindows) windowManager.addListener(this);
     _durationHintSeconds = widget.duration;
     _initPlayer();
     _startDurationProbe();
-    // Отложенный вызов: восстанавливаем окно, если было скрыто
-    Future.microtask(() => _restoreWindowIfNeeded());
-  }
-
-  Future<void> _restoreWindowIfNeeded() async {
-    if (!Platform.isWindows) return;
-    try {
-      final minimized = await windowManager.isMinimized();
-      if (!minimized) await windowManager.show();
-      await windowManager.focus();
-    } catch (_) {}
+    
+    player.stream.error.listen((error) {
+      if (error != 'none') _onPlaybackError(error.toString());
+    });
   }
 
   Future<void> _initPlayer() async {
-    _controller?.removeListener(_onPlayerError);
-    _controller?.dispose();
-    _chewieController?.dispose();
-
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.hlsUrl));
-    _controller!.addListener(_onPlayerError);
-
     try {
-      await _controller!.initialize();
+      await player.open(Media(widget.hlsUrl), play: true);
     } catch (e) {
       _onPlaybackError('Ошибка инициализации плеера: $e');
       return;
     }
-
-    await Future.delayed(const Duration(milliseconds: 500));
-    final ar = _controller!.value.aspectRatio > 0
-        ? _controller!.value.aspectRatio
-        : 16 / 9;
-
-    _chewieController = ChewieController(
-      videoPlayerController: _controller!,
-      autoPlay: true,
-      looping: false,
-      aspectRatio: ar,
-      isLive: false,
-      allowFullScreen: true,
-      allowMuting: true,
-      showControls: true,
-      showControlsOnInitialize: true,
-    );
 
     if (mounted) {
       setState(() {
@@ -108,61 +74,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _reconnectAttempts = 0;
       });
     }
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!mounted || !Platform.isWindows) return;
-    if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) {
-      _hideVideo();
-    } else if (state == AppLifecycleState.resumed) {
-      _showVideo();
-    }
-  }
-
-  // window_manager listener (Windows)
-  @override
-  void onWindowMinimize() => _hideVideo();
-
-  @override
-  void onWindowRestore() => _showVideo();
-
-  Offset? _prevPosition;
-  Size? _prevSize;
-
-  void _hideVideo() async {
-    if (_isWindowHidden) return;
-    _isWindowHidden = true;
-    if (Platform.isWindows) {
-      // Сохраняем текущие координаты и прячем окно за пределы экрана
-      try {
-        _prevPosition = await windowManager.getPosition();
-        _prevSize = await windowManager.getSize();
-        await windowManager.setBounds(null, size: const Size(400, 300), position: const Offset(-10000, -10000));
-      } catch (_) {}
-    }
-  }
-
-  void _showVideo() async {
-    if (!_isWindowHidden) return;
-    _isWindowHidden = false;
-    if (Platform.isWindows) {
-      // Возвращаем окно на место
-      try {
-        if (_prevPosition != null && _prevSize != null) {
-          await windowManager.setBounds(null, size: _prevSize, position: _prevPosition);
-        } else {
-          await windowManager.center();
-        }
-      } catch (_) {}
-    }
-  }
-
-  void _onPlayerError() {
-    if (_controller == null || _reconnecting) return;
-    final err = _controller!.value.errorDescription;
-    if (err == null || err.isEmpty) return;
-    _onPlaybackError(err);
   }
 
   void _onPlaybackError(String reason) {
@@ -346,12 +257,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     if (Platform.isWindows) windowManager.removeListener(this);
     _durationTimer?.cancel();
     ApiService.stopSession(widget.sessionId).catchError((_) {});
-    _chewieController?.dispose();
-    _controller?.dispose();
+    player.dispose();
     super.dispose();
   }
 
@@ -401,11 +310,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           ),
         ],
       ),
-      body: _isInitialized && _chewieController != null && !_isWindowHidden
-          ? Chewie(controller: _chewieController!)
-          : _isWindowHidden
-              ? Container(color: Colors.black)
-              : Center(
+      body: _isInitialized
+          ? Video(controller: controller)
+          : Center(
               child: Container(
                 color: Colors.black54,
                 child: Center(

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:video_player_win/video_player_win.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
 import 'dart:io' show Platform;
 import 'screens/browser_screen.dart';
@@ -8,9 +8,9 @@ import 'services/vpn_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
   await ApiService.initLocalState();
   if (Platform.isWindows) {
-    WindowsVideoPlayer.registerWith();
     await windowManager.ensureInitialized();
     windowManager.setMinimumSize(const Size(400, 300));
   }

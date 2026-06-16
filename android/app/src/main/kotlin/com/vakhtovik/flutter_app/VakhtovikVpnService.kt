@@ -123,5 +123,12 @@ class VakhtovikVpnService : VpnService() {
             .build()
     }
 
-    private fun sendStatus(status: String) {}
+    private fun sendStatus(status: String) {
+        try {
+            java.io.File(filesDir, "vpn_status.txt").writeText(status)
+        } catch (e: Exception) {}
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            android.widget.Toast.makeText(this, status, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 }

@@ -63,24 +63,10 @@ http://46.32.176.50/eurosport2/index.m3u8
 https://ngtrk.dc.beltelecom.by/ngtrk/_definst_/smil:belarus5/playlist.m3u8
 #EXTINF:-1 tvg-id="match-tv" tvg-logo="https://iptvx.one/picons/match-tv.png" group-title="Спортивные",Матч!
 http://catchup.videoline.ru/match/tracks-v1a1/mono.m3u8
-#EXTINF:-1 tvg-id="match-tv" tvg-logo="https://iptvx.one/picons/match-tv.png" group-title="Спортивные",Матч!(Альтернативный)
-#EXTINF:-1 tvg-id="match-tv" tvg-logo="https://camo.githubusercontent.com/3be3fa7c660106b7394b415437f60bc428857ff8c51bca189c455f2b583d79af/68747470733a2f2f692e696d6775722e636f6d2f7668794d6239442e706e67 group-title="Спортивные",Матч Планета!
-https://streaming.televizor-24-tochka.ru/live/6.m3u8
+#EXTINF:-1 tvg-id="match-tv-alt" tvg-logo="https://iptvx.one/picons/match-tv.png" group-title="Спортивные",Матч! (Альтернативный)
 http://212.0.211.102:9999/play/a00b/index.m3u8
-#EXTINF:-1 group-title="Спортивные",Игра FHD
-https://stream-msk-03.ott.tricolor.tv/dtv/id632_MSKSG-PVR-1--Channel_LIVE4/03/plst.m3u8
-#EXTINF:-1 group-title="Спортивные",НТВ+ Спорт
-https://live-k2301-kbp.1plus1.video/sport/smil:sport.smil/playlist.m3u8
-#EXTINF:-1 group-title="Спортивные",НТВ+ Спорт
-https://alpha.tv.online.tm/legacyhls/ch004_720/index.m3u8
-#EXTINF:-1 group-title="Спортивные",Поединок FHD
-https://stream-msk-06.ott.tricolor.tv/dtv/id629_MSKSG-PVR-1--Channel_LIVE2/03/plst.m3u8
-#EXTINF:-1 group-title="Спортивные",Сила FHD
-https://stream-msk-04.ott.tricolor.tv/dtv/id633_MSKSG-PVR-1--Channel_LIVE5/03/plst.m3u8
-#EXTINF:-1 group-title="Спортивные",Старт FHD
-https://stream-msk-02.ott.tricolor.tv/dtv/id628_MSKSG-PVR-1--Channel_LIVE1/03/plst.m3u8
-#EXTINF:-1 group-title="Спортивные",Евроспорт 4к
-http://zabava-htlive.cdn.ngenix.net/hls/CH_EUROSPORT4K_HLS/bw6000000/variant.m3u8?version=2
+#EXTINF:-1 tvg-id="match-planeta" tvg-logo="https://camo.githubusercontent.com/3be3fa7c660106b7394b415437f60bc428857ff8c51bca189c455f2b583d79af/68747470733a2f2f692e696d6775722e636f6d2f7668794d6239442e706e67" group-title="Спортивные",Матч Планета!
+https://streaming.televizor-24-tochka.ru/live/6.m3u8
 #EXTINF:-1 tvg-id="sportivny" tvg-logo="https://iptvx.one/picons/sportivny.png" group-title="Спортивные" ,ТВ Спорт
 http://live-3.otcnet.ru/sportivny/tracks-v1a1/mono.ts.m3u8
 #EXTINF:-1 tvg-id="cartoon-classics" tvg-logo="https://iptvx.one/picons/cartoon-classics.png" group-title="Детские" ,Cartoon Classics
