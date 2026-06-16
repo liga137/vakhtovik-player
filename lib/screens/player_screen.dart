@@ -127,21 +127,34 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void onWindowRestore() => _showVideo();
 
-  void _hideVideo() {
+  Offset? _prevPosition;
+  Size? _prevSize;
+
+  void _hideVideo() async {
     if (_isWindowHidden) return;
     _isWindowHidden = true;
     if (Platform.isWindows) {
-      // Делаем окно практически прозрачным, чтобы ghost-маска не блокировала клики,
-      // но окно оставалось в панели задач и видео продолжало играть.
-      windowManager.setOpacity(0.01);
+      // Сохраняем текущие координаты и прячем окно за пределы экрана
+      try {
+        _prevPosition = await windowManager.getPosition();
+        _prevSize = await windowManager.getSize();
+        await windowManager.setBounds(null, size: const Size(400, 300), position: const Offset(-10000, -10000));
+      } catch (_) {}
     }
   }
 
-  void _showVideo() {
+  void _showVideo() async {
     if (!_isWindowHidden) return;
     _isWindowHidden = false;
     if (Platform.isWindows) {
-      windowManager.setOpacity(1.0);
+      // Возвращаем окно на место
+      try {
+        if (_prevPosition != null && _prevSize != null) {
+          await windowManager.setBounds(null, size: _prevSize, position: _prevPosition);
+        } else {
+          await windowManager.center();
+        }
+      } catch (_) {}
     }
   }
 
