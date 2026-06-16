@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:video_player/video_player.dart';
-import 'package:chewie/chewie.dart';
 import 'package:window_manager/window_manager.dart';
 import '../services/api_service.dart';
 import '../services/log_service.dart';
@@ -48,8 +46,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
   String _selectedQuality = "240p";
   bool _isLoading = false;
 
-  VideoPlayerController? _videoController;
-  ChewieController? _chewieController;
   final bool _showPlayer = false;
   bool _waitingForNextEpisode = false; // флаг: ждём перехвата новой серии
   bool _onYouTube = false; // флаг: мы на странице YouTube
@@ -359,8 +355,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   @override
   void dispose() {
-    _videoController?.dispose();
-    _chewieController?.dispose();
     _vpnSub?.cancel();
     unawaited(_safeDisposeEnvironment(_webViewEnvironment));
     super.dispose();
@@ -2766,14 +2760,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             ],
                           ),
                         ),
-                        Expanded(
-                          child: _chewieController != null &&
-                                  _videoController != null &&
-                                  _videoController!.value.isInitialized
-                              ? Chewie(controller: _chewieController!)
-                              : const Center(
-                                  child: CircularProgressIndicator(
-                                      color: Colors.orange)),
+                        const Expanded(
+                          child: Center(
+                            child: Text(
+                              'Мини-плеер перенесён',
+                              style: TextStyle(color: Colors.white54),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -2782,89 +2775,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 ),
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniProgressOverlay extends StatefulWidget {
-  // оставлен для совместимости на случай отката
-  final VideoPlayerController controller;
-  const _MiniProgressOverlay({required this.controller});
-
-  @override
-  State<_MiniProgressOverlay> createState() => _MiniProgressOverlayState();
-}
-
-class _MiniProgressOverlayState extends State<_MiniProgressOverlay> {
-  late final Timer _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_tick);
-    // Принудительный тик каждые 500мс — HLS без duration не дёргает listener
-    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _tick());
-  }
-
-  void _tick() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    _timer.cancel();
-    widget.controller.removeListener(_tick);
-    super.dispose();
-  }
-
-  String _fmt(Duration d) {
-    final h = d.inHours;
-    final m = d.inMinutes.remainder(60);
-    final s = d.inSeconds.remainder(60);
-    return h > 0 ? '${h}h ${m}m' : '$m:${s.toString().padLeft(2, '0')}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pos = widget.controller.value.position;
-    final buf = widget.controller.value.buffered.isNotEmpty
-        ? widget.controller.value.buffered.last.end - pos
-        : Duration.zero;
-    final buffering = widget.controller.value.isBuffering;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black87,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.orange.withOpacity(0.5)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.timer, color: Colors.orange, size: 14),
-          const SizedBox(width: 6),
-          Text(
-            _fmt(pos),
-            style: const TextStyle(
-                color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-          ),
-          if (buffering) ...[
-            const SizedBox(width: 8),
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Colors.orange),
-            ),
-          ],
-          const SizedBox(width: 8),
-          Text(
-            buf > Duration.zero ? '(буфер ${_fmt(buf)})' : '(длит. неизвестна)',
-            style: const TextStyle(color: Colors.white54, fontSize: 11),
-          ),
         ],
       ),
     );
@@ -2906,3 +2816,4 @@ class _HomeSiteButton extends StatelessWidget {
     );
   }
 }
+
