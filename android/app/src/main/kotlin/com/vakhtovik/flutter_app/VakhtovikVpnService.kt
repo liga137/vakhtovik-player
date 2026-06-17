@@ -111,52 +111,6 @@ class VakhtovikVpnService : VpnService() {
         }
     }
 
-    private fun startVpn(configJson: String) {
-        if (configJson.isEmpty() || running) return
-
-        val builder = Builder()
-            .setSession("Vakhtovik VPN")
-            .setMtu(1500)
-            .addAddress("172.19.0.1", 30)
-            .addDnsServer("1.1.1.1")
-            .addDnsServer("8.8.8.8")
-            .setBlocking(true)
-
-        // Маршрутизируем весь трафик (0.0.0.0/0) КРОМЕ IP сервера Hysteria2 (195.226.92.151),
-        // чтобы не было routing loop, так как мы не можем сделать protect() для сокетов libbox.
-        addBypassRoute(builder, "195.226.92.151")
-
-        tunFd = builder.establish()
-        if (tunFd == null) {
-            sendStatus("Error: TUN creation failed")
-            return
-        }
-
-        try {
-            val error = BoxService.start(configJson, tunFd!!.fd, filesDir.absolutePath)
-            if (error != null) {
-                sendStatus("Error: $error")
-                tunFd?.close()
-                tunFd = null
-                return
-            }
-        } catch (e: UnsatisfiedLinkError) {
-            sendStatus("Error: libbox.so not found")
-            tunFd?.close()
-            tunFd = null
-            return
-        } catch (e: Exception) {
-            sendStatus("Error: ${e.message}")
-            tunFd?.close()
-            tunFd = null
-            return
-        }
-
-        running = true
-        startForeground(NOTIFICATION_ID, buildNotification("Connected"))
-        sendStatus("Connected")
-    }
-
     private fun stopVpn() {
         if (!running) return
         try { BoxService.stop() } catch (_: Exception) {}
