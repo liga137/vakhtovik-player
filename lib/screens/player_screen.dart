@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import '../services/api_service.dart';
+import '../services/series_parser.dart';
 
 /// Экран плеера: мультиплатформенный HLS стриминг (MediaKit)
 class PlayerScreen extends StatefulWidget {
@@ -15,6 +16,12 @@ class PlayerScreen extends StatefulWidget {
   final String referer;
   final double duration;
 
+  /// Эпизоды сериала (если это сериал)
+  final List<SeriesEpisode>? episodes;
+  final int currentEpisodeIndex;
+  /// Callback: пользователь хочет сменить эпизод
+  final void Function(int newIndex)? onEpisodeChange;
+
   const PlayerScreen({
     super.key,
     required this.hlsUrl,
@@ -23,6 +30,9 @@ class PlayerScreen extends StatefulWidget {
     this.quality = '240p',
     this.referer = '',
     this.duration = 0,
+    this.episodes,
+    this.currentEpisodeIndex = 0,
+    this.onEpisodeChange,
   });
 
   @override
@@ -56,6 +66,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
     player.stream.error.listen((error) {
       if (error != 'none') _onPlaybackError(error.toString());
     });
+
+    // Авто-следующая серия при завершении видео
+    player.stream.completed.listen((_) {
+      _onVideoCompleted();
+    });
+  }
+
+  void _onVideoCompleted() {
+    if (widget.episodes == null || widget.onEpisodeChange == null) return;
+    final nextIndex = widget.currentEpisodeIndex + 1;
+    if (nextIndex < widget.episodes!.length) {
+      widget.onEpisodeChange!(nextIndex);
+    }
   }
 
   Future<void> _initPlayer() async {
@@ -267,13 +290,51 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget build(BuildContext context) {
     final dur = _fmtDuration(
         _durationHintSeconds > 0 ? _durationHintSeconds : widget.duration);
+
+    final hasEpisodes =
+        widget.episodes != null && widget.episodes!.isNotEmpty;
+    final totalEpisodes = widget.episodes?.length ?? 0;
+    final currentEp = widget.currentEpisodeIndex >= 0 &&
+            widget.currentEpisodeIndex < totalEpisodes
+        ? widget.episodes![widget.currentEpisodeIndex]
+        : null;
+    final epLabel = currentEp != null
+        ? '${currentEp.displayNumber} / $totalEpisodes'
+        : '';
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text(dur.isNotEmpty ? 'Плеер · $dur' : 'Плеер'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(dur.isNotEmpty ? 'Плеер · $dur' : 'Плеер',
+                style: const TextStyle(fontSize: 16)),
+            if (epLabel.isNotEmpty)
+              Text(epLabel,
+                  style: const TextStyle(
+                      fontSize: 11, color: Colors.orange, height: 1.1)),
+          ],
+        ),
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         actions: [
+          // Кнопки навигации по сериям
+          if (hasEpisodes && widget.currentEpisodeIndex > 0)
+            IconButton(
+              icon: const Icon(Icons.skip_previous, size: 20),
+              tooltip: 'Предыдущая серия',
+              onPressed: () =>
+                  widget.onEpisodeChange?.call(widget.currentEpisodeIndex - 1),
+            ),
+          if (hasEpisodes &&
+              widget.currentEpisodeIndex < totalEpisodes - 1)
+            IconButton(
+              icon: const Icon(Icons.skip_next, size: 20),
+              tooltip: 'Следующая серия',
+              onPressed: () =>
+                  widget.onEpisodeChange?.call(widget.currentEpisodeIndex + 1),
+            ),
           if (widget.sourceUrl != null)
             PopupMenuButton<String>(
               tooltip: 'Качество',

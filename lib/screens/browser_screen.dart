@@ -11,6 +11,7 @@ import '../services/log_service.dart';
 import '../services/update_service.dart';
 import '../services/vpn_service.dart';
 import '../services/youtube_hover.dart';
+import '../services/series_parser.dart';
 import '../models/preset.dart';
 import 'iptv_screen.dart';
 import 'youtube_search_screen.dart';
@@ -67,6 +68,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   String _filmixSeasonId = '';
   String _lastFilmixMediaUrl = '';
   String _lastAutoMediaUrl = '';
+  SeriesParseResult? _parsedSeries;          // результат парсинга сериала
+  int _currentParsedEpisodeIndex = 0;        // индекс текущего эпизода
   List<String> _recentLinks = [];
   bool _checkingUpdates = false;
 
@@ -546,6 +549,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _isLoading = true;
     });
 
+    // Параллельно: транскодируем + парсим серии (если Filmix/Seasonvar)
+    final parseFuture = _parseSeriesIfNeeded();
+
     try {
       final result = await ApiService.transcode(
           url: _interceptedUrl,
@@ -557,6 +563,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
       });
       _muteWebView();
 
+      // Дожидаемся парсера
+      final parsed = await parseFuture;
+
       await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => PlayerScreen(
           hlsUrl: ApiService.hlsUrl(result.playlistUrl),
@@ -565,16 +574,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
           quality: _selectedQuality,
           referer: _currentReferer,
           duration: result.duration,
+          episodes: parsed?.episodes,
+          currentEpisodeIndex: _currentParsedEpisodeIndex,
+          onEpisodeChange: _handleEpisodeChange,
         ),
       ));
 
       _unmuteWebView();
 
-      // Seasonvar: сбор списка серий после просмотра
-      final isSeasonvar = _currentReferer.contains('seasonvar') ||
-          _interceptedUrl.contains('seasonvar');
-      if (isSeasonvar && _seasonvarEpisodes.isEmpty && !_scanningSeasonvar) {
-        _scanSeasonvarPlaylist(silent: true);
+      // Seasonvar: сбор списка серий после просмотра (fallback, если парсер не сработал)
+      if (parsed == null) {
+        final isSeasonvar = _currentReferer.contains('seasonvar') ||
+            _interceptedUrl.contains('seasonvar');
+        if (isSeasonvar && _seasonvarEpisodes.isEmpty && !_scanningSeasonvar) {
+          _scanSeasonvarPlaylist(silent: true);
+        }
       }
     } catch (e) {
       if (!mounted) return;
@@ -590,6 +604,62 @@ class _BrowserScreenState extends State<BrowserScreen> {
           ),
       ));
     }
+  }
+
+  /// Определяет, Filmix это или Seasonvar, и вызывает API-парсер.
+  Future<SeriesParseResult?> _parseSeriesIfNeeded() async {
+    final url = _currentRealUrl.isNotEmpty ? _currentRealUrl : _currentReferer;
+    final low = url.toLowerCase();
+
+    if (low.contains('filmix')) {
+      final result = await SeriesParserService.parseFilmix(url,
+          quality: _selectedQuality.replaceAll('p', ''));
+      if (result != null && result.episodes.isNotEmpty) {
+        _parsedSeries = result;
+        // Находим текущий эпизод по intercepted URL
+        _currentParsedEpisodeIndex = _findEpisodeIndex(
+            result.episodes, _interceptedUrl);
+        return result;
+      }
+    }
+
+    if (low.contains('seasonvar')) {
+      final result = await SeriesParserService.parseSeasonvar(url);
+      if (result != null && result.episodes.isNotEmpty) {
+        _parsedSeries = result;
+        _currentParsedEpisodeIndex = _findEpisodeIndex(
+            result.episodes, _interceptedUrl);
+        return result;
+      }
+    }
+
+    return null;
+  }
+
+  /// Находит индекс эпизода по его URL (или ближайший).
+  int _findEpisodeIndex(List<SeriesEpisode> episodes, String mediaUrl) {
+    if (mediaUrl.isEmpty) return 0;
+    for (int i = 0; i < episodes.length; i++) {
+      if (episodes[i].link == mediaUrl) return i;
+    }
+    return 0;
+  }
+
+  /// Обработчик смены эпизода из плеера.
+  void _handleEpisodeChange(int newIndex) async {
+    if (_parsedSeries == null) return;
+    if (newIndex < 0 || newIndex >= _parsedSeries!.episodes.length) return;
+
+    final ep = _parsedSeries!.episodes[newIndex];
+    _interceptedUrl = ep.link;
+    _currentReferer = _currentRealUrl;
+    _currentParsedEpisodeIndex = newIndex;
+    _interceptedAlready = false;
+
+    // Закрываем текущий плеер и запускаем новый эпизод
+    if (mounted) Navigator.of(context).pop();
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (mounted) _startMagic();
   }
 
   void _muteWebView() {
