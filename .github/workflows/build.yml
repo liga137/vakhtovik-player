@@ -93,6 +93,21 @@ jobs:
           ls -la android/app/src/main/jniLibs/*/
           echo "libbox.so added"
 
+      - name: Patch media_kit_video for Flutter 3.27+
+        run: |
+          python3 -c "
+          import glob
+          paths = glob.glob('/home/runner/.pub-cache/hosted/pub.dev/media_kit_video-*/android/src/main/java/com/alexmercerind/media_kit_video/VideoOutput.java')
+          if paths:
+              with open(paths[0], 'r') as f:
+                  c = f.read()
+              c = c.replace('@Override', '')
+              c = c.replace('public class VideoOutput implements TextureRegistry.SurfaceProducer.Callback {', 'public class VideoOutput implements TextureRegistry.SurfaceProducer.Callback {\n    public void onSurfaceCreated() {}\n    public void onSurfaceDestroyed() {}\n')
+              with open(paths[0], 'w') as f:
+                  f.write(c)
+              print('Patched successfully')
+          "
+
       - name: Build APK
         run: flutter build apk --release --split-per-abi
 
