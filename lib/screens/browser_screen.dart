@@ -608,29 +608,61 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   /// Определяет, Filmix это или Seasonvar, и вызывает API-парсер.
   Future<SeriesParseResult?> _parseSeriesIfNeeded() async {
-    final url = _currentRealUrl.isNotEmpty ? _currentRealUrl : _currentReferer;
-    final low = url.toLowerCase();
+    // Пробуем несколько источников URL
+    final urls = [
+      _currentRealUrl,
+      _currentReferer,
+      _interceptedUrl,
+    ].where((u) => u.isNotEmpty).toList();
 
-    if (low.contains('filmix')) {
-      final result = await SeriesParserService.parseFilmix(url,
-          quality: _selectedQuality.replaceAll('p', ''));
-      if (result != null && result.episodes.isNotEmpty) {
-        _parsedSeries = result;
-        // Находим текущий эпизод по intercepted URL
-        _currentParsedEpisodeIndex = _findEpisodeIndex(
-            result.episodes, _interceptedUrl);
-        return result;
+    String? seriesUrl;
+    bool isFilmix = false;
+    bool isSeasonvar = false;
+
+    for (final u in urls) {
+      final low = u.toLowerCase();
+      if (low.contains('filmix')) {
+        seriesUrl = u;
+        isFilmix = true;
+        break;
+      }
+      if (low.contains('seasonvar')) {
+        seriesUrl = u;
+        isSeasonvar = true;
+        break;
       }
     }
 
-    if (low.contains('seasonvar')) {
-      final result = await SeriesParserService.parseSeasonvar(url);
+    if (seriesUrl == null) return null;
+
+    LogService.info(LogService.browser,
+        '[Parser] Parsing series: $seriesUrl (filmix=$isFilmix, seasonvar=$isSeasonvar)');
+
+    if (isFilmix) {
+      final result = await SeriesParserService.parseFilmix(seriesUrl,
+          quality: _selectedQuality.replaceAll('p', ''));
       if (result != null && result.episodes.isNotEmpty) {
         _parsedSeries = result;
         _currentParsedEpisodeIndex = _findEpisodeIndex(
             result.episodes, _interceptedUrl);
+        LogService.info(LogService.browser,
+            '[Parser] Filmix: ${result.episodes.length} episodes, title=${result.title}');
         return result;
       }
+      LogService.warn(LogService.browser, '[Parser] Filmix parse failed');
+    }
+
+    if (isSeasonvar) {
+      final result = await SeriesParserService.parseSeasonvar(seriesUrl);
+      if (result != null && result.episodes.isNotEmpty) {
+        _parsedSeries = result;
+        _currentParsedEpisodeIndex = _findEpisodeIndex(
+            result.episodes, _interceptedUrl);
+        LogService.info(LogService.browser,
+            '[Parser] Seasonvar: ${result.episodes.length} episodes');
+        return result;
+      }
+      LogService.warn(LogService.browser, '[Parser] Seasonvar parse failed');
     }
 
     return null;

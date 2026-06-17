@@ -281,9 +281,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void dispose() {
     _durationTimer?.cancel();
+    _hideTimer?.cancel();
     ApiService.stopSession(widget.sessionId).catchError((_) {});
     player.dispose();
     super.dispose();
+  }
+
+  // ── Авто-скрытие AppBar / оверлея ─────────────────────────
+  bool _controlsVisible = true;
+  Timer? _hideTimer;
+  static const Duration _hideDelay = Duration(seconds: 3);
+
+  void _onMouseMove() {
+    if (!mounted) return;
+    if (!_controlsVisible) {
+      setState(() => _controlsVisible = true);
+    }
+    _hideTimer?.cancel();
+    _hideTimer = Timer(_hideDelay, () {
+      if (mounted) setState(() => _controlsVisible = false);
+    });
   }
 
   @override
@@ -302,133 +319,305 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ? '${currentEp.displayNumber} / $totalEpisodes'
         : '';
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(dur.isNotEmpty ? 'Плеер · $dur' : 'Плеер',
-                style: const TextStyle(fontSize: 16)),
-            if (epLabel.isNotEmpty)
-              Text(epLabel,
-                  style: const TextStyle(
-                      fontSize: 11, color: Colors.orange, height: 1.1)),
-          ],
-        ),
+    return MouseRegion(
+      onHover: (_) => _onMouseMove(),
+      onEnter: (_) => _onMouseMove(),
+      child: Scaffold(
         backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        actions: [
-          // Кнопки навигации по сериям
-          if (hasEpisodes && widget.currentEpisodeIndex > 0)
-            IconButton(
-              icon: const Icon(Icons.skip_previous, size: 20),
-              tooltip: 'Предыдущая серия',
-              onPressed: () =>
-                  widget.onEpisodeChange?.call(widget.currentEpisodeIndex - 1),
-            ),
-          if (hasEpisodes &&
-              widget.currentEpisodeIndex < totalEpisodes - 1)
-            IconButton(
-              icon: const Icon(Icons.skip_next, size: 20),
-              tooltip: 'Следующая серия',
-              onPressed: () =>
-                  widget.onEpisodeChange?.call(widget.currentEpisodeIndex + 1),
-            ),
-          if (widget.sourceUrl != null)
-            PopupMenuButton<String>(
-              tooltip: 'Качество',
-              initialValue: widget.quality,
-              onSelected: _switchQuality,
-              icon: const Icon(Icons.settings, color: Colors.orange),
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: '144p', child: Text('144p')),
-                PopupMenuItem(value: '240p', child: Text('240p')),
-                PopupMenuItem(value: '360p', child: Text('360p')),
-                PopupMenuItem(value: '480p', child: Text('480p')),
-              ],
-            ),
-          IconButton(
-            icon: _isDownloading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.orange),
-                  )
-                : const Icon(Icons.download),
-            tooltip: 'Скачать mp4',
-            onPressed: _isDownloading ? null : _downloadCurrentSession,
-          ),
-          IconButton(
-            icon: const Icon(Icons.stop),
-            tooltip: 'Остановить транскодирование',
-            onPressed: () {
-              ApiService.stopSession(widget.sessionId);
-              if (mounted) Navigator.pop(context);
-            },
-          ),
-        ],
-      ),
-      body: _isInitialized
-          ? Video(controller: controller)
-          : Center(
-              child: Container(
-                color: Colors.black54,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                        color: const Color(0xCC1A0F08),
-                        borderRadius: BorderRadius.circular(16)),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_reconnectAttempts >= _maxReconnectAttempts &&
-                            _reconnectStatus != null)
-                          const Icon(Icons.error_outline,
-                              color: Colors.orange, size: 36),
-                        if (_reconnectAttempts < _maxReconnectAttempts ||
-                            _reconnectStatus == null)
-                          const CircularProgressIndicator(
-                              color: Colors.orange),
-                        const SizedBox(height: 14),
-                        Text(
-                          _reconnectStatus ?? 'Запускаю ${widget.quality}...',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 16),
-                        ),
-                        if (_reconnectAttempts >= _maxReconnectAttempts) ...[
-                          const SizedBox(height: 12),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.orange),
-                            onPressed: () {
-                              setState(() {
-                                _reconnectAttempts = 0;
-                                _reconnectStatus = null;
-                              });
-                              _initPlayer();
-                            },
-                            child: const Text('Попробовать снова',
-                                style: TextStyle(color: Colors.black)),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Видео — всегда на весь экран
+            if (_isInitialized)
+              Video(controller: controller)
+            else
+              Center(
+                child: Container(
+                  color: Colors.black54,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                          color: const Color(0xCC1A0F08),
+                          borderRadius: BorderRadius.circular(16)),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_reconnectAttempts >= _maxReconnectAttempts &&
+                              _reconnectStatus != null)
+                            const Icon(Icons.error_outline,
+                                color: Colors.orange, size: 36),
+                          if (_reconnectAttempts < _maxReconnectAttempts ||
+                              _reconnectStatus == null)
+                            const CircularProgressIndicator(
+                                color: Colors.orange),
+                          const SizedBox(height: 14),
+                          Text(
+                            _reconnectStatus ?? 'Запускаю ${widget.quality}...',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 16),
                           ),
-                          const SizedBox(height: 6),
-                          TextButton(
-                            onPressed: () {
-                              if (mounted) Navigator.pop(context);
-                            },
-                            child: const Text('Выйти',
-                                style: TextStyle(color: Colors.white54)),
-                          ),
+                          if (_reconnectAttempts >= _maxReconnectAttempts) ...[
+                            const SizedBox(height: 12),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange),
+                              onPressed: () {
+                                setState(() {
+                                  _reconnectAttempts = 0;
+                                  _reconnectStatus = null;
+                                });
+                                _initPlayer();
+                              },
+                              child: const Text('Попробовать снова',
+                                  style: TextStyle(color: Colors.black)),
+                            ),
+                            const SizedBox(height: 6),
+                            TextButton(
+                              onPressed: () {
+                                if (mounted) Navigator.pop(context);
+                              },
+                              child: const Text('Выйти',
+                                  style: TextStyle(color: Colors.white54)),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
+
+            // Верхняя панель (AppBar)
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              top: _controlsVisible ? 0 : -80,
+              left: 0,
+              right: 0,
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xCC000000), Colors.transparent],
+                  ),
+                ),
+                padding: EdgeInsets.only(
+                    top: MediaQuery.of(context).padding.top + 4,
+                    bottom: 12,
+                    left: 4,
+                    right: 4),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      tooltip: 'Закрыть плеер',
+                      onPressed: () {
+                        ApiService.stopSession(widget.sessionId);
+                        if (mounted) Navigator.pop(context);
+                      },
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(dur.isNotEmpty ? 'Плеер · $dur' : 'Плеер',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 14)),
+                          if (epLabel.isNotEmpty)
+                            Text(epLabel,
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.orange,
+                                    height: 1.1)),
+                        ],
+                      ),
+                    ),
+                    // Навигация по эпизодам
+                    if (hasEpisodes && widget.currentEpisodeIndex > 0)
+                      IconButton(
+                        icon: const Icon(Icons.skip_previous,
+                            size: 22, color: Colors.white70),
+                        tooltip: 'Предыдущая серия',
+                        onPressed: () => widget.onEpisodeChange
+                            ?.call(widget.currentEpisodeIndex - 1),
+                      ),
+                    if (hasEpisodes &&
+                        widget.currentEpisodeIndex < totalEpisodes - 1)
+                      IconButton(
+                        icon: const Icon(Icons.skip_next,
+                            size: 22, color: Colors.white70),
+                        tooltip: 'Следующая серия',
+                        onPressed: () => widget.onEpisodeChange
+                            ?.call(widget.currentEpisodeIndex + 1),
+                      ),
+                    // Качество
+                    if (widget.sourceUrl != null)
+                      PopupMenuButton<String>(
+                        tooltip: 'Качество',
+                        initialValue: widget.quality,
+                        onSelected: _switchQuality,
+                        icon: const Icon(Icons.settings,
+                            color: Colors.orange, size: 20),
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: '144p', child: Text('144p')),
+                          PopupMenuItem(value: '240p', child: Text('240p')),
+                          PopupMenuItem(value: '360p', child: Text('360p')),
+                          PopupMenuItem(value: '480p', child: Text('480p')),
+                        ],
+                      ),
+                    // Скачать
+                    IconButton(
+                      icon: _isDownloading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.orange),
+                            )
+                          : const Icon(Icons.download,
+                              color: Colors.white70, size: 20),
+                      tooltip: 'Скачать mp4',
+                      onPressed:
+                          _isDownloading ? null : _downloadCurrentSession,
+                    ),
+                  ],
+                ),
+              ),
             ),
+
+            // Нижний оверлей с прогресс-баром
+            if (_isInitialized)
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                bottom: _controlsVisible ? 0 : -60,
+                left: 0,
+                right: 0,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [Color(0xCC000000), Colors.transparent],
+                    ),
+                  ),
+                  padding: const EdgeInsets.only(
+                      bottom: 16, top: 16, left: 16, right: 16),
+                  child: Row(
+                    children: [
+                      // Play/Pause
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            if (player.state.playing) {
+                              player.pause();
+                            } else {
+                              player.play();
+                            }
+                            setState(() {}); // trigger rebuild for icon
+                          },
+                          child: StreamBuilder<bool>(
+                            stream: player.stream.playing,
+                            initialData: player.state.playing,
+                            builder: (_, snap) => Icon(
+                              snap.data == true
+                                  ? Icons.pause
+                                  : Icons.play_arrow,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Прогресс
+                      Expanded(
+                        child: StreamBuilder<Duration>(
+                          stream: player.stream.position,
+                          initialData: player.state.position,
+                          builder: (_, posSnap) {
+                            final pos = posSnap.data ?? Duration.zero;
+                            final total = _durationHintSeconds > 0
+                                ? Duration(
+                                    milliseconds:
+                                        (_durationHintSeconds * 1000).round())
+                                : player.state.duration;
+                            final posPercent = total.inMilliseconds > 0
+                                ? pos.inMilliseconds / total.inMilliseconds
+                                : 0.0;
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Полоса прогресса
+                                GestureDetector(
+                                  onTapDown: (d) {
+                                    final box = context.findRenderObject()
+                                        as RenderBox;
+                                    final localX = d.localPosition.dx;
+                                    final ratio = (localX / box.size.width)
+                                        .clamp(0.0, 1.0);
+                                    final seekMs =
+                                        (ratio * total.inMilliseconds).round();
+                                    player.seek(
+                                        Duration(milliseconds: seekMs));
+                                  },
+                                  child: Container(
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white24,
+                                      borderRadius:
+                                          BorderRadius.circular(2),
+                                    ),
+                                    child: FractionallySizedBox(
+                                      alignment: Alignment.centerLeft,
+                                      widthFactor:
+                                          posPercent.clamp(0.0, 1.0),
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange,
+                                          borderRadius:
+                                              BorderRadius.circular(2),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                // Время
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(_fmtDuration(
+                                        pos.inMilliseconds / 1000),
+                                        style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 10)),
+                                    Text(
+                                        _fmtDuration(
+                                            total.inMilliseconds / 1000),
+                                        style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 10)),
+                                  ],
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
