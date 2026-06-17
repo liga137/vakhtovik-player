@@ -242,7 +242,7 @@ class VpnService {
         {'type': 'dns', 'tag': 'dns-out'},
       ],
     'route': {
-      'default_domain_resolver': 'dns-local',
+      'default_domain_resolver': 'dns-proxy',
       'rules': [
         {'port': 53, 'action': 'hijack-dns'},
         {'protocol': 'dns', 'action': 'hijack-dns'},

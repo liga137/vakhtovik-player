@@ -25,6 +25,7 @@ class VakhtovikVpnService : VpnService() {
     }
 
     private var running = false
+    private var boxStarted = false
     private var tunFd: ParcelFileDescriptor? = null
 
     override fun onCreate() {
@@ -47,7 +48,14 @@ class VakhtovikVpnService : VpnService() {
     }
 
     private fun startVpn(configJson: String) {
-        if (configJson.isEmpty() || running) return
+        if (configJson.isEmpty()) return
+
+        // Если уже работает — сначала останавливаем
+        if (running || boxStarted) {
+            stopVpn()
+            // Пауза чтобы libbox.so успел очистить состояние
+            Thread.sleep(500)
+        }
 
         val builder = Builder()
             .setSession("Vakhtovik VPN")
@@ -71,18 +79,19 @@ class VakhtovikVpnService : VpnService() {
             val error = BoxService.start(configJson, tunFd!!.fd, filesDir.absolutePath)
             if (error != null) {
                 sendStatus("Error: $error")
-                tunFd?.close()
+                try { tunFd?.close() } catch (_: Exception) {}
                 tunFd = null
                 return
             }
+            boxStarted = true
         } catch (e: UnsatisfiedLinkError) {
             sendStatus("Error: libbox.so not found")
-            tunFd?.close()
+            try { tunFd?.close() } catch (_: Exception) {}
             tunFd = null
             return
         } catch (e: Exception) {
             sendStatus("Error: ${e.message}")
-            tunFd?.close()
+            try { tunFd?.close() } catch (_: Exception) {}
             tunFd = null
             return
         }
@@ -112,12 +121,33 @@ class VakhtovikVpnService : VpnService() {
     }
 
     private fun stopVpn() {
-        if (!running) return
-        try { BoxService.stop() } catch (_: Exception) {}
-        try { tunFd?.close(); tunFd = null } catch (_: Exception) {}
+        val wasRunning = running || boxStarted
         running = false
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        sendStatus("Disconnected")
+        boxStarted = false
+
+        if (wasRunning) {
+            // Останавливаем BoxService с защитой от краша
+            try {
+                BoxService.stop()
+            } catch (e: UnsatisfiedLinkError) {
+                // libbox.so уже выгружен — игнорируем
+            } catch (e: Exception) {
+                // Native crash при остановке — не фатально
+            }
+            // Даём время native-слою освободить ресурсы
+            try { Thread.sleep(200) } catch (_: Exception) {}
+        }
+
+        try { tunFd?.close() } catch (_: Exception) {}
+        tunFd = null
+
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (_: Exception) {}
+
+        if (wasRunning) {
+            sendStatus("Disconnected")
+        }
     }
 
     override fun onDestroy() {

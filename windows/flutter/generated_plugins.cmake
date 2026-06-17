@@ -4,9 +4,9 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_inappwebview_windows
+  media_kit_video
   screen_retriever_windows
   url_launcher_windows
-  video_player_win
   window_manager
 )
 
