@@ -6,14 +6,14 @@ import 'log_service.dart';
 
 class IptvService {
   static const _embeddedAssets = <String, String>{
-    'belarus': 'assets/iptv/Bel.m3u',
-    'russia': 'assets/iptv/rus.m3u',
+    'all': 'assets/iptv/playlist.m3u',
   };
 
   static const categoryOrder = [
-    'Все', 'Избранное', 'Россия', 'Общероссийские', 'Беларусь',
-    'Общие', 'Кино', 'Детские', 'Спорт', 'Музыка', 'Музыкальные',
-    'Познавательные', 'Новости', 'Региональные', 'Разное',
+    'Все', 'Избранное', 'Россия', 'Беларусь',
+    'Общероссийские', 'Кино', 'Детские', 'Спорт', 'Музыка', 
+    'Познавательные', 'Развлекательные', 'Новости', 'Региональные', 
+    'Взрослые', 'Разное',
   ];
 
   static Future<List<IptvChannel>> loadChannels({bool forceRefresh = false}) async {
@@ -189,12 +189,13 @@ class IptvService {
     final s = '$group $name'.toLowerCase();
     if (_hasAny(s, ['news', 'новост', 'вести', 'rt ', 'мир 24', 'rbc', 'рбк'])) return 'Новости';
     if (_hasAny(s, ['sport', 'спорт', 'football', 'футбол', 'хоккей', 'mma'])) return 'Спорт';
-    if (_hasAny(s, ['kids', 'детск', 'cartoon', 'мульт', 'disney', 'nick'])) return 'Мультфильмы';
+    if (_hasAny(s, ['kids', 'детск', 'cartoon', 'мульт', 'disney', 'nick'])) return 'Детские';
     if (_hasAny(s, ['movie', 'cinema', 'film', 'кино', 'сериал'])) return 'Кино';
     if (_hasAny(s, ['music', 'музык', 'музыка', 'radio', 'радио'])) return 'Музыка';
-    if (_hasAny(s, ['documentary', 'science', 'history', 'travel', 'docu', 'познав', 'история', 'наука'])) return 'Познавательное';
+    if (_hasAny(s, ['documentary', 'science', 'history', 'travel', 'docu', 'познав', 'история', 'наука'])) return 'Познавательные';
     if (_hasAny(s, ['regional', 'local', 'регион', 'город', 'област'])) return 'Региональные';
     if (_hasAny(s, ['entertainment', 'развлек', 'general', 'общий'])) return 'Развлекательные';
+    if (_hasAny(s, ['adult', 'взросл', '18+'])) return 'Взрослые';
     if (_hasAny(s, ['belarus', 'белар'])) return 'Беларусь';
     final t = group.trim();
     return t.isNotEmpty ? t[0].toUpperCase() + t.substring(1) : 'Разное';
