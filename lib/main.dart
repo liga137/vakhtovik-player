@@ -12,7 +12,17 @@ void main() async {
   await ApiService.initLocalState();
   if (Platform.isWindows) {
     await windowManager.ensureInitialized();
-    windowManager.setMinimumSize(const Size(400, 300));
+    WindowOptions windowOptions = const WindowOptions(
+      size: Size(1280, 720),
+      minimumSize: Size(400, 300),
+      center: true,
+      skipTaskbar: false,
+      titleBarStyle: TitleBarStyle.normal,
+    );
+    windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
   }
   runApp(const VakhtovikApp());
 }

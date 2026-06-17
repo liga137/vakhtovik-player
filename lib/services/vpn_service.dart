@@ -225,21 +225,22 @@ class VpnService {
         'mtu': 1500,
       }
     ],
-    'outbounds': [
-      {
-        'type': 'hysteria2',
-        'tag': 'proxy',
-        'server': '195.226.92.151',
-        'server_port': 443,
-        'password': 'Vakh-37PWkJ6RvQfC95Rsnw8jzpP0',
-        'tls': {
-          'enabled': true,
-          'server_name': '195.226.92.151.nip.io',
-          'insecure': false,
+      'outbounds': [
+        {
+          'type': 'hysteria2',
+          'tag': 'proxy',
+          'server': '195.226.92.151',
+          'server_port': 443,
+          'password': 'Vakh-37PWkJ6RvQfC95Rsnw8jzpP0',
+          'tls': {
+            'enabled': true,
+            'server_name': '195.226.92.151.nip.io',
+            'insecure': false,
+          },
         },
-      },
-      {'type': 'direct', 'tag': 'direct'},
-    ],
+        {'type': 'direct', 'tag': 'direct'},
+        {'type': 'dns', 'tag': 'dns-out'},
+      ],
     'route': {
       'default_domain_resolver': 'dns-local',
       'rules': [
