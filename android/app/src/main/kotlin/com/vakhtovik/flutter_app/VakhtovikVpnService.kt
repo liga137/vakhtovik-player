@@ -9,7 +9,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
-import libbox.BoxService
+import io.nekohasekai.libbox.BoxService
 
 /**
  * Android VPN-сервис поверх sing-box (libbox.so).

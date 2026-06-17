@@ -1,4 +1,4 @@
-package libbox;
+package io.nekohasekai.libbox;
 
 /**
  * JNI-мост к libbox.so (из SFA APK).
