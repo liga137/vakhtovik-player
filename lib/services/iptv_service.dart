@@ -133,26 +133,39 @@ class IptvService {
     final out = <IptvChannel>[];
     Map<String, String>? pendingAttrs;
     String pendingName = '';
+    String pendingGroup = '';
+    
     for (final rawLine in lines) {
       final line = rawLine.trim();
       if (line.isEmpty) continue;
+      
       if (line.startsWith('#EXTINF')) {
         pendingAttrs = _parseAttrs(line);
         final comma = line.indexOf(',');
         pendingName = comma >= 0 ? line.substring(comma + 1).trim() : '';
+        pendingGroup = ''; // Reset group
         continue;
       }
+      
+      if (line.startsWith('#EXTGRP:')) {
+        pendingGroup = line.substring(8).trim();
+        continue;
+      }
+      
       if (line.startsWith('#')) continue;
       if (!line.startsWith('http://') && !line.startsWith('https://')) continue;
+      
       final attrs = pendingAttrs ?? const <String, String>{};
       final name = _firstNonEmpty([pendingName, attrs['tvg-name'] ?? '', attrs['tvg-id'] ?? '', Uri.tryParse(line)?.host ?? '']);
-      final group = attrs['group-title'] ?? '';
+      final group = _firstNonEmpty([pendingGroup, attrs['group-title'] ?? '']);
+      
       final category = normalizeCategory(group, name);
       final autoCountry = _detectCountry(source);
       final country = attrs['tvg-country']?.isNotEmpty == true ? attrs['tvg-country']! : autoCountry;
+      
       out.add(IptvChannel(name: name, url: line, category: category,
           logo: attrs['tvg-logo'] ?? '', country: country, language: attrs['tvg-language'] ?? '', source: source));
-      pendingAttrs = null; pendingName = '';
+      pendingAttrs = null; pendingName = ''; pendingGroup = '';
     }
     return out;
   }
