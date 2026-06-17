@@ -2209,6 +2209,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               });
                             }
 
+                            // Filmix / Seasonvar: авто-парсинг эпизодов через API (не ждём перехвата)
+                            if (url.host.contains('filmix') || url.host.contains('seasonvar')) {
+                              Future.delayed(const Duration(seconds: 2), () {
+                                if (mounted) _parseSeriesIfNeeded();
+                              });
+                            }
+
                             // YouTube: ховер-кнопки
                             if (url.host.contains('youtube.com')) {
                               controller.evaluateJavascript(
