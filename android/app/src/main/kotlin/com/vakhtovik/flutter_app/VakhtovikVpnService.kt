@@ -53,10 +53,35 @@ class VakhtovikVpnService : VpnService() {
             .setSession("Vakhtovik VPN")
             .setMtu(1500)
             .addAddress("172.19.0.1", 30)
-            .addRoute("0.0.0.0", 0)
             .addDnsServer("1.1.1.1")
             .addDnsServer("8.8.8.8")
             .setBlocking(true)
+
+        // Маршрутизируем весь трафик (0.0.0.0/0) КРОМЕ IP сервера Hysteria2 (195.226.92.151),
+        // чтобы не было routing loop, так как мы не можем сделать protect() для сокетов libbox.
+        addBypassRoute(builder, "195.226.92.151")
+
+        tunFd = builder.establish()
+    }
+
+    private fun addBypassRoute(builder: Builder, bypassIp: String) {
+        val parts = bypassIp.split(".").map { it.toLong() }
+        val ip = (parts[0] shl 24) or (parts[1] shl 16) or (parts[2] shl 8) or parts[3]
+        
+        var currentIp = 0L
+        for (i in 31 downTo 0) {
+            val bit = (ip ushr i) and 1L
+            val oppositeBit = bit xor 1L
+            val routeIp = currentIp or (oppositeBit shl i)
+            
+            val ipString = "${(routeIp ushr 24) and 0xFF}.${(routeIp ushr 16) and 0xFF}.${(routeIp ushr 8) and 0xFF}.${routeIp and 0xFF}"
+            try {
+                builder.addRoute(ipString, 32 - i)
+            } catch (e: Exception) {}
+            
+            currentIp = currentIp or (bit shl i)
+        }
+    }
 
         tunFd = builder.establish()
         if (tunFd == null) {

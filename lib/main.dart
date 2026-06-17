@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, exit;
 import 'screens/browser_screen.dart';
 import 'services/api_service.dart';
 import 'services/vpn_service.dart';
@@ -42,8 +42,13 @@ class _VakhtovikAppState extends State<VakhtovikApp> with WindowListener {
 
   @override
   void onWindowClose() async {
-    await VpnService.instance.disconnect();
+    // Останавливаем VPN перед закрытием, чтобы не было зомби
+    try {
+      await VpnService.instance.disconnect().timeout(const Duration(seconds: 2));
+    } catch (_) {}
+    
     await windowManager.destroy();
+    exit(0); // Принудительно завершаем процесс, чтобы избежать зависаний от media_kit/http
   }
 
   @override

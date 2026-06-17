@@ -204,16 +204,27 @@ class VpnService {
         {'tag': 'dns-local', 'type': 'local', 'detour': 'direct'},
       ],
     },
-    'inbounds': [{
-      'type': 'tun',
-      'tag': 'tun-in',
-      'interface_name': 'BeaverVPN',
-      'address': ['172.19.0.1/30'],
-      'auto_route': true,
-      'strict_route': true,
-      'stack': 'system',
-      'mtu': 1360,
-    }],
+    'inbounds': [
+      if (Platform.isWindows) {
+        'type': 'tun',
+        'tag': 'tun-in',
+        'interface_name': 'BeaverVPN',
+        'address': ['172.19.0.1/30'],
+        'auto_route': true,
+        'strict_route': true,
+        'stack': 'system',
+        'mtu': 1360,
+      } else {
+        'type': 'tun',
+        'tag': 'tun-in',
+        'interface_name': 'tun0',
+        'address': ['172.19.0.1/30'],
+        'auto_route': false,
+        'strict_route': false,
+        'stack': 'system',
+        'mtu': 1500,
+      }
+    ],
     'outbounds': [
       {
         'type': 'hysteria2',
