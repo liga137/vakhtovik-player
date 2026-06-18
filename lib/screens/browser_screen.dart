@@ -684,13 +684,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _muteWebView() {
-    webViewController?.evaluateJavascript(source: """
+    webViewController?.evaluateJavascript(source: r"""
       (function(){
-        var vids = document.querySelectorAll('video, audio');
-        for (var i = 0; i < vids.length; i++) {
-          vids[i].muted = true;
-          vids[i].pause();
+        function muteAll(doc) {
+          var vids = doc.querySelectorAll('video, audio');
+          for (var i = 0; i < vids.length; i++) {
+            vids[i].muted = true;
+            vids[i].pause();
+          }
+          var iframes = doc.querySelectorAll('iframe');
+          for (var j = 0; j < iframes.length; j++) {
+            try { muteAll(iframes[j].contentDocument || iframes[j].contentWindow.document); }
+            catch(e) {} // cross-origin iframe — не можем
+          }
         }
+        muteAll(document);
       })();
     """);
   }
