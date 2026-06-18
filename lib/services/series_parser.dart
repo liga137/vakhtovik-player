@@ -103,91 +103,130 @@ class SeriesParserService {
     final id = int.tryParse(idOrUrl) != null ? idOrUrl : _extractFilmixId(idOrUrl);
     if (id == null) return null;
 
-    try {
-      final uri = Uri.parse("http://filmixapp.cyou/api/v2/post/$id").replace(queryParameters: {
-        "app_lang": "ru_RU",
-        "user_dev_apk": "2.2.13",
-        "user_dev_id": "cd88df2bd8dd6cf0",
-        "user_dev_name": "Xiaomi 2510EPC8BG",
-        "user_dev_os": "16",
-        "user_dev_token": "7c92a8c95fa1b1d6b6ed35095ad95744",
-        "user_dev_vendor": "Xiaomi",
-      });
-
-      final resp = await _client.get(uri, headers: {
-        "User-Agent": "okhttp/3.10.0",
-      }).timeout(const Duration(seconds: 15));
-
-      if (resp.statusCode != 200) return null;
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-
-      final playlistRaw = data['player_links']?['playlist'];
-      if (playlistRaw == null) return null;
+    // Retry loop: 3 попытки с задержкой 2 сек
+    for (int attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(const Duration(seconds: 2));
+      }
       
-      // Filmix отдаёт пустой список [] для недоступных фильмов
-      if (playlistRaw is List) return null;
+      try {
+        final uri = Uri.parse("http://filmixapp.cyou/api/v2/post/$id").replace(queryParameters: {
+          "app_lang": "ru_RU",
+          "user_dev_apk": "2.2.13",
+          "user_dev_id": "cd88df2bd8dd6cf0",
+          "user_dev_name": "Xiaomi 2510EPC8BG",
+          "user_dev_os": "16",
+          "user_dev_token": "7c92a8c95fa1b1d6b6ed35095ad95744",
+          "user_dev_vendor": "Xiaomi",
+        });
 
-      final playlist = playlistRaw as Map<String, dynamic>;
-      final episodes = <SeriesEpisode>[];
+        final resp = await _client.get(uri, headers: {
+          "User-Agent": "okhttp/3.10.0",
+        }).timeout(const Duration(seconds: 20));
 
-      for (var season in playlist.keys) {
-        final translations = playlist[season];
-        if (translations is! Map) continue;
+        if (resp.statusCode != 200) continue;
 
-        for (var tname in translations.keys) {
-          final eps = translations[tname];
-          if (eps is! Map) continue;
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final playerLinks = data['player_links'] as Map<String, dynamic>?;
+        if (playerLinks == null) continue;
 
-          for (var ep in eps.keys) {
-            final epData = eps[ep];
-            if (epData is! Map) continue;
+        final episodes = <SeriesEpisode>[];
 
-            final linkTpl = epData['link']?.toString();
+        // ── 1. Фильмы: player_links.movie ──
+        final movieRaw = playerLinks['movie'];
+        if (movieRaw is List && movieRaw.isNotEmpty) {
+          for (final item in movieRaw) {
+            if (item is! Map) continue;
+            final linkTpl = item['link']?.toString();
+            final translation = item['translation']?.toString() ?? '';
             if (linkTpl == null) continue;
 
-            final quals = (epData['qualities'] as List<dynamic>? ?? []).map((q) => q.toString()).toList();
-            
             String finalLink = linkTpl;
             String finalQuality = quality;
 
-            if (quals.contains(quality)) {
-              finalLink = linkTpl.replaceAll('%s', quality);
+            // Bracket format: [,,480,720,1080,]
+            final bracketMatch = RegExp(r'\[,,(\d+(?:,\d+)*),\]').firstMatch(linkTpl);
+            if (bracketMatch != null) {
+              final quals = bracketMatch.group(1)!.split(',');
+              if (quals.contains(quality)) {
+              finalLink = linkTpl.replaceAll(RegExp(r'\[,,\d+(?:,\d+)*,\]'), quality);
             } else if (quals.isNotEmpty) {
               finalQuality = quals.last;
-              finalLink = linkTpl.replaceAll('%s', finalQuality);
+              finalLink = linkTpl.replaceAll(RegExp(r'\[,,\d+(?:,\d+)*,\]'), finalQuality);
+              }
+            } else if (linkTpl.contains('%s')) {
+              finalLink = linkTpl.replaceAll('%s', quality);
             }
 
             episodes.add(SeriesEpisode(
               title: data['title']?.toString() ?? '',
-              season: season,
-              episode: ep,
-              translation: tname,
+              season: '1', episode: '1',
+              translation: translation,
               quality: finalQuality,
               link: finalLink,
             ));
           }
         }
+
+        // ── 2. Сериалы: player_links.playlist ──
+        final playlistRaw = playerLinks['playlist'];
+        if (playlistRaw is Map && playlistRaw.isNotEmpty) {
+          for (var season in playlistRaw.keys) {
+            final translations = playlistRaw[season];
+            if (translations is! Map) continue;
+            for (var tname in translations.keys) {
+              final eps = translations[tname];
+              if (eps is! Map) continue;
+              for (var ep in eps.keys) {
+                final epData = eps[ep];
+                if (epData is! Map) continue;
+                final linkTpl = epData['link']?.toString();
+                if (linkTpl == null) continue;
+                final quals = (epData['qualities'] as List<dynamic>? ?? []).map((q) => q.toString()).toList();
+                String finalLink = linkTpl;
+                String finalQuality = quality;
+                if (quals.contains(quality)) {
+                  finalLink = linkTpl.replaceAll('%s', quality);
+                } else if (quals.isNotEmpty) {
+                  finalQuality = quals.last;
+                  finalLink = linkTpl.replaceAll('%s', finalQuality);
+                }
+                episodes.add(SeriesEpisode(
+                  title: data['title']?.toString() ?? '',
+                  season: season,
+                  episode: ep,
+                  translation: tname,
+                  quality: finalQuality,
+                  link: finalLink,
+                ));
+              }
+            }
+          }
+          episodes.sort((a, b) {
+            final sA = int.tryParse(a.season ?? '') ?? 0;
+            final sB = int.tryParse(b.season ?? '') ?? 0;
+            if (sA != sB) return sA.compareTo(sB);
+            final eA = int.tryParse(a.episode ?? '') ?? 0;
+            final eB = int.tryParse(b.episode ?? '') ?? 0;
+            return eA.compareTo(eB);
+          });
+        }
+
+        return SeriesParseResult(
+          title: data['title']?.toString(),
+          originalTitle: data['original_title']?.toString(),
+          episodes: episodes,
+        );
+
+      } catch (e) {
+        if (attempt >= 2) {
+          print('[SeriesParser] Filmix error (attempt $attempt): $e');
+        }
       }
-
-      episodes.sort((a, b) {
-        final sA = int.tryParse(a.season ?? '') ?? 0;
-        final sB = int.tryParse(b.season ?? '') ?? 0;
-        if (sA != sB) return sA.compareTo(sB);
-        final eA = int.tryParse(a.episode ?? '') ?? 0;
-        final eB = int.tryParse(b.episode ?? '') ?? 0;
-        return eA.compareTo(eB);
-      });
-
-      return SeriesParseResult(
-        title: data['title']?.toString(),
-        originalTitle: data['original_title']?.toString(),
-        episodes: episodes,
-      );
-
-    } catch (e) {
-      print('[SeriesParser] Filmix error: $e');
-      return null;
     }
+
+    print('[SeriesParser] Filmix parse failed after 3 attempts');
+    return null;
   }
 
   // ================= SEASONVAR PARSER =================
