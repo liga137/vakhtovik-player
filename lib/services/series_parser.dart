@@ -104,7 +104,7 @@ class SeriesParserService {
     if (id == null) return null;
 
     try {
-      final uri = Uri.parse("https://filmixapp.cyou/api/v2/post/$id").replace(queryParameters: {
+      final uri = Uri.parse("http://filmixapp.cyou/api/v2/post/$id").replace(queryParameters: {
         "app_lang": "ru_RU",
         "user_dev_apk": "2.2.13",
         "user_dev_id": "cd88df2bd8dd6cf0",
