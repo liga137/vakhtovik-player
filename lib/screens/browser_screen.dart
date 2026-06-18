@@ -216,7 +216,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
       if (mounted) {
         setState(() {
           _presets = List<Preset>.from(presets.isNotEmpty ? presets : fallback);
-          if (_presets.isNotEmpty) _selectedQuality = _presets.first.id;
+          if (_presets.isNotEmpty) {
+            _selectedQuality = _presets.any((p) => p.id == '240p') ? '240p' : _presets.first.id;
+          }
         });
       }
     } catch (e) {
