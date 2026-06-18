@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 import '../services/api_service.dart';
 import '../services/series_parser.dart';
+import '../services/hls_proxy_service.dart';
 
 /// Экран плеера: мультиплатформенный HLS стриминг (MediaKit)
 class PlayerScreen extends StatefulWidget {
@@ -74,6 +75,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _onVideoCompleted() {
+    // Защита от ложных срабатываний (если HLS пустой или транскодер упал)
+    if (player.state.position.inSeconds < 10) return;
+
     if (widget.episodes == null || widget.onEpisodeChange == null) return;
     final nextIndex = widget.currentEpisodeIndex + 1;
     if (nextIndex < widget.episodes!.length) {
@@ -83,7 +87,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _initPlayer() async {
     try {
-      await player.open(Media(widget.hlsUrl), play: true);
+      String playUrl = widget.hlsUrl;
+      
+      // Запускаем локальный прокси-ускоритель для кэширования HLS (IDM-style)
+      try {
+        await HlsProxyService.instance.start(widget.hlsUrl);
+        playUrl = 'http://127.0.0.1:${HlsProxyService.instance.port}/playlist.m3u8';
+      } catch (e) {
+        print('[PlayerScreen] Failed to start HlsProxy: $e');
+      }
+
+      await player.open(Media(playUrl), play: true);
     } catch (e) {
       _onPlaybackError('Ошибка инициализации плеера: $e');
       return;
@@ -282,6 +296,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void dispose() {
     _durationTimer?.cancel();
     _hideTimer?.cancel();
+    HlsProxyService.instance.stop();
     ApiService.stopSession(widget.sessionId).catchError((_) {});
     player.dispose();
     super.dispose();
