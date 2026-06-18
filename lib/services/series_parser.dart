@@ -122,7 +122,10 @@ class SeriesParserService {
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
 
       final playlistRaw = data['player_links']?['playlist'];
-      if (playlistRaw == null || playlistRaw is! Map) return null;
+      if (playlistRaw == null) return null;
+      
+      // Filmix отдаёт пустой список [] для недоступных фильмов
+      if (playlistRaw is List) return null;
 
       final playlist = playlistRaw as Map<String, dynamic>;
       final episodes = <SeriesEpisode>[];

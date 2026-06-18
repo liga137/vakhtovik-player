@@ -89,13 +89,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       String playUrl = widget.hlsUrl;
       
-      // Запускаем локальный прокси-ускоритель для кэширования HLS (IDM-style)
-      try {
-        await HlsProxyService.instance.start(widget.hlsUrl);
-        playUrl = 'http://127.0.0.1:${HlsProxyService.instance.port}/playlist.m3u8';
-      } catch (e) {
-        print('[PlayerScreen] Failed to start HlsProxy: $e');
-      }
+      // Локальный прокси временно отключен из-за проблем с HTTP Range запросами (MediaKit/libmpv)
+      // Будет переписан под правильный стриминг.
+      // try {
+      //   await HlsProxyService.instance.start(widget.hlsUrl);
+      //   playUrl = 'http://127.0.0.1:${HlsProxyService.instance.port}/playlist.m3u8';
+      // } catch (e) {
+      //   print('[PlayerScreen] Failed to start HlsProxy: $e');
+      // }
 
       await player.open(Media(playUrl), play: true);
     } catch (e) {
@@ -334,47 +335,49 @@ class _PlayerScreenState extends State<PlayerScreen> {
         : '';
 
     final topBar = [
-      MaterialDesktopCustomButton(
+      IconButton(
         onPressed: () {
           ApiService.stopSession(widget.sessionId);
           if (mounted) Navigator.pop(context);
         },
         icon: const Icon(Icons.arrow_back, color: Colors.white),
       ),
+      if (dur.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Text(dur, style: const TextStyle(color: Colors.white, fontSize: 13)),
+        ),
       if (epLabel.isNotEmpty)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Text(epLabel, style: const TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.bold)),
         ),
       if (hasEpisodes && widget.currentEpisodeIndex > 0)
-        MaterialDesktopCustomButton(
+        IconButton(
           onPressed: () => widget.onEpisodeChange?.call(widget.currentEpisodeIndex - 1),
           icon: const Icon(Icons.skip_previous, color: Colors.white),
         ),
       if (hasEpisodes && widget.currentEpisodeIndex < totalEpisodes - 1)
-        MaterialDesktopCustomButton(
+        IconButton(
           onPressed: () => widget.onEpisodeChange?.call(widget.currentEpisodeIndex + 1),
           icon: const Icon(Icons.skip_next, color: Colors.white),
         ),
       const Spacer(),
       if (widget.sourceUrl != null)
-        MaterialDesktopCustomButton(
-          onPressed: () {},
-          icon: PopupMenuButton<String>(
-            tooltip: 'Качество',
-            initialValue: widget.quality,
-            onSelected: _switchQuality,
-            icon: const Icon(Icons.settings, color: Colors.orange),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: '144p', child: Text('144p')),
-              PopupMenuItem(value: '240p', child: Text('240p')),
-              PopupMenuItem(value: '360p', child: Text('360p')),
-              PopupMenuItem(value: '480p', child: Text('480p')),
-            ],
-          ),
+        PopupMenuButton<String>(
+          tooltip: 'Качество',
+          initialValue: widget.quality,
+          onSelected: _switchQuality,
+          icon: const Icon(Icons.settings, color: Colors.orange),
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: '144p', child: Text('144p')),
+            PopupMenuItem(value: '240p', child: Text('240p')),
+            PopupMenuItem(value: '360p', child: Text('360p')),
+            PopupMenuItem(value: '480p', child: Text('480p')),
+          ],
         ),
-      MaterialDesktopCustomButton(
-        onPressed: _isDownloading ? () {} : _downloadCurrentSession,
+      IconButton(
+        onPressed: _isDownloading ? null : _downloadCurrentSession,
         icon: _isDownloading
             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange))
             : const Icon(Icons.download, color: Colors.white70),
