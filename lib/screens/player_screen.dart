@@ -213,6 +213,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  void _showQualityDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: const Text('Качество', style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF1A1A1A),
+        children: ['144p', '240p', '360p', '480p'].map((q) {
+          return SimpleDialogOption(
+            onPressed: () {
+              Navigator.pop(context);
+              _switchQuality(q);
+            },
+            child: Text(q, style: TextStyle(
+              color: q == widget.quality ? Colors.orange : Colors.white70,
+              fontWeight: q == widget.quality ? FontWeight.bold : FontWeight.normal,
+            )),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Future<void> _switchQuality(String newQuality) async {
     final source = widget.sourceUrl;
     if (source == null || source.isEmpty || newQuality == widget.quality) {
@@ -334,7 +356,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ? '${currentEp.displayNumber} / $totalEpisodes'
         : '';
 
-    final topBar = [
+    // Качество — отдельный стейт для диалога
+    String _selectedQualityLocal = '240p';
+
+    final topBar = <Widget>[
       GestureDetector(
         onTap: () {
           ApiService.stopSession(widget.sessionId);
@@ -345,11 +370,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: Icon(Icons.arrow_back, color: Colors.white, size: 22),
         ),
       ),
-      if (dur.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Text(dur, style: const TextStyle(color: Colors.white70, fontSize: 13)),
-        ),
       if (epLabel.isNotEmpty)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -372,19 +392,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         ),
       const Spacer(),
-      if (widget.sourceUrl != null)
-        PopupMenuButton<String>(
-          tooltip: 'Качество',
-          initialValue: widget.quality,
-          onSelected: _switchQuality,
-          icon: const Icon(Icons.settings, color: Colors.orange, size: 20),
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: '144p', child: Text('144p')),
-            PopupMenuItem(value: '240p', child: Text('240p')),
-            PopupMenuItem(value: '360p', child: Text('360p')),
-            PopupMenuItem(value: '480p', child: Text('480p')),
-          ],
+      // Качество — без PopupMenuButton (не работает в MediaKit topBar)
+      GestureDetector(
+        onTap: () => _showQualityDialog(),
+        child: const Padding(
+          padding: EdgeInsets.all(12),
+          child: Icon(Icons.settings, color: Colors.orange, size: 20),
         ),
+      ),
       GestureDetector(
         onTap: _isDownloading ? null : _downloadCurrentSession,
         child: Padding(
