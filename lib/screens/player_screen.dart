@@ -343,155 +343,106 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final dur = _fmtDuration(
-        _durationHintSeconds > 0 ? _durationHintSeconds : widget.duration);
-
+    final dur = _fmtDuration(_durationHintSeconds > 0 ? _durationHintSeconds : widget.duration);
     final hasEpisodes = widget.episodes != null && widget.episodes!.isNotEmpty;
     final totalEpisodes = widget.episodes?.length ?? 0;
-    final currentEp = widget.currentEpisodeIndex >= 0 &&
-            widget.currentEpisodeIndex < totalEpisodes
+    final currentEp = widget.currentEpisodeIndex >= 0 && widget.currentEpisodeIndex < totalEpisodes
         ? widget.episodes![widget.currentEpisodeIndex]
         : null;
-    final epLabel = currentEp != null
-        ? '${currentEp.displayNumber} / $totalEpisodes'
-        : '';
+    final epLabel = currentEp != null ? '${currentEp.displayNumber} / $totalEpisodes' : '';
 
-    // Качество — отдельный стейт для диалога
-    String _selectedQualityLocal = '240p';
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 1. Видео с РОДНЫМИ контролями MediaKit (нижний бар: пауза/громкость/прогресс)
+          if (_isInitialized)
+            Video(controller: controller)
+          else
+            _buildLoadingOverlay(),
 
-    final topBar = <Widget>[
-      GestureDetector(
-        onTap: () {
-          ApiService.stopSession(widget.sessionId);
-          if (mounted) Navigator.pop(context);
-        },
-        child: const Padding(
-          padding: EdgeInsets.all(12),
-          child: Icon(Icons.arrow_back, color: Colors.white, size: 22),
-        ),
-      ),
-      if (epLabel.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Text(epLabel, style: const TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.bold)),
-        ),
-      if (hasEpisodes && widget.currentEpisodeIndex > 0)
-        GestureDetector(
-          onTap: () => widget.onEpisodeChange?.call(widget.currentEpisodeIndex - 1),
-          child: const Padding(
-            padding: EdgeInsets.all(12),
-            child: Icon(Icons.skip_previous, color: Colors.white, size: 22),
-          ),
-        ),
-      if (hasEpisodes && widget.currentEpisodeIndex < totalEpisodes - 1)
-        GestureDetector(
-          onTap: () => widget.onEpisodeChange?.call(widget.currentEpisodeIndex + 1),
-          child: const Padding(
-            padding: EdgeInsets.all(12),
-            child: Icon(Icons.skip_next, color: Colors.white, size: 22),
-          ),
-        ),
-      const Spacer(),
-      // Качество — без PopupMenuButton (не работает в MediaKit topBar)
-      GestureDetector(
-        onTap: () => _showQualityDialog(),
-        child: const Padding(
-          padding: EdgeInsets.all(12),
-          child: Icon(Icons.settings, color: Colors.orange, size: 20),
-        ),
-      ),
-      GestureDetector(
-        onTap: _isDownloading ? null : _downloadCurrentSession,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: _isDownloading
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange))
-              : const Icon(Icons.download, color: Colors.white70, size: 20),
-        ),
-      ),
-    ];
-
-    return MaterialVideoControlsTheme(
-      normal: MaterialVideoControlsThemeData(
-        topButtonBar: topBar,
-        topButtonBarMargin: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-      ),
-      fullscreen: MaterialVideoControlsThemeData(
-        topButtonBar: topBar,
-        topButtonBarMargin: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (_isInitialized)
-              Video(controller: controller)
-            else
-              Center(
-                child: Container(
-                  color: Colors.black54,
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(color: const Color(0xCC1A0F08), borderRadius: BorderRadius.circular(16)),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_reconnectAttempts >= _maxReconnectAttempts && _reconnectStatus != null)
-                            const Icon(Icons.error_outline, color: Colors.orange, size: 36),
-                          if (_reconnectAttempts < _maxReconnectAttempts || _reconnectStatus == null)
-                            const CircularProgressIndicator(color: Colors.orange),
-                          const SizedBox(height: 14),
-                          Text(
-                            _reconnectStatus ?? 'Запускаю ${widget.quality}...',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.white, fontSize: 16),
-                          ),
-                          if (_reconnectAttempts >= _maxReconnectAttempts) ...[
-                            const SizedBox(height: 12),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-                              onPressed: () {
-                                setState(() {
-                                  _reconnectAttempts = 0;
-                                  _reconnectStatus = null;
-                                });
-                                _initPlayer();
-                              },
-                              child: const Text('Попробовать снова', style: TextStyle(color: Colors.black)),
-                            ),
-                            const SizedBox(height: 6),
-                            TextButton(
-                              onPressed: () {
-                                if (mounted) Navigator.pop(context);
-                              },
-                              child: const Text('Выйти', style: TextStyle(color: Colors.white54)),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+          // 2. Наш кастомный верхний бар — поверх видео, НЕ мешает родному низу
+          if (_isInitialized)
+            Positioned(
+              top: 0, left: 0, right: 0,
+              child: SafeArea(
+                child: _buildTopBar(dur, epLabel, hasEpisodes, totalEpisodes),
               ),
-            
-            // Кнопка закрытия плеера всегда видна (чтобы можно было выйти если зависло)
-            if (!_isInitialized)
-              Positioned(
-                top: MediaQuery.of(context).padding.top + 8,
-                left: 8,
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () {
-                    ApiService.stopSession(widget.sessionId);
-                    if (mounted) Navigator.pop(context);
-                  },
-                ),
+            ),
+
+          // 3. Кнопка «назад» когда плеер ещё грузится
+          if (!_isInitialized)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8, left: 8,
+              child: GestureDetector(
+                onTap: () { ApiService.stopSession(widget.sessionId); if (mounted) Navigator.pop(context); },
+                child: const Padding(padding: EdgeInsets.all(12), child: Icon(Icons.arrow_back, color: Colors.white, size: 22)),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildLoadingOverlay() {
+    return Center(
+      child: Container(color: Colors.black54, child: Center(
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(color: const Color(0xCC1A0F08), borderRadius: BorderRadius.circular(16)),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (_reconnectAttempts >= _maxReconnectAttempts && _reconnectStatus != null)
+              const Icon(Icons.error_outline, color: Colors.orange, size: 36),
+            if (_reconnectAttempts < _maxReconnectAttempts || _reconnectStatus == null)
+              const CircularProgressIndicator(color: Colors.orange),
+            const SizedBox(height: 14),
+            Text(_reconnectStatus ?? 'Запускаю ${widget.quality}...', textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 16)),
+            if (_reconnectAttempts >= _maxReconnectAttempts) ...[
+              const SizedBox(height: 12),
+              ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                onPressed: () { setState(() { _reconnectAttempts = 0; _reconnectStatus = null; }); _initPlayer(); },
+                child: const Text('Попробовать снова', style: TextStyle(color: Colors.black))),
+              const SizedBox(height: 6),
+              TextButton(onPressed: () { if (mounted) Navigator.pop(context); },
+                child: const Text('Выйти', style: TextStyle(color: Colors.white54))),
+            ],
+          ]),
+        ),
+      )),
+    );
+  }
+
+  Widget _buildTopBar(String dur, String epLabel, bool hasEpisodes, int totalEpisodes) {
+    return Container(
+      height: 46,
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.65),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(children: [
+        GestureDetector(
+          onTap: () { ApiService.stopSession(widget.sessionId); if (mounted) Navigator.pop(context); },
+          child: const Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: Icon(Icons.close, color: Colors.white, size: 22)),
+        ),
+        if (epLabel.isNotEmpty)
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(epLabel, style: const TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.bold))),
+        const Spacer(),
+        if (hasEpisodes && widget.currentEpisodeIndex > 0)
+          GestureDetector(onTap: () => widget.onEpisodeChange?.call(widget.currentEpisodeIndex - 1),
+            child: const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.skip_previous, color: Colors.white, size: 22))),
+        if (hasEpisodes && widget.currentEpisodeIndex < totalEpisodes - 1)
+          GestureDetector(onTap: () => widget.onEpisodeChange?.call(widget.currentEpisodeIndex + 1),
+            child: const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.skip_next, color: Colors.white, size: 22))),
+        GestureDetector(onTap: _showQualityDialog,
+          child: const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.settings, color: Colors.orange, size: 20))),
+        GestureDetector(onTap: _isDownloading ? null : _downloadCurrentSession,
+          child: Padding(padding: const EdgeInsets.all(8),
+            child: _isDownloading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange))
+                : const Icon(Icons.download, color: Colors.white70, size: 20))),
+      ]),
     );
   }
 }
