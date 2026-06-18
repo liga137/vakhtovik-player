@@ -64,36 +64,10 @@ class SeriesParseResult {
     required this.episodes,
     this.qualities = const [],
   });
-
-  factory SeriesParseResult.fromFilmixJson(Map<String, dynamic> json) {
-    final eps = (json['episodes'] as List<dynamic>? ?? [])
-        .map((e) => SeriesEpisode.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
-    final qs = (json['qualities'] as List<dynamic>? ?? [])
-        .map((q) => q.toString())
-        .toList();
-    return SeriesParseResult(
-      title: json['title']?.toString(),
-      originalTitle: json['original_title']?.toString(),
-      episodes: eps,
-      qualities: qs,
-    );
-  }
-
-  factory SeriesParseResult.fromSeasonvarJson(Map<String, dynamic> json) {
-    final eps = (json['episodes'] as List<dynamic>? ?? [])
-        .map((e) => SeriesEpisode.fromJson(Map<String, dynamic>.from(e)))
-        .toList();
-    return SeriesParseResult(
-      title: json['source']?.toString(),
-      episodes: eps,
-    );
-  }
 }
 
-/// Клиент для вызова парсеров сериалов на сервере.
+/// Локальный парсер сериалов
 class SeriesParserService {
-  static const String _baseUrl = 'https://195.226.92.151.nip.io:8008';
   static const int _maxRetries = 2;
   static const Duration _retryDelay = Duration(seconds: 3);
 
@@ -110,80 +84,213 @@ class SeriesParserService {
     return client;
   }
 
-  static Future<http.Response> _get(String path, Map<String, String> params,
-      {int retries = 0}) async {
-    final uri = Uri.parse('$_baseUrl$path').replace(queryParameters: params);
-    try {
-      return await _client.get(uri).timeout(const Duration(seconds: 20));
-    } on SocketException catch (_) {
-      if (retries < _maxRetries) {
-        await Future.delayed(_retryDelay);
-        return _get(path, params, retries: retries + 1);
-      }
-      rethrow;
-    } on HandshakeException catch (_) {
-      if (retries < _maxRetries) {
-        await Future.delayed(_retryDelay);
-        return _get(path, params, retries: retries + 1);
-      }
-      rethrow;
-    } on HttpException catch (_) {
-      if (retries < _maxRetries) {
-        await Future.delayed(_retryDelay);
-        return _get(path, params, retries: retries + 1);
-      }
-      rethrow;
+  // ================= FILMIX PARSER =================
+
+  static String? _extractFilmixId(String url) {
+    final patterns = [
+      RegExp(r'/(?:seria|film)/[^/]+/(\d+)-'),
+      RegExp(r'/(\d+)-[^/]+\.html$'),
+      RegExp(r'/(\d+)(?=-|\.html|$)'),
+    ];
+    for (var p in patterns) {
+      final m = p.firstMatch(url);
+      if (m != null) return m.group(1);
     }
+    return null;
   }
 
-  /// Парсит сериал Filmix по ID или URL.
-  static Future<SeriesParseResult?> parseFilmix(String idOrUrl,
-      {String quality = '720'}) async {
+  static Future<SeriesParseResult?> parseFilmix(String idOrUrl, {String quality = '720'}) async {
+    final id = int.tryParse(idOrUrl) != null ? idOrUrl : _extractFilmixId(idOrUrl);
+    if (id == null) return null;
+
     try {
-      final resp = await _get('/parse/filmix', {
-        'id': idOrUrl,
-        'quality': quality,
+      final uri = Uri.parse("https://filmixapp.cyou/api/v2/post/$id").replace(queryParameters: {
+        "app_lang": "ru_RU",
+        "user_dev_apk": "2.2.13",
+        "user_dev_id": "cd88df2bd8dd6cf0",
+        "user_dev_name": "Xiaomi 2510EPC8BG",
+        "user_dev_os": "16",
+        "user_dev_token": "7c92a8c95fa1b1d6b6ed35095ad95744",
+        "user_dev_vendor": "Xiaomi",
       });
 
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        return SeriesParseResult.fromFilmixJson(data);
-      } else {
-        print('[SeriesParser] Filmix error: ${resp.statusCode} ${resp.body}');
-        return null;
+      final resp = await _client.get(uri, headers: {
+        "User-Agent": "okhttp/3.10.0",
+      }).timeout(const Duration(seconds: 15));
+
+      if (resp.statusCode != 200) return null;
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+
+      final playlistRaw = data['player_links']?['playlist'];
+      if (playlistRaw == null || playlistRaw is! Map) return null;
+
+      final playlist = playlistRaw as Map<String, dynamic>;
+      final episodes = <SeriesEpisode>[];
+
+      for (var season in playlist.keys) {
+        final translations = playlist[season];
+        if (translations is! Map) continue;
+
+        for (var tname in translations.keys) {
+          final eps = translations[tname];
+          if (eps is! Map) continue;
+
+          for (var ep in eps.keys) {
+            final epData = eps[ep];
+            if (epData is! Map) continue;
+
+            final linkTpl = epData['link']?.toString();
+            if (linkTpl == null) continue;
+
+            final quals = (epData['qualities'] as List<dynamic>? ?? []).map((q) => q.toString()).toList();
+            
+            String finalLink = linkTpl;
+            String finalQuality = quality;
+
+            if (quals.contains(quality)) {
+              finalLink = linkTpl.replaceAll('%s', quality);
+            } else if (quals.isNotEmpty) {
+              finalQuality = quals.last;
+              finalLink = linkTpl.replaceAll('%s', finalQuality);
+            }
+
+            episodes.add(SeriesEpisode(
+              title: data['title']?.toString() ?? '',
+              season: season,
+              episode: ep,
+              translation: tname,
+              quality: finalQuality,
+              link: finalLink,
+            ));
+          }
+        }
       }
+
+      episodes.sort((a, b) {
+        final sA = int.tryParse(a.season ?? '') ?? 0;
+        final sB = int.tryParse(b.season ?? '') ?? 0;
+        if (sA != sB) return sA.compareTo(sB);
+        final eA = int.tryParse(a.episode ?? '') ?? 0;
+        final eB = int.tryParse(b.episode ?? '') ?? 0;
+        return eA.compareTo(eB);
+      });
+
+      return SeriesParseResult(
+        title: data['title']?.toString(),
+        originalTitle: data['original_title']?.toString(),
+        episodes: episodes,
+      );
+
     } catch (e) {
-      print('[SeriesParser] Filmix exception: $e');
+      print('[SeriesParser] Filmix error: $e');
       return null;
     }
   }
 
-  /// Парсит страницу Seasonvar по URL.
+  // ================= SEASONVAR PARSER =================
+
+  static String? _decodeSeasonvarPlayerjs(String? encoded) {
+    if (encoded == null || !encoded.startsWith('#2')) return encoded;
+    
+    var clean = encoded.substring(2).replaceAll('//b2xvbG8=', '');
+    final pad = clean.length % 4;
+    if (pad > 0) clean += '=' * (4 - pad);
+    
+    try {
+      final decoded = utf8.decode(base64.decode(clean));
+      return decoded.replaceAll('\\/', '/');
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<SeriesParseResult?> parseSeasonvar(String url) async {
     try {
-      final resp = await _get('/parse/seasonvar', {'url': url});
+      final headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'ru-RU',
+      };
 
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        return SeriesParseResult.fromSeasonvarJson(data);
+      var resp = await _client.get(Uri.parse(url), headers: headers).timeout(const Duration(seconds: 15));
+      if (resp.statusCode != 200) return null;
+
+      final match = RegExp(r'(/[^"\x27\s>]+(?:list\.xml|plist\.txt)[^"\x27\s>]*)').firstMatch(resp.body);
+      if (match == null) return null;
+
+      var plistPath = match.group(1)!;
+      if (plistPath.startsWith('http')) {
+        plistPath = plistPath.replaceFirst('http://', 'https://');
       } else {
-        print('[SeriesParser] Seasonvar error: ${resp.statusCode}');
-        return null;
+        plistPath = 'https://seasonvar.ru$plistPath';
       }
+
+      headers['X-Requested-With'] = 'XMLHttpRequest';
+      headers['Referer'] = url;
+
+      resp = await _client.get(Uri.parse(plistPath), headers: headers).timeout(const Duration(seconds: 15));
+      if (resp.statusCode != 200) return null;
+
+      final data = jsonDecode(resp.body);
+      return parseSeasonvarJson(data, url);
+
     } catch (e) {
-      print('[SeriesParser] Seasonvar exception: $e');
+      print('[SeriesParser] Seasonvar error: $e');
+      return null;
+    }
+  }
+
+  static SeriesParseResult? parseSeasonvarJson(dynamic data, String url) {
+    try {
+      final episodes = <SeriesEpisode>[];
+
+      void walk(dynamic node) {
+        if (node is List) {
+          for (var item in node) walk(item);
+        } else if (node is Map) {
+          if (node['file'] is String && (node['file'] as String).startsWith('#2')) {
+            var title = node['title']?.toString() ?? 'Неизвестная серия';
+            title = title.replaceAll(RegExp(r'<[^>]+>'), ' - ');
+            
+            var link = _decodeSeasonvarPlayerjs(node['file']);
+            if (link != null) {
+              if (link.startsWith('//')) link = 'https:$link';
+              
+              // Пытаемся вытащить сезон и серию из текста
+              final sMatch = RegExp(r'(?:season|сезон)\s*(\d{1,2})', caseSensitive: false).firstMatch(title);
+              final eMatch = RegExp(r'(?:episode|серия|ep)\s*(\d{1,3})', caseSensitive: false).firstMatch(title);
+              
+              episodes.add(SeriesEpisode(
+                title: title,
+                season: node['season']?.toString() ?? sMatch?.group(1),
+                episode: node['episode']?.toString() ?? eMatch?.group(1),
+                link: link,
+              ));
+            }
+          }
+          if (node['folder'] != null) walk(node['folder']);
+        }
+      }
+
+      walk(data);
+
+      if (episodes.isEmpty) return null;
+
+      return SeriesParseResult(
+        title: url,
+        episodes: episodes,
+      );
+    } catch (e) {
+      print('[SeriesParser] parseSeasonvarJson error: $e');
       return null;
     }
   }
 
   /// Определяет, Filmix это или Seasonvar, и вызывает нужный парсер.
-  static Future<SeriesParseResult?> parse(String url,
-      {String quality = '720'}) async {
+  static Future<SeriesParseResult?> parse(String url, {String quality = '720'}) async {
     final low = url.toLowerCase();
     if (low.contains('filmix')) {
       return parseFilmix(url, quality: quality);
-    } else if (low.contains('seasonvar')) {
-      return parseSeasonvar(url);
     }
     return null;
   }

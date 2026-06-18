@@ -549,9 +549,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _isLoading = true;
     });
 
-    // Параллельно: транскодируем + парсим серии (если Filmix/Seasonvar)
-    final parseFuture = _parseSeriesIfNeeded();
-
     try {
       final result = await ApiService.transcode(
           url: _interceptedUrl,
@@ -563,9 +560,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       });
       _muteWebView();
 
-      // Дожидаемся парсера
-      final parsed = await parseFuture;
-
       await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => PlayerScreen(
           hlsUrl: ApiService.hlsUrl(result.playlistUrl),
@@ -574,7 +568,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           quality: _selectedQuality,
           referer: _currentReferer,
           duration: result.duration,
-          episodes: parsed?.episodes,
+          episodes: _parsedSeries?.episodes,
           currentEpisodeIndex: _currentParsedEpisodeIndex,
           onEpisodeChange: _handleEpisodeChange,
         ),
@@ -583,7 +577,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _unmuteWebView();
 
       // Seasonvar: сбор списка серий после просмотра (fallback, если парсер не сработал)
-      if (parsed == null) {
+      if (_parsedSeries == null) {
         final isSeasonvar = _currentReferer.contains('seasonvar') ||
             _interceptedUrl.contains('seasonvar');
         if (isSeasonvar && _seasonvarEpisodes.isEmpty && !_scanningSeasonvar) {
@@ -653,16 +647,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
 
     if (isSeasonvar) {
-      final result = await SeriesParserService.parseSeasonvar(seriesUrl);
-      if (result != null && result.episodes.isNotEmpty) {
-        _parsedSeries = result;
-        _currentParsedEpisodeIndex = _findEpisodeIndex(
-            result.episodes, _interceptedUrl);
-        LogService.info(LogService.browser,
-            '[Parser] Seasonvar: ${result.episodes.length} episodes');
-        return result;
-      }
-      LogService.warn(LogService.browser, '[Parser] Seasonvar parse failed');
+      // Seasonvar теперь парсится внутри WebView (seasonvarFastParse) для обхода Cloudflare.
+      // Здесь мы не блокируем поток.
+      return _parsedSeries;
     }
 
     return null;
@@ -1955,6 +1942,32 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             },
                           );
                           controller.addJavaScriptHandler(
+                            handlerName: 'seasonvarFastParse',
+                            callback: (args) {
+                              if (args.isEmpty) return null;
+                              try {
+                                final data = jsonDecode(args.first.toString());
+                                final parsed = SeriesParserService.parseSeasonvarJson(data, _currentRealUrl);
+                                if (parsed != null && parsed.episodes.isNotEmpty) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                    setState(() {
+                                      _parsedSeries = parsed;
+                                      _currentParsedEpisodeIndex = 0;
+                                      _interceptedUrl = parsed.episodes.first.link;
+                                      _currentReferer = _currentRealUrl;
+                                      _interceptedAlready = true;
+                                    });
+                                    if (!_showPlayer && !_isLoading) {
+                                      _startMagic();
+                                    }
+                                  }
+                                }
+                              } catch (_) {}
+                              return null;
+                            },
+                          );
+                          controller.addJavaScriptHandler(
                             handlerName: 'filmixEpisodes',
                             callback: (args) {
                               if (args.isEmpty) return null;
@@ -2186,12 +2199,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               setState(() => _showHome = false);
                             }
 
-                            // Seasonvar: трекер кликов (плейлист грузится через plist.txt ~3с)
+                            // Seasonvar: трекер кликов + авто-парсинг плейлиста через JS (обход Cloudflare)
                             if (url.host.contains('seasonvar')) {
                               Future.delayed(const Duration(seconds: 4), () {
                                 if (mounted) {
                                   controller.evaluateJavascript(
                                       source: "(function(){"
+                                          "var match = document.body.innerHTML.match(/(\\/[^\"'\\s>]+(?:list\\.xml|plist\\.txt)[^\"'\\s>]*)/);"
+                                          "if (match) {"
+                                          "  fetch(match[1], {headers: {'X-Requested-With': 'XMLHttpRequest'}})"
+                                          "    .then(r => r.json())"
+                                          "    .then(data => window.flutter_inappwebview.callHandler('seasonvarFastParse', JSON.stringify(data)));"
+                                          "}"
                                           "if(window.__vt)return 'ok';"
                                           "window.__vt=true;window.__vakh_idx=-1;"
                                           "var pl=document.querySelector('#htmlPlayer_playlist');"
@@ -2209,10 +2228,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               });
                             }
 
-                            // Filmix / Seasonvar: авто-парсинг эпизодов через API (не ждём перехвата)
-                            if (url.host.contains('filmix') || url.host.contains('seasonvar')) {
+                            // Filmix: авто-парсинг эпизодов через API (не ждём перехвата)
+                            if (url.host.contains('filmix')) {
                               Future.delayed(const Duration(seconds: 2), () async {
                                 if (mounted && !_showPlayer && !_isLoading) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Парсинг серий...'), duration: Duration(seconds: 1)));
                                   final parsed = await _parseSeriesIfNeeded();
                                   if (parsed != null && parsed.episodes.isNotEmpty) {
                                     // Авто-запуск первой серии
@@ -2222,6 +2242,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                     _currentParsedEpisodeIndex = 0;
                                     _interceptedAlready = true;
                                     if (mounted) _startMagic();
+                                  } else {
+                                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Серии не найдены (возможно блокировка или пустой плейлист)'), duration: Duration(seconds: 3)));
                                   }
                                 }
                               });
