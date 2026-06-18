@@ -335,17 +335,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
         : '';
 
     final topBar = [
-      IconButton(
-        onPressed: () {
+      GestureDetector(
+        onTap: () {
           ApiService.stopSession(widget.sessionId);
           if (mounted) Navigator.pop(context);
         },
-        icon: const Icon(Icons.arrow_back, color: Colors.white),
+        child: const Padding(
+          padding: EdgeInsets.all(12),
+          child: Icon(Icons.arrow_back, color: Colors.white, size: 22),
+        ),
       ),
       if (dur.isNotEmpty)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Text(dur, style: const TextStyle(color: Colors.white, fontSize: 13)),
+          child: Text(dur, style: const TextStyle(color: Colors.white70, fontSize: 13)),
         ),
       if (epLabel.isNotEmpty)
         Padding(
@@ -353,14 +356,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: Text(epLabel, style: const TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.bold)),
         ),
       if (hasEpisodes && widget.currentEpisodeIndex > 0)
-        IconButton(
-          onPressed: () => widget.onEpisodeChange?.call(widget.currentEpisodeIndex - 1),
-          icon: const Icon(Icons.skip_previous, color: Colors.white),
+        GestureDetector(
+          onTap: () => widget.onEpisodeChange?.call(widget.currentEpisodeIndex - 1),
+          child: const Padding(
+            padding: EdgeInsets.all(12),
+            child: Icon(Icons.skip_previous, color: Colors.white, size: 22),
+          ),
         ),
       if (hasEpisodes && widget.currentEpisodeIndex < totalEpisodes - 1)
-        IconButton(
-          onPressed: () => widget.onEpisodeChange?.call(widget.currentEpisodeIndex + 1),
-          icon: const Icon(Icons.skip_next, color: Colors.white),
+        GestureDetector(
+          onTap: () => widget.onEpisodeChange?.call(widget.currentEpisodeIndex + 1),
+          child: const Padding(
+            padding: EdgeInsets.all(12),
+            child: Icon(Icons.skip_next, color: Colors.white, size: 22),
+          ),
         ),
       const Spacer(),
       if (widget.sourceUrl != null)
@@ -368,7 +377,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           tooltip: 'Качество',
           initialValue: widget.quality,
           onSelected: _switchQuality,
-          icon: const Icon(Icons.settings, color: Colors.orange),
+          icon: const Icon(Icons.settings, color: Colors.orange, size: 20),
           itemBuilder: (_) => const [
             PopupMenuItem(value: '144p', child: Text('144p')),
             PopupMenuItem(value: '240p', child: Text('240p')),
@@ -376,11 +385,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
             PopupMenuItem(value: '480p', child: Text('480p')),
           ],
         ),
-      IconButton(
-        onPressed: _isDownloading ? null : _downloadCurrentSession,
-        icon: _isDownloading
-            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange))
-            : const Icon(Icons.download, color: Colors.white70),
+      GestureDetector(
+        onTap: _isDownloading ? null : _downloadCurrentSession,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: _isDownloading
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange))
+              : const Icon(Icons.download, color: Colors.white70, size: 20),
+        ),
       ),
     ];
 
