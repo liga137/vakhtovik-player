@@ -2211,8 +2211,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
                             // Filmix / Seasonvar: авто-парсинг эпизодов через API (не ждём перехвата)
                             if (url.host.contains('filmix') || url.host.contains('seasonvar')) {
-                              Future.delayed(const Duration(seconds: 2), () {
-                                if (mounted) _parseSeriesIfNeeded();
+                              Future.delayed(const Duration(seconds: 2), () async {
+                                if (mounted && !_showPlayer && !_isLoading) {
+                                  final parsed = await _parseSeriesIfNeeded();
+                                  if (parsed != null && parsed.episodes.isNotEmpty) {
+                                    // Авто-запуск первой серии
+                                    final ep = parsed.episodes.first;
+                                    _interceptedUrl = ep.link;
+                                    _currentReferer = _currentRealUrl;
+                                    _currentParsedEpisodeIndex = 0;
+                                    _interceptedAlready = true;
+                                    if (mounted) _startMagic();
+                                  }
+                                }
                               });
                             }
 

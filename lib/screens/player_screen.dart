@@ -329,7 +329,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
           children: [
             // Видео — всегда на весь экран
             if (_isInitialized)
-              Video(controller: controller)
+              Video(
+                controller: controller,
+                controls: NoVideoControls,
+              )
             else
               Center(
                 child: Container(
