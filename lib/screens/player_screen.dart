@@ -255,6 +255,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
         quality: newQuality,
         referer: widget.referer,
         duration: widget.duration,
+        episodes: widget.episodes,
+        currentEpisodeIndex: widget.currentEpisodeIndex,
+        onEpisodeChange: widget.onEpisodeChange,
       ),
     ));
   }
