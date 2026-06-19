@@ -409,7 +409,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildLoadingOverlay() {
