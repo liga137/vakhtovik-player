@@ -99,6 +99,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
       // }
 
       await player.open(Media(playUrl), play: true);
+      
+      // Страховка: принудительный seek на 0 через 700ms (защита от рассинхрона)
+      Future.delayed(const Duration(milliseconds: 700), () async {
+        if (mounted && player.state.position < const Duration(seconds: 3)) {
+          await player.seek(Duration.zero);
+        }
+      });
     } catch (e) {
       _onPlaybackError('Ошибка инициализации плеера: $e');
       return;
