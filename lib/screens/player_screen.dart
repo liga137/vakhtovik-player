@@ -354,7 +354,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
         : null;
     final epLabel = currentEp != null ? '${currentEp.displayNumber} / $totalEpisodes' : '';
 
-    return Scaffold(
+    // Уникальные переводы
+    final translations = hasEpisodes
+        ? widget.episodes!.map((e) => e.translation ?? '').where((t) => t.isNotEmpty).toSet().toList()
+        : <String>[];
+    final currentTranslation = currentEp?.translation ?? (translations.isNotEmpty ? translations.first : '');
+    final filteredEpisodes = hasEpisodes && currentTranslation.isNotEmpty
+        ? widget.episodes!.where((e) => (e.translation ?? '') == currentTranslation).toList()
+        : (widget.episodes ?? []);
+
+    return MouseRegion(
+      onHover: (_) => _onMouseMove(),
+      onEnter: (_) => _onMouseMove(),
+      child: Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
@@ -370,7 +382,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
             Positioned(
               top: 0, left: 0, right: 0,
               child: SafeArea(
-                child: _buildTopBar(dur, epLabel, hasEpisodes, totalEpisodes),
+                child: AnimatedOpacity(
+                  opacity: _controlsVisible ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 300),
+                  child: _buildTopBar(epLabel, hasEpisodes, totalEpisodes,
+                      translations, currentTranslation, filteredEpisodes),
+                ),
               ),
             ),
 
@@ -417,7 +434,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  Widget _buildTopBar(String dur, String epLabel, bool hasEpisodes, int totalEpisodes) {
+  Widget _buildTopBar(String epLabel, bool hasEpisodes, int totalEpisodes,
+      List<String> translations, String currentTranslation, List<SeriesEpisode> filteredEpisodes) {
+    final filteredIndex = filteredEpisodes.indexWhere((e) =>
+        e.link == (widget.currentEpisodeIndex < (widget.episodes?.length ?? 0)
+            ? widget.episodes![widget.currentEpisodeIndex].link : ''));
     return Container(
       height: 46,
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -431,14 +452,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: const Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: Icon(Icons.close, color: Colors.white, size: 22)),
         ),
         if (epLabel.isNotEmpty)
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(epLabel, style: const TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.bold))),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: Text(epLabel, style: const TextStyle(color: Colors.orange, fontSize: 13, fontWeight: FontWeight.bold))),
         const Spacer(),
         if (hasEpisodes && widget.currentEpisodeIndex > 0)
           GestureDetector(onTap: () => widget.onEpisodeChange?.call(widget.currentEpisodeIndex - 1),
             child: const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.skip_previous, color: Colors.white, size: 22))),
+        if (hasEpisodes && filteredEpisodes.length > 1)
+          GestureDetector(onTap: () => _showEpisodeList(filteredEpisodes, filteredIndex),
+            child: const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.list, color: Colors.white70, size: 22))),
         if (hasEpisodes && widget.currentEpisodeIndex < totalEpisodes - 1)
           GestureDetector(onTap: () => widget.onEpisodeChange?.call(widget.currentEpisodeIndex + 1),
             child: const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.skip_next, color: Colors.white, size: 22))),
+        if (translations.length > 1)
+          GestureDetector(onTap: () => _showTranslationList(translations, currentTranslation),
+            child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Text(currentTranslation.length > 10 ? '${currentTranslation.substring(0, 10)}\u2026' : currentTranslation,
+                  style: const TextStyle(color: Colors.white70, fontSize: 11))),
+          ),
         GestureDetector(onTap: _showQualityDialog,
           child: const Padding(padding: EdgeInsets.all(8), child: Icon(Icons.settings, color: Colors.orange, size: 20))),
         GestureDetector(onTap: _isDownloading ? null : _downloadCurrentSession,
@@ -446,6 +476,48 @@ class _PlayerScreenState extends State<PlayerScreen> {
             child: _isDownloading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange))
                 : const Icon(Icons.download, color: Colors.white70, size: 20))),
       ]),
+    );
+  }
+
+  void _showEpisodeList(List<SeriesEpisode> episodes, int currentIdx) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black87,
+      builder: (_) => SizedBox(height: 400, child: ListView.builder(
+        itemCount: episodes.length,
+        itemBuilder: (_, i) {
+          final ep = episodes[i];
+          final globalIdx = widget.episodes?.indexWhere((e) => e.link == ep.link) ?? -1;
+          return ListTile(
+            title: Text(ep.displayNumber, style: TextStyle(color: i == currentIdx ? Colors.orange : Colors.white70)),
+            subtitle: Text(ep.title, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            trailing: i == currentIdx ? const Icon(Icons.play_arrow, color: Colors.orange, size: 18) : null,
+            onTap: () { Navigator.pop(context); if (globalIdx >= 0) widget.onEpisodeChange?.call(globalIdx); },
+          );
+        },
+      )),
+    );
+  }
+
+  void _showTranslationList(List<String> translations, String current) {
+    final currentEp = widget.currentEpisodeIndex >= 0 && widget.currentEpisodeIndex < (widget.episodes?.length ?? 0)
+        ? widget.episodes![widget.currentEpisodeIndex] : null;
+    final currentSeason = currentEp?.season ?? '';
+    final currentEpNum = currentEp?.episode ?? '';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black87,
+      builder: (_) => SizedBox(height: 300, child: ListView(children: translations.map((t) {
+        final matchingIdx = widget.episodes?.indexWhere((e) =>
+            (e.translation ?? '') == t && (e.season ?? '') == currentSeason && (e.episode ?? '') == currentEpNum) ?? -1;
+        return ListTile(
+          title: Text(t, style: TextStyle(color: t == current ? Colors.orange : Colors.white70,
+              fontWeight: t == current ? FontWeight.bold : FontWeight.normal)),
+          trailing: t == current ? const Icon(Icons.check, color: Colors.orange, size: 18) : null,
+          onTap: () { Navigator.pop(context); if (matchingIdx >= 0) widget.onEpisodeChange?.call(matchingIdx); },
+        );
+      }).toList())),
     );
   }
 }
