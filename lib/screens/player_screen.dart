@@ -7,6 +7,7 @@ import 'dart:io';
 import '../services/api_service.dart';
 import '../services/series_parser.dart';
 import '../services/hls_proxy_service.dart';
+import '../widgets/zoo_buffer_animation.dart';
 
 /// Экран плеера: мультиплатформенный HLS стриминг (MediaKit)
 class PlayerScreen extends StatefulWidget {
@@ -57,6 +58,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _reconnecting = false;
   String? _reconnectStatus;
 
+  // -- Искусственный буфер ZOO AI ---
+  bool _isArtificialBuffering = true;
+  double _bufferProgress = 0.0;
+  StreamSubscription? _bufferSub;
+  Timer? _chunkPollTimer;
+  static const int _targetChunks = 3; // Ждем 3 чанка перед стартом
+
   @override
   void initState() {
     super.initState();
@@ -71,6 +79,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // Авто-следующая серия при завершении видео
     player.stream.completed.listen((_) {
       _onVideoCompleted();
+    });
+
+    // Опрашиваем сервер каждую секунду — считаем готовые чанки
+    _chunkPollTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
+      if (!_isArtificialBuffering || !mounted) {
+        _chunkPollTimer?.cancel();
+        return;
+      }
+      try {
+        final status = await ApiService.getStatus(widget.sessionId)
+            .timeout(const Duration(seconds: 5));
+        final chunks = (status['chunks'] as num?)?.toInt() ?? 0;
+        final progress = (chunks / _targetChunks).clamp(0.0, 1.0);
+        if (!mounted) return;
+        if (chunks >= _targetChunks) {
+          setState(() {
+            _isArtificialBuffering = false;
+            _bufferProgress = 1.0;
+          });
+          _chunkPollTimer?.cancel();
+          // Небольшая задержка чтобы анимация успела показать 100%
+          await Future.delayed(const Duration(milliseconds: 400));
+          if (mounted) player.play();
+        } else {
+          setState(() => _bufferProgress = progress);
+        }
+      } catch (_) {
+        // Тихо игнорируем — попробуем на следующей итерации
+      }
     });
   }
 
@@ -93,31 +130,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
       // Будет переписан под правильный стриминг.
       // try {
       //   await HlsProxyService.instance.start(widget.hlsUrl);
-      //   playUrl = 'http://127.0.0.1:${HlsProxyService.instance.port}/playlist.m3u8';
-      // } catch (e) {
-      //   print('[PlayerScreen] Failed to start HlsProxy: $e');
-      // }
-
-      await player.open(Media(playUrl), play: true);
       
-      // Страховка: принудительный seek на 0 через 700ms (защита от рассинхрона)
-      Future.delayed(const Duration(milliseconds: 700), () async {
-        if (mounted && player.state.position < const Duration(seconds: 3)) {
-          await player.seek(Duration.zero);
-        }
-      });
+      player.open(Media(playUrl), play: false);
+      
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+          _isArtificialBuffering = true;
+          _bufferProgress = 0.0;
+          _reconnecting = false;
+          _reconnectStatus = null;
+          _reconnectAttempts = 0;
+        });
+      }
     } catch (e) {
-      _onPlaybackError('Ошибка инициализации плеера: $e');
-      return;
-    }
-
-    if (mounted) {
-      setState(() {
-        _isInitialized = true;
-        _reconnecting = false;
-        _reconnectStatus = null;
-        _reconnectAttempts = 0;
-      });
+      _onPlaybackError(e.toString());
     }
   }
 
@@ -329,8 +356,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void dispose() {
     _durationTimer?.cancel();
     _hideTimer?.cancel();
+    _chunkPollTimer?.cancel();
     HlsProxyService.instance.stop();
     ApiService.stopSession(widget.sessionId).catchError((_) {});
+    _bufferSub?.cancel();
     player.dispose();
     super.dispose();
   }
@@ -384,8 +413,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
           else
             _buildLoadingOverlay(),
 
+          // ZOO AI Искусственная буферизация
+          if (_isInitialized && _isArtificialBuffering)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.8),
+                child: ZooBufferAnimation(progress: _bufferProgress),
+              ),
+            ),
+
           // 2. Наш кастомный верхний бар — поверх видео, НЕ мешает родному низу
-          if (_isInitialized)
+          if (_isInitialized && !_isArtificialBuffering)
             Positioned(
               top: 0, left: 0, right: 0,
               child: SafeArea(
