@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/iptv_channel.dart';
 import '../services/api_service.dart';
 import '../services/iptv_service.dart';
-import 'player_screen.dart';
+import 'iptv_player_screen.dart';
 
 class IptvScreen extends StatefulWidget {
   const IptvScreen({super.key});
@@ -17,7 +17,7 @@ class _IptvScreenState extends State<IptvScreen> {
   List<IptvChannel> _channels = const [];
   String _category = 'Все';
   String _country = 'Все';
-  String _quality = '240p';
+  String _quality = '144p';
   String _query = '';
   bool _loading = true;
   IptvChannel? _starting;
@@ -70,33 +70,43 @@ class _IptvScreenState extends State<IptvScreen> {
   }
 
   List<String> get _countries {
-    final set = _channels.map((e) => e.country).where((e) => e.isNotEmpty).toSet();
+    final set =
+        _channels.map((e) => e.country).where((e) => e.isNotEmpty).toSet();
     final result = <String>['Все'];
-    for (final c in ['Россия', 'Беларусь']) { if (set.contains(c)) result.add(c); }
+    for (final c in ['Россия', 'Беларусь']) {
+      if (set.contains(c)) result.add(c);
+    }
     return result;
   }
 
   Future<void> _play(IptvChannel channel) async {
     if (_starting != null) return;
     setState(() => _starting = channel);
+    String? pendingSessionId;
     try {
       final result = await ApiService.transcode(
         url: channel.url,
         quality: _quality,
         referer: '',
+        mode: 'iptv',
       );
-      if (!mounted) return;
+      pendingSessionId = result.sessionId;
+      if (!mounted) {
+        ApiService.stopSession(result.sessionId).catchError((_) {});
+        return;
+      }
       await Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => PlayerScreen(
+        builder: (_) => IptvPlayerScreen(
+          title: channel.name,
           hlsUrl: ApiService.hlsUrl(result.playlistUrl),
           sessionId: result.sessionId,
-          sourceUrl: channel.url,
-          quality: _quality,
-          referer: '',
-          duration: result.duration,
         ),
       ));
+      pendingSessionId = null;
     } catch (e) {
+      if (pendingSessionId != null) {
+        ApiService.stopSession(pendingSessionId).catchError((_) {});
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('IPTV не запустился: $e')),
@@ -172,14 +182,16 @@ class _IptvScreenState extends State<IptvScreen> {
               child: Wrap(
                 spacing: 6,
                 children: [
-                  const Text('Страна:', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                  const Text('Страна:',
+                      style: TextStyle(color: Colors.white54, fontSize: 11)),
                   for (final c in _countries)
                     ChoiceChip(
                       selected: c == _country,
                       label: Text(c, style: const TextStyle(fontSize: 11)),
                       selectedColor: Colors.orange,
                       backgroundColor: const Color(0xFF1A1A1A),
-                      labelStyle: TextStyle(color: c == _country ? Colors.black : Colors.white70),
+                      labelStyle: TextStyle(
+                          color: c == _country ? Colors.black : Colors.white70),
                       onSelected: (_) => setState(() => _country = c),
                       visualDensity: VisualDensity.compact,
                     ),

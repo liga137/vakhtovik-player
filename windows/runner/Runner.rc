@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.vakhtovik" "\0"
-            VALUE "FileDescription", "flutter_app" "\0"
+            VALUE "FileDescription", "Vakhtovik_Player" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "flutter_app" "\0"
+            VALUE "InternalName", "Vakhtovik_Player" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.vakhtovik. All rights reserved." "\0"
-            VALUE "OriginalFilename", "flutter_app.exe" "\0"
-            VALUE "ProductName", "flutter_app" "\0"
+            VALUE "OriginalFilename", "Vakhtovik_Player.exe" "\0"
+            VALUE "ProductName", "Vakhtovik_Player" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

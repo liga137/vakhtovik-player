@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import '../models/youtube_video.dart';
 import '../services/api_service.dart';
-import '../services/log_service.dart';
 import 'player_screen.dart';
 import 'youtube_login_screen.dart';
 
@@ -23,7 +21,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
   void initState() {
     super.initState();
     ApiService.initLocalState().then((_) {
-      if (mounted) setState(() => _showLoginButton = !ApiService.isYouTubeLoggedIn);
+      if (mounted)
+        setState(() => _showLoginButton = !ApiService.isYouTubeLoggedIn);
     });
   }
 
@@ -58,7 +57,8 @@ class _YouTubeSearchScreenState extends State<YouTubeSearchScreen> {
           if (_showLoginButton)
             TextButton(
               onPressed: _login,
-              child: const Text('Войти', style: TextStyle(color: Colors.orange)),
+              child:
+                  const Text('Войти', style: TextStyle(color: Colors.orange)),
             )
           else
             PopupMenuButton<String>(
@@ -140,7 +140,9 @@ setInterval(function(){
           ),
           if (_loading)
             const Positioned(
-              top: 0, left: 0, right: 0,
+              top: 0,
+              left: 0,
+              right: 0,
               child: LinearProgressIndicator(color: Colors.orange),
             ),
         ],
@@ -151,10 +153,16 @@ setInterval(function(){
   void _playVideo(String url) async {
     // Показываем индикатор загрузки
     setState(() => _loading = true);
+    String? pendingSessionId;
     try {
       final result = await ApiService.transcode(url: url, quality: '240p');
-      if (!mounted) return;
+      pendingSessionId = result.sessionId;
+      if (!mounted) {
+        ApiService.stopSession(result.sessionId).catchError((_) {});
+        return;
+      }
       setState(() => _loading = false);
+      pendingSessionId = null;
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -163,10 +171,14 @@ setInterval(function(){
             sessionId: result.sessionId,
             sourceUrl: url,
             quality: '240p',
+            duration: result.duration,
           ),
         ),
       );
     } catch (e) {
+      if (pendingSessionId != null) {
+        ApiService.stopSession(pendingSessionId).catchError((_) {});
+      }
       if (!mounted) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(

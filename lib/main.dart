@@ -16,10 +16,12 @@ void main() async {
       size: Size(1280, 720),
       minimumSize: Size(400, 300),
       center: true,
+      title: 'Плеер Вахтовика',
       skipTaskbar: false,
       titleBarStyle: TitleBarStyle.normal,
     );
     windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.setTitle('Плеер Вахтовика');
       await windowManager.show();
       await windowManager.focus();
     });
@@ -54,11 +56,14 @@ class _VakhtovikAppState extends State<VakhtovikApp> with WindowListener {
   void onWindowClose() async {
     // Останавливаем VPN перед закрытием, чтобы не было зомби
     try {
-      await VpnService.instance.disconnect().timeout(const Duration(seconds: 2));
+      await VpnService.instance
+          .disconnect()
+          .timeout(const Duration(seconds: 2));
     } catch (_) {}
-    
+
     await windowManager.destroy();
-    exit(0); // Принудительно завершаем процесс, чтобы избежать зависаний от media_kit/http
+    exit(
+        0); // Принудительно завершаем процесс, чтобы избежать зависаний от media_kit/http
   }
 
   @override

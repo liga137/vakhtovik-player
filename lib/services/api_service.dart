@@ -1,6 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show File, HandshakeException, HttpClient, HttpException, Platform, SocketException, TlsException;
+import 'dart:io'
+    show
+        File,
+        HandshakeException,
+        HttpClient,
+        HttpException,
+        Platform,
+        SocketException,
+        TlsException;
 import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
@@ -76,7 +84,7 @@ class ApiService {
           min(_retryBaseDelay.inMilliseconds * (1 << (attempt - 1)), 30000);
       await Future<void>.delayed(Duration(milliseconds: delayMs));
     }
-    throw lastError ?? Exception('Сеть недоступна после $maxRetries попыток');
+    throw lastError;
   }
 
   // Всегда используем nip.io — сервер требует SNI-заголовок
@@ -91,15 +99,18 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     _ytToken = prefs.getString(_ytTokenKey);
     _ytUsername = prefs.getString(_ytUsernameKey);
-    
+
     // Миграция: если сохранен старый OAuth токен или токен без декодированных % (url-encoded), сбрасываем его
-    if (_ytToken != null && (!_ytToken!.contains('SAPISID=') || _ytToken!.contains('%2F') || _ytToken!.contains('%3D'))) {
+    if (_ytToken != null &&
+        (!_ytToken!.contains('SAPISID=') ||
+            _ytToken!.contains('%2F') ||
+            _ytToken!.contains('%3D'))) {
       _ytToken = null;
       _ytUsername = null;
       await prefs.remove(_ytTokenKey);
       await prefs.remove(_ytUsernameKey);
     }
-    
+
     _ytStateLoaded = true;
   }
 
@@ -130,8 +141,7 @@ class ApiService {
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = json.decode(response.body);
         return data.entries
-            .map(
-                (e) => Preset.fromJson(e.key, e.value as Map<String, dynamic>))
+            .map((e) => Preset.fromJson(e.key, e.value as Map<String, dynamic>))
             .toList();
       }
       throw Exception('Ошибка загрузки пресетов: ${response.statusCode}');
@@ -143,10 +153,16 @@ class ApiService {
     required String url,
     String quality = '360p',
     String referer = '',
+    String mode = 'vod',
   }) async {
     return _withRetry((c) async {
       final uri = Uri.parse('$baseUrl/transcode').replace(
-        queryParameters: {'url': url, 'quality': quality, 'referer': referer},
+        queryParameters: {
+          'url': url,
+          'quality': quality,
+          'referer': referer,
+          'mode': mode,
+        },
       );
       final response = await c.post(uri);
       if (response.statusCode == 200) {
@@ -161,13 +177,121 @@ class ApiService {
   /// Получить статус сессии
   static Future<Map<String, dynamic>> getStatus(String sessionId) async {
     return _withRetry((c) async {
-      final response =
-          await c.get(Uri.parse('$baseUrl/status/$sessionId'));
+      final response = await c.get(Uri.parse('$baseUrl/status/$sessionId'));
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
       throw Exception('Ошибка статуса: ${response.statusCode}');
     });
+  }
+
+  static Future<Map<String, dynamic>> getStatusQuick(String sessionId,
+      {Duration timeout = const Duration(seconds: 5)}) async {
+    final c = IOClient(_directHttpClient());
+    try {
+      final response =
+          await c.get(Uri.parse('$baseUrl/status/$sessionId')).timeout(timeout);
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      throw Exception('Ошибка статуса: ${response.statusCode}');
+    } finally {
+      c.close();
+    }
+  }
+
+  static double durationFromStatus(Map<String, dynamic> status) {
+    const keys = [
+      'duration',
+      'duration_sec',
+      'duration_seconds',
+      'total_duration',
+      'media_duration',
+    ];
+    for (final key in keys) {
+      final raw = status[key];
+      if (raw is num && raw > 0) return raw.toDouble();
+      final parsed = double.tryParse('${raw ?? ''}') ?? 0;
+      if (parsed > 0) return parsed;
+    }
+    return 0;
+  }
+
+  static Future<double> readPlaylistDurationSeconds(String playlistUrl) async {
+    return (await _readPlaylistInfo(playlistUrl)).duration;
+  }
+
+  static Future<_PlaylistInfo> _readPlaylistInfo(String playlistUrl) async {
+    final client = _directHttpClient();
+    try {
+      final req = await client.getUrl(Uri.parse(playlistUrl));
+      final resp = await req.close().timeout(const Duration(seconds: 10));
+      if (resp.statusCode != 200) return const _PlaylistInfo();
+      final body = await utf8.decoder.bind(resp).join();
+      final re = RegExp(r'#EXTINF:([0-9]*\.?[0-9]+)');
+      var total = 0.0;
+      for (final m in re.allMatches(body)) {
+        total += double.tryParse(m.group(1) ?? '') ?? 0;
+      }
+      return _PlaylistInfo(
+        duration: total,
+        hasEndList: body.contains('#EXT-X-ENDLIST'),
+      );
+    } catch (_) {
+      return const _PlaylistInfo();
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  static Future<double> waitForVodPlaylist({
+    required String sessionId,
+    required String playlistUrl,
+    Duration timeout = const Duration(seconds: 90),
+    int minChunks = 3,
+  }) async {
+    final fullUrl =
+        playlistUrl.startsWith('http') ? playlistUrl : hlsUrl(playlistUrl);
+    final deadline = DateTime.now().add(timeout);
+    Object? lastError;
+
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        final status = await getStatusQuick(sessionId);
+        final chunks = (status['chunks'] as num?)?.toInt() ?? 0;
+        final playlist = await _readPlaylistInfo(fullUrl);
+        if (playlist.hasVodDuration && chunks >= minChunks) {
+          return playlist.duration;
+        }
+      } catch (e) {
+        lastError = e;
+      }
+      await Future<void>.delayed(const Duration(seconds: 1));
+    }
+
+    throw TimeoutException(
+      'Плейлист ещё не готов: не удалось получить длительность и '
+      '$minChunks стартовых чанка за '
+      '${timeout.inSeconds} сек${lastError == null ? '' : ' ($lastError)'}',
+    );
+  }
+
+  static Future<double> prepareVodPlaylist(String url) async {
+    final c = IOClient(_directHttpClient());
+    try {
+      final uri = Uri.parse('$baseUrl/parse/vod')
+          .replace(queryParameters: {'url': url});
+      final response = await c.post(uri).timeout(const Duration(seconds: 25));
+      if (response.statusCode != 200) {
+        throw Exception('Ошибка подготовки VOD: ${response.statusCode}');
+      }
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      final raw = data['duration'];
+      if (raw is num && raw > 0) return raw.toDouble();
+      return double.tryParse('${raw ?? ''}') ?? 0;
+    } finally {
+      c.close();
+    }
   }
 
   /// Остановить и очистить сессию
@@ -218,8 +342,7 @@ class ApiService {
       final uri = Uri.parse('$baseUrl/yt/search').replace(
         queryParameters: {'q': q, 'limit': limit.toString()},
       );
-      final response =
-          await c.get(uri).timeout(const Duration(seconds: 30));
+      final response = await c.get(uri).timeout(const Duration(seconds: 30));
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List<dynamic>;
         return data
@@ -241,7 +364,8 @@ class ApiService {
     return [];
   }
 
-  static Future<List<YouTubeVideo>> youtubeSubscriptions({int limit = 30}) async {
+  static Future<List<YouTubeVideo>> youtubeSubscriptions(
+      {int limit = 30}) async {
     throw Exception('AUTH_REQUIRED');
   }
 
@@ -256,8 +380,7 @@ class ApiService {
     return _withRetry((c) async {
       final uri = Uri.parse('$baseUrl/yt/popular')
           .replace(queryParameters: {'limit': limit.toString()});
-      final response =
-          await c.get(uri).timeout(const Duration(seconds: 30));
+      final response = await c.get(uri).timeout(const Duration(seconds: 30));
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List<dynamic>;
         return data
@@ -320,5 +443,16 @@ class ApiService {
     if (video.url.isNotEmpty) return 'url:${video.url}';
     return 'ttl:${video.title.toLowerCase()}|ch:${video.channel.toLowerCase()}';
   }
+}
 
+class _PlaylistInfo {
+  final double duration;
+  final bool hasEndList;
+
+  const _PlaylistInfo({
+    this.duration = 0,
+    this.hasEndList = false,
+  });
+
+  bool get hasVodDuration => duration > 0 && hasEndList;
 }

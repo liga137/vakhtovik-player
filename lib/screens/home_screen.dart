@@ -52,11 +52,18 @@ class _HomeScreenState extends State<HomeScreen> {
       _error = null;
     });
 
+    String? pendingSessionId;
     try {
-      final result = await ApiService.transcode(url: url, quality: _selectedQuality);
+      final result =
+          await ApiService.transcode(url: url, quality: _selectedQuality);
+      pendingSessionId = result.sessionId;
       final hlsUrl = ApiService.hlsUrl(result.playlistUrl);
 
-      if (!mounted) return;
+      if (!mounted) {
+        ApiService.stopSession(result.sessionId).catchError((_) {});
+        return;
+      }
+      pendingSessionId = null;
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -70,9 +77,13 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     } catch (e) {
+      if (pendingSessionId != null) {
+        ApiService.stopSession(pendingSessionId).catchError((_) {});
+      }
+      if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
-      setState(() => _starting = false);
+      if (mounted) setState(() => _starting = false);
     }
   }
 
@@ -111,7 +122,8 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 16),
 
             // Выбор качества
-            const Text('Качество:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Качество:',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             if (_loadingPresets)
               const Center(child: CircularProgressIndicator())
@@ -125,7 +137,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   return ChoiceChip(
                     label: Text(preset.label),
                     selected: selected,
-                    onSelected: (_) => setState(() => _selectedQuality = preset.id),
+                    onSelected: (_) =>
+                        setState(() => _selectedQuality = preset.id),
                   );
                 }).toList(),
               ),

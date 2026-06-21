@@ -68,9 +68,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
   String _filmixSeasonId = '';
   String _lastFilmixMediaUrl = '';
   String _lastAutoMediaUrl = '';
-  SeriesParseResult? _parsedSeries;          // результат парсинга сериала
-  int _currentParsedEpisodeIndex = 0;        // индекс текущего эпизода
+  SeriesParseResult? _parsedSeries; // результат парсинга сериала
+  int _currentParsedEpisodeIndex = 0; // индекс текущего эпизода
   List<String> _recentLinks = [];
+  final Set<String> _prewarmingVodUrls = {};
   bool _checkingUpdates = false;
 
   // -- Retry загрузки страниц при слабом интернете --
@@ -217,7 +218,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
         setState(() {
           _presets = List<Preset>.from(presets.isNotEmpty ? presets : fallback);
           if (_presets.isNotEmpty) {
-            _selectedQuality = _presets.any((p) => p.id == '240p') ? '240p' : _presets.first.id;
+            _selectedQuality = _presets.any((p) => p.id == '240p')
+                ? '240p'
+                : _presets.first.id;
           }
         });
       }
@@ -369,16 +372,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   String _vpnTooltip() {
     switch (_vpnState) {
-      case VpnState.connected: return 'VPN подключён';
-      case VpnState.connecting: return 'VPN подключается...';
-      case VpnState.disconnecting: return 'VPN отключается...';
-      case VpnState.error: return 'Ошибка VPN: ${VpnService.instance.lastError}';
-      case VpnState.disconnected: return 'VPN отключён';
+      case VpnState.connected:
+        return 'VPN подключён';
+      case VpnState.connecting:
+        return 'VPN подключается...';
+      case VpnState.disconnecting:
+        return 'VPN отключается...';
+      case VpnState.error:
+        return 'Ошибка VPN: ${VpnService.instance.lastError}';
+      case VpnState.disconnected:
+        return 'VPN отключён';
     }
   }
 
   Future<void> _toggleVpn() async {
-    if (_vpnState == VpnState.connecting || _vpnState == VpnState.disconnecting) return;
+    if (_vpnState == VpnState.connecting || _vpnState == VpnState.disconnecting)
+      return;
 
     if (_vpnState == VpnState.connected) {
       await VpnService.instance.disconnect();
@@ -551,17 +560,23 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _isLoading = true;
     });
 
+    String? pendingSessionId;
     try {
       final result = await ApiService.transcode(
           url: _interceptedUrl,
           quality: _selectedQuality,
           referer: _currentReferer);
-      if (!mounted) return;
+      pendingSessionId = result.sessionId;
+      if (!mounted) {
+        ApiService.stopSession(result.sessionId).catchError((_) {});
+        return;
+      }
       setState(() {
         _isLoading = false;
       });
       _muteWebView();
 
+      pendingSessionId = null;
       await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => PlayerScreen(
           hlsUrl: ApiService.hlsUrl(result.playlistUrl),
@@ -587,17 +602,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
         }
       }
     } catch (e) {
+      if (pendingSessionId != null) {
+        ApiService.stopSession(pendingSessionId).catchError((_) {});
+      }
       if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Ошибка: $e'),
-          duration: const Duration(seconds: 6),
-          action: SnackBarAction(
-            label: 'Повторить',
-            onPressed: () => _startMagic(),
-          ),
+        content: Text('Ошибка: $e'),
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: 'Повторить',
+          onPressed: () => _startMagic(),
+        ),
       ));
     }
   }
@@ -618,6 +636,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     for (final u in urls) {
       final low = u.toLowerCase();
       if (low.contains('filmix')) {
+        if (!_isFilmixContentPage(u)) continue;
         seriesUrl = u;
         isFilmix = true;
         break;
@@ -639,8 +658,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
           quality: _selectedQuality.replaceAll('p', ''));
       if (result != null && result.episodes.isNotEmpty) {
         _parsedSeries = result;
-        _currentParsedEpisodeIndex = _findEpisodeIndex(
-            result.episodes, _interceptedUrl);
+        _currentParsedEpisodeIndex =
+            _findEpisodeIndex(result.episodes, _interceptedUrl);
+        _prewarmSeriesPlaylists(result, skipUrl: _interceptedUrl);
         LogService.info(LogService.browser,
             '[Parser] Filmix: ${result.episodes.length} episodes, title=${result.title}');
         return result;
@@ -657,6 +677,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
     return null;
   }
 
+  bool _isFilmixContentPage(String rawUrl) {
+    final uri = Uri.tryParse(rawUrl);
+    final host = (uri?.host ?? '').toLowerCase();
+    if (!host.contains('filmix')) return false;
+    final path = (uri?.path ?? rawUrl).toLowerCase();
+    return RegExp(r'/(?:film|seria)/[^/]+/\d+-[^/]+\.html$').hasMatch(path) ||
+        RegExp(r'/\d+-[^/]+\.html$').hasMatch(path);
+  }
+
   /// Находит индекс эпизода по его URL (или ближайший).
   int _findEpisodeIndex(List<SeriesEpisode> episodes, String mediaUrl) {
     if (mediaUrl.isEmpty) return 0;
@@ -664,6 +693,39 @@ class _BrowserScreenState extends State<BrowserScreen> {
       if (episodes[i].link == mediaUrl) return i;
     }
     return 0;
+  }
+
+  void _prewarmSeriesPlaylists(SeriesParseResult parsed,
+      {String skipUrl = ''}) {
+    final links = <String>[];
+    for (final ep in parsed.episodes) {
+      final link = ep.link.trim();
+      if (link.isEmpty || link == skipUrl) continue;
+      if (_prewarmingVodUrls.add(link)) links.add(link);
+    }
+    if (links.isEmpty) return;
+    LogService.info(LogService.browser,
+        '[Parser] Prewarming VOD playlists: ${links.length} episodes');
+    unawaited(_prewarmVodLinks(links));
+  }
+
+  Future<void> _prewarmVodLinks(List<String> links) async {
+    var next = 0;
+    Future<void> worker() async {
+      while (mounted) {
+        if (next >= links.length) return;
+        final link = links[next++];
+        try {
+          await ApiService.prepareVodPlaylist(link);
+        } catch (e) {
+          LogService.warn(
+              LogService.browser, '[Parser] VOD prewarm skipped: $e');
+        }
+      }
+    }
+
+    final workers = links.length < 2 ? links.length : 2;
+    await Future.wait(List.generate(workers, (_) => worker()));
   }
 
   /// Обработчик смены эпизода из плеера.
@@ -1355,7 +1417,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _seasonvarEpisodes.isNotEmpty ||
       _seasonvarTranslations.isNotEmpty ||
       _seasonvarSeasons.isNotEmpty;
-      // Filmix disabled — removed from condition
+  // Filmix disabled — removed from condition
 
   List<Map<String, String>> get _activeEpisodes {
     if (_seasonvarEpisodes.isNotEmpty) return _seasonvarEpisodes;
@@ -1523,15 +1585,35 @@ class _BrowserScreenState extends State<BrowserScreen> {
   Future<void> _showLogDialog() async {
     final log = await LogService.readLog();
     if (!mounted) return;
-    showDialog(context: context, builder: (ctx) => AlertDialog(
-      title: Row(children: [const Text('Лог ошибок'), const Spacer(),
-        Text('${log.split('\n').length} строк', style: const TextStyle(fontSize: 12, color: Colors.grey))]),
-      content: SizedBox(width: double.maxFinite, height: 400,
-        child: SingleChildScrollView(child: SelectableText(log, style: const TextStyle(fontFamily: 'monospace', fontSize: 11)))),
-      actions: [
-        TextButton(onPressed: () { LogService.clearLog(); Navigator.pop(ctx); }, child: const Text('Очистить')),
-        TextButton(onPressed: () { Navigator.pop(ctx); }, child: const Text('Закрыть')),
-    ]));
+    showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+                title: Row(children: [
+                  const Text('Лог ошибок'),
+                  const Spacer(),
+                  Text('${log.split('\n').length} строк',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey))
+                ]),
+                content: SizedBox(
+                    width: double.maxFinite,
+                    height: 400,
+                    child: SingleChildScrollView(
+                        child: SelectableText(log,
+                            style: const TextStyle(
+                                fontFamily: 'monospace', fontSize: 11)))),
+                actions: [
+                  TextButton(
+                      onPressed: () {
+                        LogService.clearLog();
+                        Navigator.pop(ctx);
+                      },
+                      child: const Text('Очистить')),
+                  TextButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                      },
+                      child: const Text('Закрыть')),
+                ]));
   }
 
   Future<void> _showCustomSiteDialog() async {
@@ -1957,17 +2039,24 @@ class _BrowserScreenState extends State<BrowserScreen> {
                               if (args.isEmpty) return null;
                               try {
                                 final data = jsonDecode(args.first.toString());
-                                final parsed = SeriesParserService.parseSeasonvarJson(data, _currentRealUrl);
-                                if (parsed != null && parsed.episodes.isNotEmpty) {
+                                final parsed =
+                                    SeriesParserService.parseSeasonvarJson(
+                                        data, _currentRealUrl);
+                                if (parsed != null &&
+                                    parsed.episodes.isNotEmpty) {
                                   if (mounted) {
-                                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                    ScaffoldMessenger.of(context)
+                                        .hideCurrentSnackBar();
                                     setState(() {
                                       _parsedSeries = parsed;
                                       _currentParsedEpisodeIndex = 0;
-                                      _interceptedUrl = parsed.episodes.first.link;
+                                      _interceptedUrl =
+                                          parsed.episodes.first.link;
                                       _currentReferer = _currentRealUrl;
                                       _interceptedAlready = true;
                                     });
+                                    _prewarmSeriesPlaylists(parsed,
+                                        skipUrl: _interceptedUrl);
                                     if (!_showPlayer && !_isLoading) {
                                       _startMagic();
                                     }
@@ -2240,11 +2329,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
                             // Filmix: авто-парсинг эпизодов через API (не ждём перехвата)
                             if (url.host.contains('filmix')) {
-                              Future.delayed(const Duration(seconds: 2), () async {
+                              Future.delayed(const Duration(seconds: 2),
+                                  () async {
                                 if (mounted && !_showPlayer && !_isLoading) {
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Парсинг серий...'), duration: Duration(seconds: 1)));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('Парсинг серий...'),
+                                          duration: Duration(seconds: 1)));
                                   final parsed = await _parseSeriesIfNeeded();
-                                  if (parsed != null && parsed.episodes.isNotEmpty) {
+                                  if (parsed != null &&
+                                      parsed.episodes.isNotEmpty) {
                                     // Авто-запуск первой серии
                                     final ep = parsed.episodes.first;
                                     _interceptedUrl = ep.link;
@@ -2253,7 +2347,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                                     _interceptedAlready = true;
                                     if (mounted) _startMagic();
                                   } else {
-                                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Серии не найдены (возможно блокировка или пустой плейлист)'), duration: Duration(seconds: 3)));
+                                    if (mounted)
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(const SnackBar(
+                                              content: Text(
+                                                  'Серии не найдены (возможно блокировка или пустой плейлист)'),
+                                              duration: Duration(seconds: 3)));
                                   }
                                 }
                               });
@@ -2282,7 +2381,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           }
                         },
                         onReceivedError: (controller, request, error) {
-                          final failedUrl = request.url?.toString() ?? '';
+                          final failedUrl = request.url.toString();
                           if (failedUrl.isEmpty ||
                               failedUrl == 'about:blank' ||
                               !failedUrl.startsWith('http')) return;
@@ -2290,17 +2389,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
                           final isMain = request.isForMainFrame ?? true;
                           if (!isMain) return;
                           // CONNECTION_ABORTED — норма при навигации
-                          if (error.type == WebResourceErrorType.CONNECTION_ABORTED) return;
+                          if (error.type ==
+                              WebResourceErrorType.CONNECTION_ABORTED) return;
                           LogService.warn(LogService.browser,
                               'WebView ошибка: $failedUrl — ${error.description}');
                           _lastFailedUrl = failedUrl;
                           if (_webViewRetryCount < _webViewMaxRetries) {
                             _webViewRetryCount++;
-                            final delayMs = 1000 * (1 << (_webViewRetryCount - 1));
+                            final delayMs =
+                                1000 * (1 << (_webViewRetryCount - 1));
                             Future.delayed(Duration(milliseconds: delayMs), () {
                               if (mounted && _lastFailedUrl == failedUrl) {
-                                controller.loadUrl(urlRequest:
-                                    URLRequest(url: WebUri(failedUrl)));
+                                controller.loadUrl(
+                                    urlRequest:
+                                        URLRequest(url: WebUri(failedUrl)));
                               }
                             });
                             if (mounted) {
@@ -2539,9 +2641,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      const Text('Плеер Вахтовика', style: TextStyle(color: Colors.orange, fontSize: 24, fontWeight: FontWeight.bold)),
+                      const Text('Плеер Вахтовика',
+                          style: TextStyle(
+                              color: Colors.orange,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold)),
                       const Spacer(),
-                      IconButton(icon: const Icon(Icons.bug_report, color: Colors.orange, size: 20), tooltip: 'Лог ошибок', onPressed: _showLogDialog),
+                      IconButton(
+                          icon: const Icon(Icons.bug_report,
+                              color: Colors.orange, size: 20),
+                          tooltip: 'Лог ошибок',
+                          onPressed: _showLogDialog),
                     ]),
                     const SizedBox(height: 8),
                     const Text('Выбери сайт или введи свой адрес сверху',
@@ -2609,7 +2719,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                       child: Row(
                         children: [
                           Text(
-                            _seasonvarEpisodes.isNotEmpty ? 'Seasonvar: ' : 'Filmix: ',
+                            _seasonvarEpisodes.isNotEmpty
+                                ? 'Seasonvar: '
+                                : 'Filmix: ',
                             style: const TextStyle(
                                 color: Colors.orange, fontSize: 13),
                           ),
@@ -2967,4 +3079,3 @@ class _HomeSiteButton extends StatelessWidget {
     );
   }
 }
-
