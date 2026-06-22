@@ -120,9 +120,6 @@ class _IptvPlayerScreenState extends State<IptvPlayerScreen> {
       ['set', 'video-sync', 'audio'],
       ['set', 'correct-pts', 'yes'],
       ['set', 'framedrop', 'vo'],
-      ['set', 'cache-pause', 'yes'],
-      ['set', 'cache-pause-initial-seconds', '2'],
-      ['set', 'demuxer-readahead-secs', '18'],
     ];
 
     for (final command in commands) {
