@@ -13,6 +13,8 @@ class IptvScreen extends StatefulWidget {
 }
 
 class _IptvScreenState extends State<IptvScreen> {
+  static const _qualityOptions = ['144p', '240p', '360p', '480p'];
+
   final _searchController = TextEditingController();
   List<IptvChannel> _channels = const [];
   String _category = 'Все';
@@ -133,13 +135,10 @@ class _IptvScreenState extends State<IptvScreen> {
               iconEnabledColor: Colors.orange,
               style: const TextStyle(
                   color: Colors.orange, fontWeight: FontWeight.bold),
-              items: const [
-                DropdownMenuItem(value: '144p', child: Text('144p')),
-                DropdownMenuItem(value: '240p', child: Text('240p')),
-                DropdownMenuItem(value: '360p', child: Text('360p')),
-                DropdownMenuItem(value: '480p', child: Text('480p')),
-              ],
-              onChanged: (v) => setState(() => _quality = v ?? '240p'),
+              items: _qualityOptions
+                  .map((q) => DropdownMenuItem(value: q, child: Text(q)))
+                  .toList(),
+              onChanged: (v) => setState(() => _quality = v ?? '144p'),
             ),
           ),
           IconButton(
@@ -174,6 +173,29 @@ class _IptvScreenState extends State<IptvScreen> {
                     OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
               ),
               onChanged: (v) => setState(() => _query = v),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text('Качество сжатия:',
+                    style: TextStyle(color: Colors.white54, fontSize: 11)),
+                for (final q in _qualityOptions)
+                  ChoiceChip(
+                    selected: q == _quality,
+                    label: Text(q, style: const TextStyle(fontSize: 11)),
+                    selectedColor: Colors.orange,
+                    backgroundColor: const Color(0xFF1A1A1A),
+                    labelStyle: TextStyle(
+                        color: q == _quality ? Colors.black : Colors.white70),
+                    onSelected: (_) => setState(() => _quality = q),
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
             ),
           ),
           if (_countries.length > 1)

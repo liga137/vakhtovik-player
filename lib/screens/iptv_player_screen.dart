@@ -117,6 +117,17 @@ class _IptvPlayerScreenState extends State<IptvPlayerScreen> {
     if (platform == null) return;
 
     const commands = <List<String>>[
+      ['set', 'cache', 'yes'],
+      ['set', 'cache-pause', 'no'],
+      ['set', 'cache-pause-initial', 'no'],
+      ['set', 'cache-secs', '120'],
+      ['set', 'cache-back-secs', '30'],
+      ['set', 'stream-buffer-size', '64MiB'],
+      ['set', 'demuxer-max-bytes', '100MiB'],
+      ['set', 'demuxer-max-back-bytes', '50MiB'],
+      ['set', 'demuxer-readahead-secs', '120'],
+      ['set', 'hls-bitrate', 'max'],
+      ['set', 'hls-segment-threads', '4'],
       ['set', 'video-sync', 'audio'],
       ['set', 'correct-pts', 'yes'],
       ['set', 'framedrop', 'vo'],
