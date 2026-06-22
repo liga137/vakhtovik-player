@@ -29,9 +29,10 @@ class _IptvPlayerScreenState extends State<IptvPlayerScreen> {
   Timer? _retryTimer;
   bool _opening = true;
   bool _openingInProgress = false;
+  bool _opened = false;
   int _openAttempt = 0;
   String _status = 'Готовим IPTV-поток...';
-  static const int _minStartChunks = 3;
+  static const int _minStartChunks = 6;
 
   @override
   void initState() {
@@ -39,6 +40,7 @@ class _IptvPlayerScreenState extends State<IptvPlayerScreen> {
     _errorSub = _player.stream.error.listen((error) {
       final text = error.toString();
       if (!mounted || text.isEmpty || text == 'none') return;
+      if (_opened && !_opening) return;
       _scheduleRetry();
     });
     unawaited(_open());
@@ -94,15 +96,43 @@ class _IptvPlayerScreenState extends State<IptvPlayerScreen> {
       await _waitForFirstChunk();
       if (!mounted) return;
       await _player.stop();
+      await _applyLiveMpvProperties();
       await _player.open(Media(widget.hlsUrl), play: true);
       if (!mounted) return;
-      setState(() => _opening = false);
+      setState(() {
+        _opened = true;
+        _opening = false;
+      });
     } catch (_) {
       if (!mounted) return;
       _openingInProgress = false;
       _scheduleRetry();
     } finally {
       _openingInProgress = false;
+    }
+  }
+
+  Future<void> _applyLiveMpvProperties() async {
+    final platform = _player.platform;
+    if (platform == null) return;
+
+    const commands = <List<String>>[
+      ['set', 'video-sync', 'audio'],
+      ['set', 'correct-pts', 'yes'],
+      ['set', 'framedrop', 'vo'],
+      ['set', 'cache-pause', 'yes'],
+      ['set', 'cache-pause-initial-seconds', '2'],
+      ['set', 'demuxer-readahead-secs', '18'],
+    ];
+
+    for (final command in commands) {
+      try {
+        await (platform as dynamic).command(command);
+      } on NoSuchMethodError {
+        return;
+      } catch (_) {
+        // A rejected mpv option must not prevent IPTV playback from starting.
+      }
     }
   }
 

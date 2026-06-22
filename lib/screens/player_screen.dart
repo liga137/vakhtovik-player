@@ -48,6 +48,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   bool _isInitialized = false;
   bool _isDownloading = false;
+  bool _checkingTransientError = false;
+  DateTime? _openedAt;
 
   // -- Сценарий восстановления после обрыва сети (ADR-009) ---
   int _reconnectAttempts = 0;
@@ -100,10 +102,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
       // try {
       //   await HlsProxyService.instance.start(widget.hlsUrl);
 
-      player.open(
+      await player.open(
         Media(playUrl),
         play: true,
       );
+      _openedAt = DateTime.now();
 
       if (mounted) {
         setState(() {
@@ -119,6 +122,36 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _onPlaybackError(String reason) {
+    if (_reconnecting || !mounted) return;
+    final openedAt = _openedAt;
+    if (_isInitialized && openedAt != null) {
+      final sinceOpen = DateTime.now().difference(openedAt);
+      if (sinceOpen < const Duration(seconds: 25)) {
+        _checkTransientPlaybackError(reason);
+        return;
+      }
+    }
+
+    _startReconnect(reason);
+  }
+
+  void _checkTransientPlaybackError(String reason) {
+    if (_checkingTransientError) return;
+    _checkingTransientError = true;
+    final startPosition = player.state.position;
+    Future<void>.delayed(const Duration(seconds: 3), () {
+      _checkingTransientError = false;
+      if (!mounted || _reconnecting) return;
+      final currentPosition = player.state.position;
+      if (currentPosition > startPosition ||
+          currentPosition > const Duration(seconds: 2)) {
+        return;
+      }
+      _startReconnect(reason);
+    });
+  }
+
+  void _startReconnect(String reason) {
     if (_reconnecting || !mounted) return;
     if (_reconnectAttempts >= _maxReconnectAttempts) {
       setState(() {
