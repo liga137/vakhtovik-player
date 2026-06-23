@@ -40,6 +40,29 @@ class HlsProxyService {
   String get localPlaylistUrl =>
       isRunning ? 'http://127.0.0.1:$port/$_playlistName' : '';
 
+  Future<bool> waitUntilReady({
+    int minCachedChunks = 8,
+    Duration timeout = const Duration(seconds: 75),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      await _refreshPlaylist();
+      final target = _chunkNames.length < minCachedChunks
+          ? _chunkNames.length
+          : minCachedChunks;
+      if (target > 0 && _isInitReady && _cachedContiguousChunkCount >= target) {
+        debugPrint('[HlsProxy] Ready with $_cachedContiguousChunkCount chunks');
+        return true;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    debugPrint(
+      '[HlsProxy] Not ready: chunks=$_cachedContiguousChunkCount, '
+      'playlist=${_chunkNames.length}, init=$_isInitReady',
+    );
+    return false;
+  }
+
   Future<void> start(String originalHlsUrl) async {
     await stop();
 
@@ -141,7 +164,7 @@ class HlsProxyService {
 
   Future<void> _servePlaylist(HttpRequest request) async {
     final freshBody = await _refreshPlaylist();
-    final body = _rewritePlaylist(freshBody ?? _playlistBody);
+    final body = _rewritePlaylist(freshBody ?? _playlistBody, cachedOnly: true);
     if (body.isEmpty) {
       request.response.statusCode = HttpStatus.badGateway;
       await request.response.close();
@@ -258,11 +281,18 @@ class HlsProxyService {
       ..addAll(chunks);
   }
 
-  String _rewritePlaylist(String body) {
+  String _rewritePlaylist(String body, {required bool cachedOnly}) {
     if (body.isEmpty) return body;
     final lines = <String>[];
+    String? pendingExtInf;
+
     for (final rawLine in body.split('\n')) {
       final line = rawLine.trim();
+      if (line.startsWith('#EXTINF')) {
+        pendingExtInf = rawLine;
+        continue;
+      }
+
       if (line.startsWith('#EXT-X-MAP')) {
         final match = RegExp(r'URI="([^"]+)"').firstMatch(line);
         if (match != null) {
@@ -272,12 +302,40 @@ class HlsProxyService {
         }
       }
       if (line.isNotEmpty && !line.startsWith('#')) {
-        lines.add(_localName(line));
+        final name = _localName(line);
+        if (!cachedOnly || !name.startsWith('chunk_') || _isCached(name)) {
+          if (pendingExtInf != null) lines.add(pendingExtInf);
+          lines.add(name);
+        }
+        pendingExtInf = null;
       } else {
+        if (pendingExtInf != null) {
+          lines.add(pendingExtInf);
+          pendingExtInf = null;
+        }
         lines.add(rawLine);
       }
     }
     return lines.join('\n');
+  }
+
+  bool get _isInitReady {
+    final initName = _initName;
+    return initName == null || _isCached(initName);
+  }
+
+  int get _cachedContiguousChunkCount {
+    var count = 0;
+    for (final chunk in _chunkNames) {
+      if (!_isCached(chunk)) break;
+      count++;
+    }
+    return count;
+  }
+
+  bool _isCached(String filename) {
+    final cachedPath = _diskCache[filename];
+    return cachedPath != null && File(cachedPath).existsSync();
   }
 
   void _schedulePrefetch() {

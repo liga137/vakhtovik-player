@@ -98,9 +98,18 @@ class _IptvPlayerScreenState extends State<IptvPlayerScreen> {
       if (!mounted) return;
       var playUrl = widget.hlsUrl;
       try {
+        setState(() {
+          _opening = true;
+          _status = 'Готовим локальный IPTV-буфер...';
+        });
         await HlsProxyService.instance.start(widget.hlsUrl);
         final localUrl = HlsProxyService.instance.localPlaylistUrl;
-        if (localUrl.isNotEmpty) playUrl = localUrl;
+        final ready = await HlsProxyService.instance.waitUntilReady();
+        if (ready && localUrl.isNotEmpty) {
+          playUrl = localUrl;
+        } else {
+          await HlsProxyService.instance.stop();
+        }
       } catch (_) {
         await HlsProxyService.instance.stop();
       }
