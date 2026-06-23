@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../services/api_service.dart';
+import '../services/hls_proxy_service.dart';
 
 class IptvPlayerScreen extends StatefulWidget {
   final String title;
@@ -95,9 +96,17 @@ class _IptvPlayerScreenState extends State<IptvPlayerScreen> {
     try {
       await _waitForFirstChunk();
       if (!mounted) return;
+      var playUrl = widget.hlsUrl;
+      try {
+        await HlsProxyService.instance.start(widget.hlsUrl);
+        final localUrl = HlsProxyService.instance.localPlaylistUrl;
+        if (localUrl.isNotEmpty) playUrl = localUrl;
+      } catch (_) {
+        await HlsProxyService.instance.stop();
+      }
       await _player.stop();
       await _applyLiveMpvProperties();
-      await _player.open(Media(widget.hlsUrl), play: true);
+      await _player.open(Media(playUrl), play: true);
       if (!mounted) return;
       setState(() {
         _opened = true;
@@ -161,6 +170,7 @@ class _IptvPlayerScreenState extends State<IptvPlayerScreen> {
   void dispose() {
     _retryTimer?.cancel();
     _errorSub?.cancel();
+    HlsProxyService.instance.stop().catchError((_) {});
     ApiService.stopSession(widget.sessionId).catchError((_) {});
     _player.dispose();
     super.dispose();
